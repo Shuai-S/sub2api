@@ -77,4 +77,62 @@ describe('HelpTooltip', () => {
 
     wrapper.unmount()
   })
+
+  it('positions fixed tooltip with viewport coordinates while the page is scrolled', async () => {
+    const originalScrollX = window.scrollX
+    const originalScrollY = window.scrollY
+    const originalInnerWidth = window.innerWidth
+
+    Object.defineProperty(window, 'scrollX', { configurable: true, value: 300 })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 2400 })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+
+    const wrapper = mount(HelpTooltip, {
+      attachTo: document.body,
+      props: {
+        content: 'scrolled details',
+      },
+    })
+
+    try {
+      const trigger = wrapper.get('.group')
+      const triggerEl = trigger.element as HTMLElement
+      triggerEl.getBoundingClientRect = () => ({
+        x: 300,
+        y: 160,
+        top: 160,
+        left: 300,
+        right: 320,
+        bottom: 180,
+        width: 20,
+        height: 20,
+        toJSON: () => ({}),
+      } as DOMRect)
+
+      const tooltip = getTooltipElement()
+      tooltip.getBoundingClientRect = () => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 256,
+        bottom: 80,
+        width: 256,
+        height: 80,
+        toJSON: () => ({}),
+      } as DOMRect)
+
+      await trigger.trigger('mouseenter')
+      await nextTick()
+      await nextTick()
+
+      expect(tooltip.style.top).toBe('calc(152px)')
+      expect(tooltip.style.left).toBe('310px')
+    } finally {
+      wrapper.unmount()
+      Object.defineProperty(window, 'scrollX', { configurable: true, value: originalScrollX })
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: originalScrollY })
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth })
+    }
+  })
 })

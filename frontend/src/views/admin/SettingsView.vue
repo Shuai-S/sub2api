@@ -4176,6 +4176,78 @@
 
                   <div>
                     <h3 class="mb-3 flex items-center text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      <span>{{ t("admin.settings.openaiAdaptiveScheduler.burstAndShrink") }}</span>
+                      <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.burstAndShrink')" />
+                    </h3>
+                    <div class="grid gap-4 md:grid-cols-3">
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.initialCapacityFraction") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.initialCapacityFraction')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_initial_capacity_fraction" class="input" type="number" min="0" max="1" step="0.01" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_initial_capacity_fraction)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.growthFactor") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.growthFactor')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_capacity_growth_factor" class="input" type="number" min="1" max="10" step="0.01" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_capacity_growth_factor)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.burstProbeRatio") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.burstProbeRatio')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_burst_probe_ratio" class="input" type="number" min="0" max="1" step="0.01" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_burst_probe_ratio)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.minRecentSamplesForShrink") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minRecentSamplesForShrink')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_min_recent_samples_for_shrink" class="input" type="number" min="1" step="1" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_min_recent_samples_for_shrink)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkErrorThreshold") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkErrorThreshold')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_shrink_error_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_shrink_error_threshold)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkFactorSoft") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorSoft')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_soft" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_shrink_factor_soft)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkFactorHard") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorHard')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_hard" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_shrink_factor_hard)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.halfOpenProbeCapacity") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.halfOpenProbeCapacity')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_half_open_probe_capacity" class="input" type="number" min="1" step="1" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_half_open_probe_capacity)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.learningWindowSeconds") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.learningWindowSeconds')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_learning_window_seconds" class="input" type="number" min="0" step="1" :placeholder="String(openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_learning_window_seconds)" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 class="mb-3 flex items-center text-sm font-semibold text-gray-700 dark:text-gray-300">
                       <span>{{ t("admin.settings.openaiAdaptiveScheduler.ema") }}</span>
                       <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.ema')" />
                     </h3>
@@ -7519,22 +7591,7 @@ const SchedulerParamHelp = defineComponent({
     },
   },
   setup(props) {
-    return () =>
-      h(
-        HelpTooltip,
-        { content: props.content, widthClass: "w-72" },
-        {
-          trigger: () =>
-            h(
-              "span",
-              {
-                class:
-                  "flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-gray-300 text-[10px] font-semibold leading-none text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-500 dark:text-gray-400 dark:hover:border-primary-400 dark:hover:text-primary-300",
-              },
-              "?",
-            ),
-        },
-      );
+    return () => h(HelpTooltip, { content: props.content });
   },
 });
 
@@ -8166,12 +8223,21 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_thompson_prior_alpha: number;
   openai_adaptive_scheduler_thompson_prior_beta: number;
   openai_adaptive_scheduler_initial_capacity: number;
+  openai_adaptive_scheduler_initial_capacity_fraction: number;
   openai_adaptive_scheduler_min_capacity: number;
   openai_adaptive_scheduler_capacity_increase_step: number;
+  openai_adaptive_scheduler_capacity_growth_factor: number;
   openai_adaptive_scheduler_capacity_decrease_factor: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold: number;
+  openai_adaptive_scheduler_burst_probe_ratio: number;
   openai_adaptive_scheduler_capacity_success_threshold: number;
   openai_adaptive_scheduler_capacity_failure_threshold: number;
+  openai_adaptive_scheduler_min_recent_samples_for_shrink: number;
+  openai_adaptive_scheduler_shrink_error_threshold: number;
+  openai_adaptive_scheduler_shrink_factor_soft: number;
+  openai_adaptive_scheduler_shrink_factor_hard: number;
+  openai_adaptive_scheduler_half_open_probe_capacity: number;
+  openai_adaptive_scheduler_learning_window_seconds: number;
   openai_adaptive_scheduler_success_ema_alpha: number;
   openai_adaptive_scheduler_error_ema_alpha: number;
   openai_adaptive_scheduler_latency_ema_alpha: number;
@@ -8196,12 +8262,21 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_thompson_prior_alpha: 1,
   openai_adaptive_scheduler_thompson_prior_beta: 1,
   openai_adaptive_scheduler_initial_capacity: 1,
+  openai_adaptive_scheduler_initial_capacity_fraction: 0.1,
   openai_adaptive_scheduler_min_capacity: 1,
   openai_adaptive_scheduler_capacity_increase_step: 1,
+  openai_adaptive_scheduler_capacity_growth_factor: 1.25,
   openai_adaptive_scheduler_capacity_decrease_factor: 0.6,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
+  openai_adaptive_scheduler_burst_probe_ratio: 0.2,
   openai_adaptive_scheduler_capacity_success_threshold: 0.98,
   openai_adaptive_scheduler_capacity_failure_threshold: 3,
+  openai_adaptive_scheduler_min_recent_samples_for_shrink: 10,
+  openai_adaptive_scheduler_shrink_error_threshold: 0.2,
+  openai_adaptive_scheduler_shrink_factor_soft: 0.8,
+  openai_adaptive_scheduler_shrink_factor_hard: 0.5,
+  openai_adaptive_scheduler_half_open_probe_capacity: 5,
+  openai_adaptive_scheduler_learning_window_seconds: 900,
   openai_adaptive_scheduler_success_ema_alpha: 0.05,
   openai_adaptive_scheduler_error_ema_alpha: 0.1,
   openai_adaptive_scheduler_latency_ema_alpha: 0.05,
@@ -9734,20 +9809,39 @@ async function saveSettings() {
         Number(form.openai_adaptive_scheduler_thompson_prior_beta) || 1,
       openai_adaptive_scheduler_initial_capacity:
         Number(form.openai_adaptive_scheduler_initial_capacity) || 1,
+      openai_adaptive_scheduler_initial_capacity_fraction:
+        Number(form.openai_adaptive_scheduler_initial_capacity_fraction) || 0,
       openai_adaptive_scheduler_min_capacity:
         Number(form.openai_adaptive_scheduler_min_capacity) || 1,
       openai_adaptive_scheduler_capacity_increase_step:
         Number(form.openai_adaptive_scheduler_capacity_increase_step) || 1,
+      openai_adaptive_scheduler_capacity_growth_factor:
+        Number(form.openai_adaptive_scheduler_capacity_growth_factor) || 1.25,
       openai_adaptive_scheduler_capacity_decrease_factor:
         Number(form.openai_adaptive_scheduler_capacity_decrease_factor) || 0.6,
       openai_adaptive_scheduler_capacity_probe_load_threshold:
         Number(form.openai_adaptive_scheduler_capacity_probe_load_threshold) ||
         0.8,
+      openai_adaptive_scheduler_burst_probe_ratio:
+        Number(form.openai_adaptive_scheduler_burst_probe_ratio) || 0,
       openai_adaptive_scheduler_capacity_success_threshold:
         Number(form.openai_adaptive_scheduler_capacity_success_threshold) ||
         0.98,
       openai_adaptive_scheduler_capacity_failure_threshold:
         Number(form.openai_adaptive_scheduler_capacity_failure_threshold) || 3,
+      openai_adaptive_scheduler_min_recent_samples_for_shrink:
+        Number(form.openai_adaptive_scheduler_min_recent_samples_for_shrink) ||
+        10,
+      openai_adaptive_scheduler_shrink_error_threshold:
+        Number(form.openai_adaptive_scheduler_shrink_error_threshold) || 0,
+      openai_adaptive_scheduler_shrink_factor_soft:
+        Number(form.openai_adaptive_scheduler_shrink_factor_soft) || 0.8,
+      openai_adaptive_scheduler_shrink_factor_hard:
+        Number(form.openai_adaptive_scheduler_shrink_factor_hard) || 0.5,
+      openai_adaptive_scheduler_half_open_probe_capacity:
+        Number(form.openai_adaptive_scheduler_half_open_probe_capacity) || 5,
+      openai_adaptive_scheduler_learning_window_seconds:
+        Number(form.openai_adaptive_scheduler_learning_window_seconds) || 0,
       openai_adaptive_scheduler_success_ema_alpha:
         Number(form.openai_adaptive_scheduler_success_ema_alpha) || 0.05,
       openai_adaptive_scheduler_error_ema_alpha:

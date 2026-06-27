@@ -217,16 +217,19 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
-		"promo_code_enabled":                    true,
-		"payment_visible_method_alipay_source":  "easypay",
-		"payment_visible_method_wxpay_source":   "wxpay",
-		"payment_visible_method_alipay_enabled": true,
-		"payment_visible_method_wxpay_enabled":  false,
-		"openai_advanced_scheduler_enabled":     true,
-		"openai_adaptive_scheduler_enabled":     true,
-		"openai_adaptive_scheduler_mode":        "enforce",
-		"openai_adaptive_scheduler_top_k":       15,
-		"openai_adaptive_scheduler_weight_cost": 0.35,
+		"promo_code_enabled":                                      true,
+		"payment_visible_method_alipay_source":                    "easypay",
+		"payment_visible_method_wxpay_source":                     "wxpay",
+		"payment_visible_method_alipay_enabled":                   true,
+		"payment_visible_method_wxpay_enabled":                    false,
+		"openai_advanced_scheduler_enabled":                       true,
+		"openai_adaptive_scheduler_enabled":                       true,
+		"openai_adaptive_scheduler_mode":                          "enforce",
+		"openai_adaptive_scheduler_top_k":                         15,
+		"openai_adaptive_scheduler_burst_probe_ratio":             0.25,
+		"openai_adaptive_scheduler_min_recent_samples_for_shrink": 20,
+		"openai_adaptive_scheduler_learning_window_seconds":       1800,
+		"openai_adaptive_scheduler_weight_cost":                   0.35,
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -247,6 +250,9 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values["openai_adaptive_scheduler_enabled"])
 	require.Equal(t, "enforce", repo.values["openai_adaptive_scheduler_mode"])
 	require.Equal(t, "15", repo.values["openai_adaptive_scheduler_top_k"])
+	require.Equal(t, "0.25", repo.values["openai_adaptive_scheduler_burst_probe_ratio"])
+	require.Equal(t, "20", repo.values["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
+	require.Equal(t, "1800", repo.values["openai_adaptive_scheduler_learning_window_seconds"])
 	require.Equal(t, "0.35", repo.values["openai_adaptive_scheduler_weight_cost"])
 
 	var resp response.Response
@@ -261,6 +267,9 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["openai_adaptive_scheduler_enabled"])
 	require.Equal(t, "enforce", data["openai_adaptive_scheduler_mode"])
 	require.Equal(t, float64(15), data["openai_adaptive_scheduler_top_k"])
+	require.Equal(t, 0.25, data["openai_adaptive_scheduler_burst_probe_ratio"])
+	require.Equal(t, float64(20), data["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
+	require.Equal(t, float64(1800), data["openai_adaptive_scheduler_learning_window_seconds"])
 	require.Equal(t, 0.35, data["openai_adaptive_scheduler_weight_cost"])
 }
 

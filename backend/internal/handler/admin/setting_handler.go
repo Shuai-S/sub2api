@@ -701,12 +701,21 @@ type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerThompsonPriorAlpha         *float64 `json:"openai_adaptive_scheduler_thompson_prior_alpha"`
 	OpenAIAdaptiveSchedulerThompsonPriorBeta          *float64 `json:"openai_adaptive_scheduler_thompson_prior_beta"`
 	OpenAIAdaptiveSchedulerInitialCapacity            *int     `json:"openai_adaptive_scheduler_initial_capacity"`
+	OpenAIAdaptiveSchedulerInitialCapacityFraction    *float64 `json:"openai_adaptive_scheduler_initial_capacity_fraction"`
 	OpenAIAdaptiveSchedulerMinCapacity                *int     `json:"openai_adaptive_scheduler_min_capacity"`
 	OpenAIAdaptiveSchedulerCapacityIncreaseStep       *int     `json:"openai_adaptive_scheduler_capacity_increase_step"`
+	OpenAIAdaptiveSchedulerCapacityGrowthFactor       *float64 `json:"openai_adaptive_scheduler_capacity_growth_factor"`
 	OpenAIAdaptiveSchedulerCapacityDecreaseFactor     *float64 `json:"openai_adaptive_scheduler_capacity_decrease_factor"`
 	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold *float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
+	OpenAIAdaptiveSchedulerBurstProbeRatio            *float64 `json:"openai_adaptive_scheduler_burst_probe_ratio"`
 	OpenAIAdaptiveSchedulerCapacitySuccessThreshold   *float64 `json:"openai_adaptive_scheduler_capacity_success_threshold"`
 	OpenAIAdaptiveSchedulerCapacityFailureThreshold   *int     `json:"openai_adaptive_scheduler_capacity_failure_threshold"`
+	OpenAIAdaptiveSchedulerMinRecentSamplesForShrink  *int     `json:"openai_adaptive_scheduler_min_recent_samples_for_shrink"`
+	OpenAIAdaptiveSchedulerShrinkErrorThreshold       *float64 `json:"openai_adaptive_scheduler_shrink_error_threshold"`
+	OpenAIAdaptiveSchedulerShrinkFactorSoft           *float64 `json:"openai_adaptive_scheduler_shrink_factor_soft"`
+	OpenAIAdaptiveSchedulerShrinkFactorHard           *float64 `json:"openai_adaptive_scheduler_shrink_factor_hard"`
+	OpenAIAdaptiveSchedulerHalfOpenProbeCapacity      *int     `json:"openai_adaptive_scheduler_half_open_probe_capacity"`
+	OpenAIAdaptiveSchedulerLearningWindowSeconds      *int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
 	OpenAIAdaptiveSchedulerSuccessEMAAlpha            *float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
 	OpenAIAdaptiveSchedulerErrorEMAAlpha              *float64 `json:"openai_adaptive_scheduler_error_ema_alpha"`
 	OpenAIAdaptiveSchedulerLatencyEMAAlpha            *float64 `json:"openai_adaptive_scheduler_latency_ema_alpha"`
@@ -753,11 +762,17 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	if req.OpenAIAdaptiveSchedulerInitialCapacity != nil {
 		settings.OpenAIAdaptiveSchedulerInitialCapacity = *req.OpenAIAdaptiveSchedulerInitialCapacity
 	}
+	if req.OpenAIAdaptiveSchedulerInitialCapacityFraction != nil {
+		settings.OpenAIAdaptiveSchedulerInitialCapacityFraction = *req.OpenAIAdaptiveSchedulerInitialCapacityFraction
+	}
 	if req.OpenAIAdaptiveSchedulerMinCapacity != nil {
 		settings.OpenAIAdaptiveSchedulerMinCapacity = *req.OpenAIAdaptiveSchedulerMinCapacity
 	}
 	if req.OpenAIAdaptiveSchedulerCapacityIncreaseStep != nil {
 		settings.OpenAIAdaptiveSchedulerCapacityIncreaseStep = *req.OpenAIAdaptiveSchedulerCapacityIncreaseStep
+	}
+	if req.OpenAIAdaptiveSchedulerCapacityGrowthFactor != nil {
+		settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor = *req.OpenAIAdaptiveSchedulerCapacityGrowthFactor
 	}
 	if req.OpenAIAdaptiveSchedulerCapacityDecreaseFactor != nil {
 		settings.OpenAIAdaptiveSchedulerCapacityDecreaseFactor = *req.OpenAIAdaptiveSchedulerCapacityDecreaseFactor
@@ -765,11 +780,32 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	if req.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold != nil {
 		settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = *req.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold
 	}
+	if req.OpenAIAdaptiveSchedulerBurstProbeRatio != nil {
+		settings.OpenAIAdaptiveSchedulerBurstProbeRatio = *req.OpenAIAdaptiveSchedulerBurstProbeRatio
+	}
 	if req.OpenAIAdaptiveSchedulerCapacitySuccessThreshold != nil {
 		settings.OpenAIAdaptiveSchedulerCapacitySuccessThreshold = *req.OpenAIAdaptiveSchedulerCapacitySuccessThreshold
 	}
 	if req.OpenAIAdaptiveSchedulerCapacityFailureThreshold != nil {
 		settings.OpenAIAdaptiveSchedulerCapacityFailureThreshold = *req.OpenAIAdaptiveSchedulerCapacityFailureThreshold
+	}
+	if req.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink != nil {
+		settings.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink = *req.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink
+	}
+	if req.OpenAIAdaptiveSchedulerShrinkErrorThreshold != nil {
+		settings.OpenAIAdaptiveSchedulerShrinkErrorThreshold = *req.OpenAIAdaptiveSchedulerShrinkErrorThreshold
+	}
+	if req.OpenAIAdaptiveSchedulerShrinkFactorSoft != nil {
+		settings.OpenAIAdaptiveSchedulerShrinkFactorSoft = *req.OpenAIAdaptiveSchedulerShrinkFactorSoft
+	}
+	if req.OpenAIAdaptiveSchedulerShrinkFactorHard != nil {
+		settings.OpenAIAdaptiveSchedulerShrinkFactorHard = *req.OpenAIAdaptiveSchedulerShrinkFactorHard
+	}
+	if req.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity != nil {
+		settings.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity = *req.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity
+	}
+	if req.OpenAIAdaptiveSchedulerLearningWindowSeconds != nil {
+		settings.OpenAIAdaptiveSchedulerLearningWindowSeconds = *req.OpenAIAdaptiveSchedulerLearningWindowSeconds
 	}
 	if req.OpenAIAdaptiveSchedulerSuccessEMAAlpha != nil {
 		settings.OpenAIAdaptiveSchedulerSuccessEMAAlpha = *req.OpenAIAdaptiveSchedulerSuccessEMAAlpha

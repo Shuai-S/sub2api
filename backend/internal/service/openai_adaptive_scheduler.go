@@ -39,10 +39,13 @@ type openAIAdaptiveAccountState struct {
 	ConsecutiveFailure         int
 	ConsecutiveCapacityFailure int
 
-	TotalSamples int64
+	TotalSamples   int64
+	RecentSamples  int
+	RecentFailures int
 
 	LastSuccessAt         time.Time
 	LastFailureAt         time.Time
+	RecentWindowStartedAt time.Time
 	LastCapacityFailureAt time.Time
 	CooldownUntil         time.Time
 }
@@ -319,6 +322,8 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 			}
 		}
 	}
+	state = s.state.observeLoad(account, cfg, loadInfo)
+	effectiveCapacity = effectiveOpenAIAdaptiveCapacityWithLoad(account, state, cfg, loadInfo)
 	if effectiveCapacity > 0 && loadInfo.CurrentConcurrency >= effectiveCapacity {
 		return nil, true, nil
 	}
@@ -356,7 +361,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 
 	if s.service.concurrencyService != nil {
 		if freshLoadMap, loadErr := s.service.concurrencyService.GetAccountsLoadBatchFresh(ctx, loadReq); loadErr == nil {
-			freshCandidates, freshSkew := s.buildAdaptiveCandidates(req, cfg, filtered, states, freshLoadMap)
+			freshCandidates, freshSkew := s.buildAdaptiveCandidates(req, cfg, filtered, states, freshLoadMap, true)
 			freshOrder := buildOpenAIAdaptiveSelectionOrder(freshCandidates, req, cfg)
 			freshResult, freshCompactBlocked, freshAcquireErr := s.tryAcquireAdaptiveSelectionOrder(ctx, req, cfg, freshOrder)
 			if freshAcquireErr != nil {
@@ -387,7 +392,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 			compactBlocked = true
 			continue
 		}
-		effectiveCapacity := effectiveOpenAIAdaptiveCapacity(fresh, s.state.snapshot(fresh.ID, cfg), cfg)
+		effectiveCapacity := effectiveOpenAIAdaptiveCapacityWithLoad(fresh, s.state.snapshot(fresh.ID, cfg), cfg, candidate.loadInfo)
 		selection, selectErr := s.service.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
 			AccountID:      fresh.ID,
 			MaxConcurrency: effectiveCapacity,
@@ -478,7 +483,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 			loadMap = batchLoad
 		}
 	}
-	candidates, loadSkew := s.buildAdaptiveCandidates(req, cfg, filtered, states, loadMap)
+	candidates, loadSkew := s.buildAdaptiveCandidates(req, cfg, filtered, states, loadMap, allowSideEffects)
 	if req.RequireCompact && len(candidates) == 0 {
 		return nil, 0, 0, 0, nil, nil, nil, ErrNoAvailableCompactAccounts
 	}
@@ -499,6 +504,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
 	filtered []*Account,
 	states map[int64]openAIAdaptiveAccountState,
 	loadMap map[int64]*AccountLoadInfo,
+	allowSideEffects bool,
 ) ([]openAIAdaptiveCandidateScore, float64) {
 	candidates := make([]openAIAdaptiveCandidateScore, 0, len(filtered))
 	loadRateSum := 0.0
@@ -508,11 +514,15 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
 			continue
 		}
 		state := states[account.ID]
-		effectiveCapacity := effectiveOpenAIAdaptiveCapacity(account, state, cfg)
 		loadInfo := loadMap[account.ID]
 		if loadInfo == nil {
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
+		if allowSideEffects {
+			state = s.state.observeLoad(account, cfg, loadInfo)
+			states[account.ID] = state
+		}
+		effectiveCapacity := effectiveOpenAIAdaptiveCapacityWithLoad(account, state, cfg, loadInfo)
 		if effectiveCapacity > 0 && loadInfo.CurrentConcurrency >= effectiveCapacity {
 			continue
 		}
@@ -717,7 +727,7 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 			compactBlocked = true
 			continue
 		}
-		effectiveCapacity := effectiveOpenAIAdaptiveCapacity(fresh, s.state.snapshot(fresh.ID, cfg), cfg)
+		effectiveCapacity := effectiveOpenAIAdaptiveCapacityWithLoad(fresh, s.state.snapshot(fresh.ID, cfg), cfg, candidate.loadInfo)
 		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, fresh.ID, effectiveCapacity)
 		if acquireErr != nil {
 			return nil, compactBlocked, acquireErr
@@ -845,7 +855,9 @@ func (s *openAIAdaptiveSchedulerStateStore) report(
 		state = &initial
 		s.states[accountID] = state
 	}
+	refreshOpenAIAdaptiveLearningWindow(state, cfg, now)
 	state.TotalSamples++
+	state.RecentSamples++
 	successSample := 0.0
 	errorSample := 1.0
 	if success {
@@ -869,7 +881,7 @@ func (s *openAIAdaptiveSchedulerStateStore) report(
 		if state.SuccessEMA >= cfg.OpenAIAdaptiveSchedulerCapacitySuccessThreshold &&
 			state.ConsecutiveSuccess >= state.EstimatedCapacity &&
 			state.EstimatedCapacity < math.MaxInt-cfg.OpenAIAdaptiveSchedulerCapacityIncreaseStep {
-			state.EstimatedCapacity += cfg.OpenAIAdaptiveSchedulerCapacityIncreaseStep
+			state.EstimatedCapacity = nextOpenAIAdaptiveGrowthCapacity(state.EstimatedCapacity, cfg)
 			state.ConsecutiveSuccess = 0
 		}
 		return
@@ -878,13 +890,10 @@ func (s *openAIAdaptiveSchedulerStateStore) report(
 	state.ConsecutiveFailure++
 	state.ConsecutiveCapacityFailure++
 	state.ConsecutiveSuccess = 0
+	state.RecentFailures++
 	state.LastFailureAt = now
-	if state.ConsecutiveCapacityFailure >= cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold {
-		nextCapacity := int(math.Floor(float64(state.EstimatedCapacity) * cfg.OpenAIAdaptiveSchedulerCapacityDecreaseFactor))
-		if nextCapacity < cfg.OpenAIAdaptiveSchedulerMinCapacity {
-			nextCapacity = cfg.OpenAIAdaptiveSchedulerMinCapacity
-		}
-		state.EstimatedCapacity = nextCapacity
+	if shouldShrinkOpenAIAdaptiveCapacity(state, cfg) {
+		state.EstimatedCapacity = nextOpenAIAdaptiveShrinkCapacity(state, cfg)
 		state.LastCapacityFailureAt = now
 		cooldown := time.Duration(cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds) * time.Second
 		if cooldown > 0 && cfg.OpenAIAdaptiveSchedulerCooldownMaxSeconds > 0 {
@@ -901,6 +910,112 @@ func (s *openAIAdaptiveSchedulerStateStore) report(
 			state.CooldownUntil = now.Add(cooldown)
 		}
 	}
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) observeLoad(
+	account *Account,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	loadInfo *AccountLoadInfo,
+) openAIAdaptiveAccountState {
+	if s == nil || account == nil || account.ID <= 0 {
+		return defaultOpenAIAdaptiveAccountState(0, cfg)
+	}
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.states[account.ID]
+	if state == nil {
+		initial := defaultOpenAIAdaptiveAccountState(account.ID, cfg)
+		state = &initial
+		s.states[account.ID] = state
+	}
+	stableCapacity := stableOpenAIAdaptiveCapacity(account, *state, cfg)
+	if state.TotalSamples == 0 && state.EstimatedCapacity < stableCapacity {
+		state.EstimatedCapacity = stableCapacity
+	}
+	if state.CooldownUntil.After(now) ||
+		state.ConsecutiveCapacityFailure > 0 ||
+		!shouldProbeOpenAIAdaptiveCapacity(loadInfo, stableCapacity, cfg) ||
+		state.SuccessEMA < cfg.OpenAIAdaptiveSchedulerCapacitySuccessThreshold ||
+		state.ConsecutiveSuccess < cfg.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink {
+		return *state
+	}
+	nextCapacity := capOpenAIAdaptiveCapacity(account, nextOpenAIAdaptiveGrowthCapacity(stableCapacity, cfg))
+	if nextCapacity > state.EstimatedCapacity {
+		state.EstimatedCapacity = nextCapacity
+		state.ConsecutiveSuccess = 0
+	}
+	return *state
+}
+
+func refreshOpenAIAdaptiveLearningWindow(state *openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings, now time.Time) {
+	if state == nil {
+		return
+	}
+	windowSeconds := cfg.OpenAIAdaptiveSchedulerLearningWindowSeconds
+	if windowSeconds <= 0 {
+		if state.RecentWindowStartedAt.IsZero() {
+			state.RecentWindowStartedAt = now
+		}
+		return
+	}
+	window := time.Duration(windowSeconds) * time.Second
+	if state.RecentWindowStartedAt.IsZero() {
+		state.RecentWindowStartedAt = now
+		return
+	}
+	if now.Sub(state.RecentWindowStartedAt) >= window {
+		state.RecentWindowStartedAt = now
+		state.RecentSamples = 0
+		state.RecentFailures = 0
+	}
+}
+
+func shouldShrinkOpenAIAdaptiveCapacity(state *openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) bool {
+	if state == nil {
+		return false
+	}
+	if state.ConsecutiveCapacityFailure < cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold {
+		return false
+	}
+	if state.RecentSamples < cfg.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink {
+		return false
+	}
+	recentFailureRate := 0.0
+	if state.RecentSamples > 0 {
+		recentFailureRate = float64(state.RecentFailures) / float64(state.RecentSamples)
+	}
+	return state.ErrorEMA >= cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold ||
+		recentFailureRate >= cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold
+}
+
+func nextOpenAIAdaptiveShrinkCapacity(state *openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) int {
+	if state == nil {
+		return cfg.OpenAIAdaptiveSchedulerMinCapacity
+	}
+	factor := cfg.OpenAIAdaptiveSchedulerShrinkFactorSoft
+	recentFailureRate := 0.0
+	if state.RecentSamples > 0 {
+		recentFailureRate = float64(state.RecentFailures) / float64(state.RecentSamples)
+	}
+	hardConsecutiveThreshold := cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold * 2
+	hardErrorThreshold := cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold * 2
+	if hardErrorThreshold > 1 {
+		hardErrorThreshold = 1
+	}
+	if state.ConsecutiveCapacityFailure >= hardConsecutiveThreshold ||
+		state.ErrorEMA >= hardErrorThreshold ||
+		recentFailureRate >= hardErrorThreshold {
+		factor = cfg.OpenAIAdaptiveSchedulerShrinkFactorHard
+	}
+	if factor <= 0 || factor > 1 {
+		factor = cfg.OpenAIAdaptiveSchedulerCapacityDecreaseFactor
+	}
+	nextCapacity := int(math.Floor(float64(state.EstimatedCapacity) * factor))
+	if nextCapacity < cfg.OpenAIAdaptiveSchedulerMinCapacity {
+		nextCapacity = cfg.OpenAIAdaptiveSchedulerMinCapacity
+	}
+	return nextCapacity
 }
 
 func defaultOpenAIAdaptiveAccountState(accountID int64, cfg OpenAIAdaptiveSchedulerSettings) openAIAdaptiveAccountState {
@@ -929,6 +1044,37 @@ func updateOpenAIAdaptiveEMA(current float64, sample float64, alpha float64) flo
 }
 
 func effectiveOpenAIAdaptiveCapacity(account *Account, state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) int {
+	return effectiveOpenAIAdaptiveCapacityWithLoad(account, state, cfg, nil)
+}
+
+func effectiveOpenAIAdaptiveCapacityWithLoad(
+	account *Account,
+	state openAIAdaptiveAccountState,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	loadInfo *AccountLoadInfo,
+) int {
+	stable := stableOpenAIAdaptiveCapacity(account, state, cfg)
+	effective := stable
+	now := time.Now()
+	if state.ConsecutiveCapacityFailure > 0 && !state.CooldownUntil.After(now) {
+		if cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity < effective {
+			effective = cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity
+		}
+		return capOpenAIAdaptiveCapacity(account, effective)
+	}
+	if shouldProbeOpenAIAdaptiveCapacity(loadInfo, stable, cfg) && cfg.OpenAIAdaptiveSchedulerBurstProbeRatio > 0 {
+		burstCapacity := int(math.Ceil(float64(stable) * cfg.OpenAIAdaptiveSchedulerBurstProbeRatio))
+		if burstCapacity < 1 {
+			burstCapacity = 1
+		}
+		if stable <= math.MaxInt-burstCapacity {
+			effective = stable + burstCapacity
+		}
+	}
+	return capOpenAIAdaptiveCapacity(account, effective)
+}
+
+func stableOpenAIAdaptiveCapacity(account *Account, state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) int {
 	estimated := state.EstimatedCapacity
 	if estimated <= 0 {
 		estimated = cfg.OpenAIAdaptiveSchedulerInitialCapacity
@@ -936,10 +1082,72 @@ func effectiveOpenAIAdaptiveCapacity(account *Account, state openAIAdaptiveAccou
 	if estimated < cfg.OpenAIAdaptiveSchedulerMinCapacity {
 		estimated = cfg.OpenAIAdaptiveSchedulerMinCapacity
 	}
-	if account != nil && account.Concurrency > 0 && account.Concurrency < estimated {
+	initial := initialOpenAIAdaptiveCapacityForAccount(account, cfg)
+	if state.TotalSamples == 0 && estimated < initial {
+		estimated = initial
+	}
+	return capOpenAIAdaptiveCapacity(account, estimated)
+}
+
+func initialOpenAIAdaptiveCapacityForAccount(account *Account, cfg OpenAIAdaptiveSchedulerSettings) int {
+	initial := cfg.OpenAIAdaptiveSchedulerInitialCapacity
+	if initial < cfg.OpenAIAdaptiveSchedulerMinCapacity {
+		initial = cfg.OpenAIAdaptiveSchedulerMinCapacity
+	}
+	if account != nil && account.Concurrency > 0 && cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction > 0 {
+		fractionCapacity := int(math.Ceil(float64(account.Concurrency) * cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction))
+		if fractionCapacity > initial {
+			initial = fractionCapacity
+		}
+	}
+	return capOpenAIAdaptiveCapacity(account, initial)
+}
+
+func capOpenAIAdaptiveCapacity(account *Account, capacity int) int {
+	if capacity <= 0 {
+		return capacity
+	}
+	if account != nil && account.Concurrency > 0 && account.Concurrency < capacity {
 		return account.Concurrency
 	}
-	return estimated
+	return capacity
+}
+
+func nextOpenAIAdaptiveGrowthCapacity(current int, cfg OpenAIAdaptiveSchedulerSettings) int {
+	if current < cfg.OpenAIAdaptiveSchedulerMinCapacity {
+		current = cfg.OpenAIAdaptiveSchedulerMinCapacity
+	}
+	additive := current
+	if current <= math.MaxInt-cfg.OpenAIAdaptiveSchedulerCapacityIncreaseStep {
+		additive = current + cfg.OpenAIAdaptiveSchedulerCapacityIncreaseStep
+	}
+	multiplicative := additive
+	if cfg.OpenAIAdaptiveSchedulerCapacityGrowthFactor > 1 {
+		value := math.Ceil(float64(current) * cfg.OpenAIAdaptiveSchedulerCapacityGrowthFactor)
+		if value > float64(math.MaxInt) {
+			multiplicative = math.MaxInt
+		} else {
+			multiplicative = int(value)
+		}
+	}
+	if multiplicative > additive {
+		return multiplicative
+	}
+	return additive
+}
+
+func shouldProbeOpenAIAdaptiveCapacity(loadInfo *AccountLoadInfo, stableCapacity int, cfg OpenAIAdaptiveSchedulerSettings) bool {
+	if loadInfo == nil {
+		return cfg.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold <= 0
+	}
+	if loadInfo.WaitingCount > 0 {
+		return true
+	}
+	threshold := cfg.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold * 100
+	if threshold <= 0 {
+		return true
+	}
+	return adaptiveLoadRate(loadInfo, stableCapacity) >= threshold
 }
 
 func adaptiveLoadRate(loadInfo *AccountLoadInfo, effectiveCapacity int) float64 {

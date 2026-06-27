@@ -14,6 +14,7 @@ const show = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
 const tooltipStyle = ref({ top: '0px', left: '0px' })
+const viewportMargin = 12
 
 function openTooltip() {
   show.value = true
@@ -68,9 +69,16 @@ function updatePosition() {
   const el = triggerRef.value
   if (!el) return
   const rect = el.getBoundingClientRect()
+  const tooltipWidth = tooltipRef.value?.getBoundingClientRect().width || 256
+  const halfWidth = tooltipWidth / 2
+  const minLeft = viewportMargin + halfWidth
+  const maxLeft = window.innerWidth - viewportMargin - halfWidth
+  const preferredLeft = rect.left + rect.width / 2
+  const left = Math.min(Math.max(preferredLeft, minLeft), Math.max(minLeft, maxLeft))
+
   tooltipStyle.value = {
-    top: `${rect.top + window.scrollY}px`,
-    left: `${rect.left + rect.width / 2 + window.scrollX}px`,
+    top: `${rect.top}px`,
+    left: `${left}px`,
   }
 }
 
@@ -121,7 +129,7 @@ onBeforeUnmount(() => {
         v-show="show"
         role="tooltip"
         :class="[
-          'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
+          'fixed z-[99999] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 -translate-y-full rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10 dark:bg-gray-800',
           props.widthClass,
         ]"
         :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
