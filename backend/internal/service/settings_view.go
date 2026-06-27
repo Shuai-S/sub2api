@@ -218,6 +218,7 @@ type SystemSettings struct {
 
 	// OpenAI 账号调度
 	OpenAIAdvancedSchedulerEnabled bool
+	OpenAIAdaptiveScheduler        OpenAIAdaptiveSchedulerSettings
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled     bool

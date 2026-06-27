@@ -208,6 +208,7 @@ type SystemSettings struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled bool `json:"openai_advanced_scheduler_enabled"`
+	service.OpenAIAdaptiveSchedulerSettings
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`

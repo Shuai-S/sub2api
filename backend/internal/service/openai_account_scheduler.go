@@ -1189,23 +1189,31 @@ func (s *OpenAIGatewayService) getOpenAIAccountScheduler(ctx context.Context) Op
 	if s == nil {
 		return nil
 	}
-	if !s.isOpenAIAdvancedSchedulerEnabled(ctx) {
+	adaptiveEnabled := s.isOpenAIAdaptiveSchedulerEnabled(ctx)
+	if !adaptiveEnabled && !s.isOpenAIAdvancedSchedulerEnabled(ctx) {
 		return nil
 	}
-	s.openaiSchedulerOnce.Do(func() {
-		if s.openaiAccountStats == nil {
-			s.openaiAccountStats = newOpenAIAccountRuntimeStats()
+	s.openaiSchedulerMu.Lock()
+	defer s.openaiSchedulerMu.Unlock()
+	if s.openaiAccountStats == nil {
+		s.openaiAccountStats = newOpenAIAccountRuntimeStats()
+	}
+	if adaptiveEnabled {
+		if _, ok := s.openaiScheduler.(*adaptiveOpenAIAccountScheduler); !ok {
+			s.openaiScheduler = newAdaptiveOpenAIAccountScheduler(s, s.openaiAccountStats)
 		}
-		if s.openaiScheduler == nil {
-			s.openaiScheduler = newDefaultOpenAIAccountScheduler(s, s.openaiAccountStats)
-		}
-	})
+		return s.openaiScheduler
+	}
+	if _, ok := s.openaiScheduler.(*defaultOpenAIAccountScheduler); !ok {
+		s.openaiScheduler = newDefaultOpenAIAccountScheduler(s, s.openaiAccountStats)
+	}
 	return s.openaiScheduler
 }
 
 func resetOpenAIAdvancedSchedulerSettingCacheForTest() {
 	openAIAdvancedSchedulerSettingCache = atomic.Value{}
 	openAIAdvancedSchedulerSettingSF = singleflight.Group{}
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithScheduler(

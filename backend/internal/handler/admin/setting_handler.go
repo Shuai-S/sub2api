@@ -273,6 +273,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      settings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       settings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         settings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIAdaptiveSchedulerSettings:        settings.OpenAIAdaptiveScheduler,
 		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            settings.BalanceLowNotifyRechargeURL,
@@ -617,6 +618,7 @@ type UpdateSettingsRequest struct {
 
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled *bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdaptiveSchedulerSettingsUpdateRequest
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
@@ -686,6 +688,126 @@ type UpdateSettingsRequest struct {
 	AuthSourceDingTalkPlatformQuotas map[string]*service.DefaultPlatformQuotaSetting `json:"auth_source_default_dingtalk_platform_quotas"`
 
 	AllowUserViewErrorRequests *bool `json:"allow_user_view_error_requests"`
+}
+
+type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
+	OpenAIAdaptiveSchedulerEnabled                    *bool    `json:"openai_adaptive_scheduler_enabled"`
+	OpenAIAdaptiveSchedulerMode                       *string  `json:"openai_adaptive_scheduler_mode"`
+	OpenAIAdaptiveSchedulerTopK                       *int     `json:"openai_adaptive_scheduler_top_k"`
+	OpenAIAdaptiveSchedulerExplorationRate            *float64 `json:"openai_adaptive_scheduler_exploration_rate"`
+	OpenAIAdaptiveSchedulerSoftmaxTemperature         *float64 `json:"openai_adaptive_scheduler_softmax_temperature"`
+	OpenAIAdaptiveSchedulerMinCostMultiplier          *float64 `json:"openai_adaptive_scheduler_min_cost_multiplier"`
+	OpenAIAdaptiveSchedulerThompsonEnabled            *bool    `json:"openai_adaptive_scheduler_thompson_enabled"`
+	OpenAIAdaptiveSchedulerThompsonPriorAlpha         *float64 `json:"openai_adaptive_scheduler_thompson_prior_alpha"`
+	OpenAIAdaptiveSchedulerThompsonPriorBeta          *float64 `json:"openai_adaptive_scheduler_thompson_prior_beta"`
+	OpenAIAdaptiveSchedulerInitialCapacity            *int     `json:"openai_adaptive_scheduler_initial_capacity"`
+	OpenAIAdaptiveSchedulerMinCapacity                *int     `json:"openai_adaptive_scheduler_min_capacity"`
+	OpenAIAdaptiveSchedulerCapacityIncreaseStep       *int     `json:"openai_adaptive_scheduler_capacity_increase_step"`
+	OpenAIAdaptiveSchedulerCapacityDecreaseFactor     *float64 `json:"openai_adaptive_scheduler_capacity_decrease_factor"`
+	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold *float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
+	OpenAIAdaptiveSchedulerCapacitySuccessThreshold   *float64 `json:"openai_adaptive_scheduler_capacity_success_threshold"`
+	OpenAIAdaptiveSchedulerCapacityFailureThreshold   *int     `json:"openai_adaptive_scheduler_capacity_failure_threshold"`
+	OpenAIAdaptiveSchedulerSuccessEMAAlpha            *float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
+	OpenAIAdaptiveSchedulerErrorEMAAlpha              *float64 `json:"openai_adaptive_scheduler_error_ema_alpha"`
+	OpenAIAdaptiveSchedulerLatencyEMAAlpha            *float64 `json:"openai_adaptive_scheduler_latency_ema_alpha"`
+	OpenAIAdaptiveSchedulerTTFTEMAAlpha               *float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
+	OpenAIAdaptiveSchedulerCooldownBaseSeconds        *int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
+	OpenAIAdaptiveSchedulerCooldownMaxSeconds         *int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
+	OpenAIAdaptiveSchedulerWeightSuccess              *float64 `json:"openai_adaptive_scheduler_weight_success"`
+	OpenAIAdaptiveSchedulerWeightCost                 *float64 `json:"openai_adaptive_scheduler_weight_cost"`
+	OpenAIAdaptiveSchedulerWeightCapacity             *float64 `json:"openai_adaptive_scheduler_weight_capacity"`
+	OpenAIAdaptiveSchedulerWeightLatency              *float64 `json:"openai_adaptive_scheduler_weight_latency"`
+	OpenAIAdaptiveSchedulerWeightStability            *float64 `json:"openai_adaptive_scheduler_weight_stability"`
+	OpenAIAdaptiveSchedulerWeightExploration          *float64 `json:"openai_adaptive_scheduler_weight_exploration"`
+}
+
+func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedulerSettings, req OpenAIAdaptiveSchedulerSettingsUpdateRequest) service.OpenAIAdaptiveSchedulerSettings {
+	settings := previous
+	if req.OpenAIAdaptiveSchedulerEnabled != nil {
+		settings.OpenAIAdaptiveSchedulerEnabled = *req.OpenAIAdaptiveSchedulerEnabled
+	}
+	if req.OpenAIAdaptiveSchedulerMode != nil {
+		settings.OpenAIAdaptiveSchedulerMode = strings.TrimSpace(*req.OpenAIAdaptiveSchedulerMode)
+	}
+	if req.OpenAIAdaptiveSchedulerTopK != nil {
+		settings.OpenAIAdaptiveSchedulerTopK = *req.OpenAIAdaptiveSchedulerTopK
+	}
+	if req.OpenAIAdaptiveSchedulerExplorationRate != nil {
+		settings.OpenAIAdaptiveSchedulerExplorationRate = *req.OpenAIAdaptiveSchedulerExplorationRate
+	}
+	if req.OpenAIAdaptiveSchedulerSoftmaxTemperature != nil {
+		settings.OpenAIAdaptiveSchedulerSoftmaxTemperature = *req.OpenAIAdaptiveSchedulerSoftmaxTemperature
+	}
+	if req.OpenAIAdaptiveSchedulerMinCostMultiplier != nil {
+		settings.OpenAIAdaptiveSchedulerMinCostMultiplier = *req.OpenAIAdaptiveSchedulerMinCostMultiplier
+	}
+	if req.OpenAIAdaptiveSchedulerThompsonEnabled != nil {
+		settings.OpenAIAdaptiveSchedulerThompsonEnabled = *req.OpenAIAdaptiveSchedulerThompsonEnabled
+	}
+	if req.OpenAIAdaptiveSchedulerThompsonPriorAlpha != nil {
+		settings.OpenAIAdaptiveSchedulerThompsonPriorAlpha = *req.OpenAIAdaptiveSchedulerThompsonPriorAlpha
+	}
+	if req.OpenAIAdaptiveSchedulerThompsonPriorBeta != nil {
+		settings.OpenAIAdaptiveSchedulerThompsonPriorBeta = *req.OpenAIAdaptiveSchedulerThompsonPriorBeta
+	}
+	if req.OpenAIAdaptiveSchedulerInitialCapacity != nil {
+		settings.OpenAIAdaptiveSchedulerInitialCapacity = *req.OpenAIAdaptiveSchedulerInitialCapacity
+	}
+	if req.OpenAIAdaptiveSchedulerMinCapacity != nil {
+		settings.OpenAIAdaptiveSchedulerMinCapacity = *req.OpenAIAdaptiveSchedulerMinCapacity
+	}
+	if req.OpenAIAdaptiveSchedulerCapacityIncreaseStep != nil {
+		settings.OpenAIAdaptiveSchedulerCapacityIncreaseStep = *req.OpenAIAdaptiveSchedulerCapacityIncreaseStep
+	}
+	if req.OpenAIAdaptiveSchedulerCapacityDecreaseFactor != nil {
+		settings.OpenAIAdaptiveSchedulerCapacityDecreaseFactor = *req.OpenAIAdaptiveSchedulerCapacityDecreaseFactor
+	}
+	if req.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold != nil {
+		settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = *req.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold
+	}
+	if req.OpenAIAdaptiveSchedulerCapacitySuccessThreshold != nil {
+		settings.OpenAIAdaptiveSchedulerCapacitySuccessThreshold = *req.OpenAIAdaptiveSchedulerCapacitySuccessThreshold
+	}
+	if req.OpenAIAdaptiveSchedulerCapacityFailureThreshold != nil {
+		settings.OpenAIAdaptiveSchedulerCapacityFailureThreshold = *req.OpenAIAdaptiveSchedulerCapacityFailureThreshold
+	}
+	if req.OpenAIAdaptiveSchedulerSuccessEMAAlpha != nil {
+		settings.OpenAIAdaptiveSchedulerSuccessEMAAlpha = *req.OpenAIAdaptiveSchedulerSuccessEMAAlpha
+	}
+	if req.OpenAIAdaptiveSchedulerErrorEMAAlpha != nil {
+		settings.OpenAIAdaptiveSchedulerErrorEMAAlpha = *req.OpenAIAdaptiveSchedulerErrorEMAAlpha
+	}
+	if req.OpenAIAdaptiveSchedulerLatencyEMAAlpha != nil {
+		settings.OpenAIAdaptiveSchedulerLatencyEMAAlpha = *req.OpenAIAdaptiveSchedulerLatencyEMAAlpha
+	}
+	if req.OpenAIAdaptiveSchedulerTTFTEMAAlpha != nil {
+		settings.OpenAIAdaptiveSchedulerTTFTEMAAlpha = *req.OpenAIAdaptiveSchedulerTTFTEMAAlpha
+	}
+	if req.OpenAIAdaptiveSchedulerCooldownBaseSeconds != nil {
+		settings.OpenAIAdaptiveSchedulerCooldownBaseSeconds = *req.OpenAIAdaptiveSchedulerCooldownBaseSeconds
+	}
+	if req.OpenAIAdaptiveSchedulerCooldownMaxSeconds != nil {
+		settings.OpenAIAdaptiveSchedulerCooldownMaxSeconds = *req.OpenAIAdaptiveSchedulerCooldownMaxSeconds
+	}
+	if req.OpenAIAdaptiveSchedulerWeightSuccess != nil {
+		settings.OpenAIAdaptiveSchedulerWeightSuccess = *req.OpenAIAdaptiveSchedulerWeightSuccess
+	}
+	if req.OpenAIAdaptiveSchedulerWeightCost != nil {
+		settings.OpenAIAdaptiveSchedulerWeightCost = *req.OpenAIAdaptiveSchedulerWeightCost
+	}
+	if req.OpenAIAdaptiveSchedulerWeightCapacity != nil {
+		settings.OpenAIAdaptiveSchedulerWeightCapacity = *req.OpenAIAdaptiveSchedulerWeightCapacity
+	}
+	if req.OpenAIAdaptiveSchedulerWeightLatency != nil {
+		settings.OpenAIAdaptiveSchedulerWeightLatency = *req.OpenAIAdaptiveSchedulerWeightLatency
+	}
+	if req.OpenAIAdaptiveSchedulerWeightStability != nil {
+		settings.OpenAIAdaptiveSchedulerWeightStability = *req.OpenAIAdaptiveSchedulerWeightStability
+	}
+	if req.OpenAIAdaptiveSchedulerWeightExploration != nil {
+		settings.OpenAIAdaptiveSchedulerWeightExploration = *req.OpenAIAdaptiveSchedulerWeightExploration
+	}
+	return service.NormalizeOpenAIAdaptiveSchedulerSettings(settings)
 }
 
 // UpdateSettings 更新系统设置
@@ -1784,6 +1906,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		OpenAIAdaptiveScheduler: mergeOpenAIAdaptiveSchedulerSettings(previousSettings.OpenAIAdaptiveScheduler, req.OpenAIAdaptiveSchedulerSettingsUpdateRequest),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2156,6 +2279,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:       updatedSettings.PaymentVisibleMethodWxpayEnabled,
 		OpenAIAdvancedSchedulerEnabled:         updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIAdaptiveSchedulerSettings:        updatedSettings.OpenAIAdaptiveScheduler,
 		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            updatedSettings.BalanceLowNotifyRechargeURL,
@@ -2664,6 +2788,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
+	}
+	if before.OpenAIAdaptiveScheduler != after.OpenAIAdaptiveScheduler {
+		changed = append(changed, "openai_adaptive_scheduler")
 	}
 	// 余额、订阅到期与账号限额通知
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {

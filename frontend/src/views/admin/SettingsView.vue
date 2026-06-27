@@ -4014,6 +4014,131 @@
                 </div>
                 <Toggle v-model="form.openai_advanced_scheduler_enabled" />
               </div>
+
+              <div
+                class="space-y-4 border-t border-gray-200 pt-5 dark:border-dark-700"
+              >
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiAdaptiveScheduler.title") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.openaiAdaptiveScheduler.description") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="form.openai_adaptive_scheduler_enabled" />
+                </div>
+
+                <div
+                  class="space-y-4"
+                  :class="{
+                    'pointer-events-none opacity-60':
+                      !form.openai_adaptive_scheduler_enabled,
+                  }"
+                >
+                  <div class="grid gap-4 md:grid-cols-3">
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.mode") }}
+                      </label>
+                      <select v-model="form.openai_adaptive_scheduler_mode" class="input">
+                        <option value="shadow">
+                          {{ t("admin.settings.openaiAdaptiveScheduler.modes.shadow") }}
+                        </option>
+                        <option value="enforce">
+                          {{ t("admin.settings.openaiAdaptiveScheduler.modes.enforce") }}
+                        </option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.topK") }}
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_top_k" class="input" type="number" min="1" max="100" step="1" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.explorationRate") }}
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_exploration_rate" class="input" type="number" min="0" max="1" step="0.01" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.softmaxTemperature") }}
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_softmax_temperature" class="input" type="number" min="0.01" max="10" step="0.01" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.minCostMultiplier") }}
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_min_cost_multiplier" class="input" type="number" min="0.0001" step="0.01" />
+                    </div>
+                    <div class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 dark:border-dark-700">
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.thompson") }}
+                      </span>
+                      <Toggle v-model="form.openai_adaptive_scheduler_thompson_enabled" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.thompsonAlpha") }}
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_alpha" class="input" type="number" min="0.01" step="0.1" />
+                    </div>
+                    <div>
+                      <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.openaiAdaptiveScheduler.thompsonBeta") }}
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_beta" class="input" type="number" min="0.01" step="0.1" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiAdaptiveScheduler.capacityLearning") }}
+                    </h3>
+                    <div class="grid gap-4 md:grid-cols-4">
+                      <input v-model.number="form.openai_adaptive_scheduler_initial_capacity" class="input" type="number" min="1" step="1" :placeholder="t('admin.settings.openaiAdaptiveScheduler.initialCapacity')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_min_capacity" class="input" type="number" min="1" step="1" :placeholder="t('admin.settings.openaiAdaptiveScheduler.minCapacity')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_capacity_increase_step" class="input" type="number" min="1" step="1" :placeholder="t('admin.settings.openaiAdaptiveScheduler.increaseStep')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_capacity_decrease_factor" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.decreaseFactor')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_capacity_probe_load_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.probeThreshold')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_capacity_success_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.successThreshold')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_capacity_failure_threshold" class="input" type="number" min="1" step="1" :placeholder="t('admin.settings.openaiAdaptiveScheduler.failureThreshold')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_cooldown_base_seconds" class="input" type="number" min="0" step="1" :placeholder="t('admin.settings.openaiAdaptiveScheduler.cooldownBase')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_cooldown_max_seconds" class="input" type="number" min="0" step="1" :placeholder="t('admin.settings.openaiAdaptiveScheduler.cooldownMax')" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiAdaptiveScheduler.ema") }}
+                    </h3>
+                    <div class="grid gap-4 md:grid-cols-4">
+                      <input v-model.number="form.openai_adaptive_scheduler_success_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.successEma')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_error_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.errorEma')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_latency_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.latencyEma')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_ttft_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.ttftEma')" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.openaiAdaptiveScheduler.weights") }}
+                    </h3>
+                    <div class="grid gap-4 md:grid-cols-6">
+                      <input v-model.number="form.openai_adaptive_scheduler_weight_success" class="input" type="number" min="0" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.weightSuccess')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_weight_cost" class="input" type="number" min="0" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.weightCost')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_weight_capacity" class="input" type="number" min="0" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.weightCapacity')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_weight_latency" class="input" type="number" min="0" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.weightLatency')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_weight_stability" class="input" type="number" min="0" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.weightStability')" />
+                      <input v-model.number="form.openai_adaptive_scheduler_weight_exploration" class="input" type="number" min="0" step="0.01" :placeholder="t('admin.settings.openaiAdaptiveScheduler.weightExploration')" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -7878,6 +8003,34 @@ type SettingsForm = Omit<
   google_oauth_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
+  openai_adaptive_scheduler_enabled: boolean;
+  openai_adaptive_scheduler_mode: string;
+  openai_adaptive_scheduler_top_k: number;
+  openai_adaptive_scheduler_exploration_rate: number;
+  openai_adaptive_scheduler_softmax_temperature: number;
+  openai_adaptive_scheduler_min_cost_multiplier: number;
+  openai_adaptive_scheduler_thompson_enabled: boolean;
+  openai_adaptive_scheduler_thompson_prior_alpha: number;
+  openai_adaptive_scheduler_thompson_prior_beta: number;
+  openai_adaptive_scheduler_initial_capacity: number;
+  openai_adaptive_scheduler_min_capacity: number;
+  openai_adaptive_scheduler_capacity_increase_step: number;
+  openai_adaptive_scheduler_capacity_decrease_factor: number;
+  openai_adaptive_scheduler_capacity_probe_load_threshold: number;
+  openai_adaptive_scheduler_capacity_success_threshold: number;
+  openai_adaptive_scheduler_capacity_failure_threshold: number;
+  openai_adaptive_scheduler_success_ema_alpha: number;
+  openai_adaptive_scheduler_error_ema_alpha: number;
+  openai_adaptive_scheduler_latency_ema_alpha: number;
+  openai_adaptive_scheduler_ttft_ema_alpha: number;
+  openai_adaptive_scheduler_cooldown_base_seconds: number;
+  openai_adaptive_scheduler_cooldown_max_seconds: number;
+  openai_adaptive_scheduler_weight_success: number;
+  openai_adaptive_scheduler_weight_cost: number;
+  openai_adaptive_scheduler_weight_capacity: number;
+  openai_adaptive_scheduler_weight_latency: number;
+  openai_adaptive_scheduler_weight_stability: number;
+  openai_adaptive_scheduler_weight_exploration: number;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
@@ -8069,6 +8222,34 @@ const form = reactive<SettingsForm>({
   // 分组隔离
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
+  openai_adaptive_scheduler_enabled: false,
+  openai_adaptive_scheduler_mode: "shadow",
+  openai_adaptive_scheduler_top_k: 10,
+  openai_adaptive_scheduler_exploration_rate: 0.05,
+  openai_adaptive_scheduler_softmax_temperature: 0.35,
+  openai_adaptive_scheduler_min_cost_multiplier: 0.01,
+  openai_adaptive_scheduler_thompson_enabled: true,
+  openai_adaptive_scheduler_thompson_prior_alpha: 1,
+  openai_adaptive_scheduler_thompson_prior_beta: 1,
+  openai_adaptive_scheduler_initial_capacity: 1,
+  openai_adaptive_scheduler_min_capacity: 1,
+  openai_adaptive_scheduler_capacity_increase_step: 1,
+  openai_adaptive_scheduler_capacity_decrease_factor: 0.6,
+  openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
+  openai_adaptive_scheduler_capacity_success_threshold: 0.98,
+  openai_adaptive_scheduler_capacity_failure_threshold: 3,
+  openai_adaptive_scheduler_success_ema_alpha: 0.05,
+  openai_adaptive_scheduler_error_ema_alpha: 0.1,
+  openai_adaptive_scheduler_latency_ema_alpha: 0.05,
+  openai_adaptive_scheduler_ttft_ema_alpha: 0.05,
+  openai_adaptive_scheduler_cooldown_base_seconds: 60,
+  openai_adaptive_scheduler_cooldown_max_seconds: 600,
+  openai_adaptive_scheduler_weight_success: 0.3,
+  openai_adaptive_scheduler_weight_cost: 0.25,
+  openai_adaptive_scheduler_weight_capacity: 0.2,
+  openai_adaptive_scheduler_weight_latency: 0.15,
+  openai_adaptive_scheduler_weight_stability: 0.05,
+  openai_adaptive_scheduler_weight_exploration: 0.05,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
@@ -9345,6 +9526,63 @@ async function saveSettings() {
         form.payment_cancel_rate_limit_window_mode,
       payment_alipay_force_qrcode: form.payment_alipay_force_qrcode,
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
+      openai_adaptive_scheduler_enabled:
+        form.openai_adaptive_scheduler_enabled,
+      openai_adaptive_scheduler_mode: form.openai_adaptive_scheduler_mode,
+      openai_adaptive_scheduler_top_k:
+        Number(form.openai_adaptive_scheduler_top_k) || 10,
+      openai_adaptive_scheduler_exploration_rate:
+        Number(form.openai_adaptive_scheduler_exploration_rate) || 0,
+      openai_adaptive_scheduler_softmax_temperature:
+        Number(form.openai_adaptive_scheduler_softmax_temperature) || 0.35,
+      openai_adaptive_scheduler_min_cost_multiplier:
+        Number(form.openai_adaptive_scheduler_min_cost_multiplier) || 0.01,
+      openai_adaptive_scheduler_thompson_enabled:
+        form.openai_adaptive_scheduler_thompson_enabled,
+      openai_adaptive_scheduler_thompson_prior_alpha:
+        Number(form.openai_adaptive_scheduler_thompson_prior_alpha) || 1,
+      openai_adaptive_scheduler_thompson_prior_beta:
+        Number(form.openai_adaptive_scheduler_thompson_prior_beta) || 1,
+      openai_adaptive_scheduler_initial_capacity:
+        Number(form.openai_adaptive_scheduler_initial_capacity) || 1,
+      openai_adaptive_scheduler_min_capacity:
+        Number(form.openai_adaptive_scheduler_min_capacity) || 1,
+      openai_adaptive_scheduler_capacity_increase_step:
+        Number(form.openai_adaptive_scheduler_capacity_increase_step) || 1,
+      openai_adaptive_scheduler_capacity_decrease_factor:
+        Number(form.openai_adaptive_scheduler_capacity_decrease_factor) || 0.6,
+      openai_adaptive_scheduler_capacity_probe_load_threshold:
+        Number(form.openai_adaptive_scheduler_capacity_probe_load_threshold) ||
+        0.8,
+      openai_adaptive_scheduler_capacity_success_threshold:
+        Number(form.openai_adaptive_scheduler_capacity_success_threshold) ||
+        0.98,
+      openai_adaptive_scheduler_capacity_failure_threshold:
+        Number(form.openai_adaptive_scheduler_capacity_failure_threshold) || 3,
+      openai_adaptive_scheduler_success_ema_alpha:
+        Number(form.openai_adaptive_scheduler_success_ema_alpha) || 0.05,
+      openai_adaptive_scheduler_error_ema_alpha:
+        Number(form.openai_adaptive_scheduler_error_ema_alpha) || 0.1,
+      openai_adaptive_scheduler_latency_ema_alpha:
+        Number(form.openai_adaptive_scheduler_latency_ema_alpha) || 0.05,
+      openai_adaptive_scheduler_ttft_ema_alpha:
+        Number(form.openai_adaptive_scheduler_ttft_ema_alpha) || 0.05,
+      openai_adaptive_scheduler_cooldown_base_seconds:
+        Number(form.openai_adaptive_scheduler_cooldown_base_seconds) || 60,
+      openai_adaptive_scheduler_cooldown_max_seconds:
+        Number(form.openai_adaptive_scheduler_cooldown_max_seconds) || 600,
+      openai_adaptive_scheduler_weight_success:
+        Number(form.openai_adaptive_scheduler_weight_success) || 0,
+      openai_adaptive_scheduler_weight_cost:
+        Number(form.openai_adaptive_scheduler_weight_cost) || 0,
+      openai_adaptive_scheduler_weight_capacity:
+        Number(form.openai_adaptive_scheduler_weight_capacity) || 0,
+      openai_adaptive_scheduler_weight_latency:
+        Number(form.openai_adaptive_scheduler_weight_latency) || 0,
+      openai_adaptive_scheduler_weight_stability:
+        Number(form.openai_adaptive_scheduler_weight_stability) || 0,
+      openai_adaptive_scheduler_weight_exploration:
+        Number(form.openai_adaptive_scheduler_weight_exploration) || 0,
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

@@ -223,6 +223,10 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		"payment_visible_method_alipay_enabled": true,
 		"payment_visible_method_wxpay_enabled":  false,
 		"openai_advanced_scheduler_enabled":     true,
+		"openai_adaptive_scheduler_enabled":     true,
+		"openai_adaptive_scheduler_mode":        "enforce",
+		"openai_adaptive_scheduler_top_k":       15,
+		"openai_adaptive_scheduler_weight_cost": 0.35,
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -240,6 +244,10 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values[service.SettingPaymentVisibleMethodAlipayEnabled])
 	require.Equal(t, "false", repo.values[service.SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.values["openai_advanced_scheduler_enabled"])
+	require.Equal(t, "true", repo.values["openai_adaptive_scheduler_enabled"])
+	require.Equal(t, "enforce", repo.values["openai_adaptive_scheduler_mode"])
+	require.Equal(t, "15", repo.values["openai_adaptive_scheduler_top_k"])
+	require.Equal(t, "0.35", repo.values["openai_adaptive_scheduler_weight_cost"])
 
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -250,6 +258,10 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["payment_visible_method_alipay_enabled"])
 	require.Equal(t, false, data["payment_visible_method_wxpay_enabled"])
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
+	require.Equal(t, true, data["openai_adaptive_scheduler_enabled"])
+	require.Equal(t, "enforce", data["openai_adaptive_scheduler_mode"])
+	require.Equal(t, float64(15), data["openai_adaptive_scheduler_top_k"])
+	require.Equal(t, 0.35, data["openai_adaptive_scheduler_weight_cost"])
 }
 
 func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodSource(t *testing.T) {

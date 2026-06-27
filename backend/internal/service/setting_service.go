@@ -2221,6 +2221,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
+	for key, value := range openAIAdaptiveSchedulerSettingsToMap(settings.OpenAIAdaptiveScheduler) {
+		updates[key] = value
+	}
 
 	// 余额、订阅到期与账号限额通知
 	updates[SettingKeyBalanceLowNotifyEnabled] = strconv.FormatBool(settings.BalanceLowNotifyEnabled)
@@ -2369,6 +2372,12 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
 		enabled:   settings.OpenAIAdvancedSchedulerEnabled,
 		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+	})
+	openAIAdaptiveSchedulerSettingSF.Forget("openai_adaptive_scheduler_settings")
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings:  NormalizeOpenAIAdaptiveSchedulerSettings(settings.OpenAIAdaptiveScheduler),
+		complete:  true,
+		expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
 	})
 	// Invalidate the quota auto-pause cache and let the next read trigger a fresh load.
 	// We can't know from here whether ops_advanced_settings was also touched, so be
@@ -3183,6 +3192,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 		SettingKeyAllowUserViewErrorRequests: "false",
 	}
+	for key, value := range openAIAdaptiveSchedulerDefaultSettingValues() {
+		defaults[key] = value
+	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
 }
@@ -3737,6 +3749,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
 	result.PaymentVisibleMethodWxpayEnabled = settings[SettingPaymentVisibleMethodWxpayEnabled] == "true"
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
+	result.OpenAIAdaptiveScheduler = parseOpenAIAdaptiveSchedulerSettings(settings)
 
 	// 余额、订阅到期与账号限额通知
 	result.BalanceLowNotifyEnabled = settings[SettingKeyBalanceLowNotifyEnabled] == "true"

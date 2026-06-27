@@ -270,6 +270,36 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 		PaymentVisibleMethodAlipayEnabled: true,
 		PaymentVisibleMethodWxpayEnabled:  false,
 		OpenAIAdvancedSchedulerEnabled:    true,
+		OpenAIAdaptiveScheduler: OpenAIAdaptiveSchedulerSettings{
+			OpenAIAdaptiveSchedulerEnabled:                    true,
+			OpenAIAdaptiveSchedulerMode:                       openAIAdaptiveSchedulerModeEnforce,
+			OpenAIAdaptiveSchedulerTopK:                       20,
+			OpenAIAdaptiveSchedulerExplorationRate:            0.07,
+			OpenAIAdaptiveSchedulerSoftmaxTemperature:         0.5,
+			OpenAIAdaptiveSchedulerMinCostMultiplier:          0.02,
+			OpenAIAdaptiveSchedulerThompsonEnabled:            false,
+			OpenAIAdaptiveSchedulerThompsonPriorAlpha:         2,
+			OpenAIAdaptiveSchedulerThompsonPriorBeta:          3,
+			OpenAIAdaptiveSchedulerInitialCapacity:            5,
+			OpenAIAdaptiveSchedulerMinCapacity:                2,
+			OpenAIAdaptiveSchedulerCapacityIncreaseStep:       4,
+			OpenAIAdaptiveSchedulerCapacityDecreaseFactor:     0.4,
+			OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.75,
+			OpenAIAdaptiveSchedulerCapacitySuccessThreshold:   0.95,
+			OpenAIAdaptiveSchedulerCapacityFailureThreshold:   4,
+			OpenAIAdaptiveSchedulerSuccessEMAAlpha:            0.06,
+			OpenAIAdaptiveSchedulerErrorEMAAlpha:              0.11,
+			OpenAIAdaptiveSchedulerLatencyEMAAlpha:            0.08,
+			OpenAIAdaptiveSchedulerTTFTEMAAlpha:               0.09,
+			OpenAIAdaptiveSchedulerCooldownBaseSeconds:        30,
+			OpenAIAdaptiveSchedulerCooldownMaxSeconds:         300,
+			OpenAIAdaptiveSchedulerWeightSuccess:              0.4,
+			OpenAIAdaptiveSchedulerWeightCost:                 0.3,
+			OpenAIAdaptiveSchedulerWeightCapacity:             0.2,
+			OpenAIAdaptiveSchedulerWeightLatency:              0.1,
+			OpenAIAdaptiveSchedulerWeightStability:            0.05,
+			OpenAIAdaptiveSchedulerWeightExploration:          0.02,
+		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, VisibleMethodSourceOfficialAlipay, repo.updates[SettingPaymentVisibleMethodAlipaySource])
@@ -277,6 +307,34 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "true", repo.updates[SettingPaymentVisibleMethodAlipayEnabled])
 	require.Equal(t, "false", repo.updates[SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
+	require.Equal(t, "true", repo.updates[openAIAdaptiveSchedulerEnabledKey])
+	require.Equal(t, "enforce", repo.updates[openAIAdaptiveSchedulerModeKey])
+	require.Equal(t, "20", repo.updates[openAIAdaptiveSchedulerTopKKey])
+	require.Equal(t, "0.07", repo.updates[openAIAdaptiveSchedulerExplorationRateKey])
+	require.Equal(t, "0.5", repo.updates[openAIAdaptiveSchedulerSoftmaxTemperatureKey])
+	require.Equal(t, "0.02", repo.updates[openAIAdaptiveSchedulerMinCostMultiplierKey])
+	require.Equal(t, "false", repo.updates[openAIAdaptiveSchedulerThompsonEnabledKey])
+	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerThompsonPriorAlphaKey])
+	require.Equal(t, "3", repo.updates[openAIAdaptiveSchedulerThompsonPriorBetaKey])
+	require.Equal(t, "5", repo.updates[openAIAdaptiveSchedulerInitialCapacityKey])
+	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerMinCapacityKey])
+	require.Equal(t, "4", repo.updates[openAIAdaptiveSchedulerCapacityIncreaseStepKey])
+	require.Equal(t, "0.4", repo.updates[openAIAdaptiveSchedulerCapacityDecreaseFactorKey])
+	require.Equal(t, "0.75", repo.updates[openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey])
+	require.Equal(t, "0.95", repo.updates[openAIAdaptiveSchedulerCapacitySuccessThresholdKey])
+	require.Equal(t, "4", repo.updates[openAIAdaptiveSchedulerCapacityFailureThresholdKey])
+	require.Equal(t, "0.06", repo.updates[openAIAdaptiveSchedulerSuccessEMAAlphaKey])
+	require.Equal(t, "0.11", repo.updates[openAIAdaptiveSchedulerErrorEMAAlphaKey])
+	require.Equal(t, "0.08", repo.updates[openAIAdaptiveSchedulerLatencyEMAAlphaKey])
+	require.Equal(t, "0.09", repo.updates[openAIAdaptiveSchedulerTTFTEMAAlphaKey])
+	require.Equal(t, "30", repo.updates[openAIAdaptiveSchedulerCooldownBaseSecondsKey])
+	require.Equal(t, "300", repo.updates[openAIAdaptiveSchedulerCooldownMaxSecondsKey])
+	require.Equal(t, "0.4", repo.updates[openAIAdaptiveSchedulerWeightSuccessKey])
+	require.Equal(t, "0.3", repo.updates[openAIAdaptiveSchedulerWeightCostKey])
+	require.Equal(t, "0.2", repo.updates[openAIAdaptiveSchedulerWeightCapacityKey])
+	require.Equal(t, "0.1", repo.updates[openAIAdaptiveSchedulerWeightLatencyKey])
+	require.Equal(t, "0.05", repo.updates[openAIAdaptiveSchedulerWeightStabilityKey])
+	require.Equal(t, "0.02", repo.updates[openAIAdaptiveSchedulerWeightExplorationKey])
 }
 
 func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T) {

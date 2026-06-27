@@ -361,7 +361,7 @@ type OpenAIGatewayService struct {
 
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
-	openaiSchedulerOnce           sync.Once
+	openaiSchedulerMu             sync.Mutex
 	openaiWSPassthroughDialerOnce sync.Once
 	openaiWSPool                  *openAIWSConnPool
 	openaiWSStateStore            OpenAIWSStateStore
