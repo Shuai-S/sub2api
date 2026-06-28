@@ -4056,28 +4056,28 @@
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.topK") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.topK')" />
                       </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_top_k" class="input" type="number" min="1" max="100" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      <input v-model.number="form.openai_adaptive_scheduler_top_k" class="input" type="number" min="1" max="100" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_top_k')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
                     <div>
                       <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.explorationRate") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.explorationRate')" />
                       </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_exploration_rate" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      <input v-model.number="form.openai_adaptive_scheduler_exploration_rate" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_exploration_rate')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
                     <div>
                       <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.softmaxTemperature") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.softmaxTemperature')" />
                       </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_softmax_temperature" class="input" type="number" min="0.01" max="10" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      <input v-model.number="form.openai_adaptive_scheduler_softmax_temperature" class="input" type="number" min="0.01" max="10" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_softmax_temperature')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
                     <div>
                       <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.minCostMultiplier") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minCostMultiplier')" />
                       </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_min_cost_multiplier" class="input" type="number" min="0.0001" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      <input v-model.number="form.openai_adaptive_scheduler_min_cost_multiplier" class="input" type="number" min="0.0001" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_min_cost_multiplier')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
                     <div class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 dark:border-dark-700">
                       <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -4091,14 +4091,14 @@
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.thompsonAlpha") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.thompsonAlpha')" />
                       </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_alpha" class="input" type="number" min="0.01" step="0.1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_alpha" class="input" type="number" min="0.01" step="0.1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_thompson_prior_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
                     <div>
                       <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.thompsonBeta") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.thompsonBeta')" />
                       </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_beta" class="input" type="number" min="0.01" step="0.1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_beta" class="input" type="number" min="0.01" step="0.1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_thompson_prior_beta')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
                   </div>
 
@@ -4113,49 +4113,49 @@
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.minCapacity") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minCapacity')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_min_capacity" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_min_capacity" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_min_capacity')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.increaseStep") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.increaseStep')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_increase_step" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_capacity_increase_step" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_increase_step')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.probeThreshold") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.probeThreshold')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_probe_load_threshold" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_capacity_probe_load_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_probe_load_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.successThreshold") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.successThreshold')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_success_threshold" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_capacity_success_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_success_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.failureThreshold") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.failureThreshold')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_failure_threshold" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_capacity_failure_threshold" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_failure_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.cooldownBase") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.cooldownBase')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_cooldown_base_seconds" class="input" type="number" min="0" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_cooldown_base_seconds" class="input" type="number" min="0" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_cooldown_base_seconds')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.cooldownMax") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.cooldownMax')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_cooldown_max_seconds" class="input" type="number" min="0" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_cooldown_max_seconds" class="input" type="number" min="0" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_cooldown_max_seconds')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                     </div>
                   </div>
@@ -4171,63 +4171,63 @@
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.initialCapacityFraction") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.initialCapacityFraction')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_initial_capacity_fraction" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_initial_capacity_fraction" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_initial_capacity_fraction')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.growthFactor") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.growthFactor')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_growth_factor" class="input" type="number" min="1" max="10" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_capacity_growth_factor" class="input" type="number" min="1" max="10" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_growth_factor')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.burstProbeRatio") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.burstProbeRatio')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_burst_probe_ratio" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_burst_probe_ratio" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_burst_probe_ratio')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.minRecentSamplesForShrink") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minRecentSamplesForShrink')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_min_recent_samples_for_shrink" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_min_recent_samples_for_shrink" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_min_recent_samples_for_shrink')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkErrorThreshold") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkErrorThreshold')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_shrink_error_threshold" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_shrink_error_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_error_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkFactorSoft") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorSoft')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_soft" class="input" type="number" min="0.01" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_soft" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_factor_soft')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkFactorHard") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorHard')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_hard" class="input" type="number" min="0.01" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_hard" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_factor_hard')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.halfOpenProbeCapacity") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.halfOpenProbeCapacity')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_half_open_probe_capacity" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_half_open_probe_capacity" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_half_open_probe_capacity')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.learningWindowSeconds") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.learningWindowSeconds')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_learning_window_seconds" class="input" type="number" min="0" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_learning_window_seconds" class="input" type="number" min="0" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_learning_window_seconds')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                     </div>
                   </div>
@@ -4243,28 +4243,28 @@
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.successEma") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.successEma')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_success_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_success_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_success_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.errorEma") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.errorEma')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_error_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_error_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_error_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.latencyEma") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.latencyEma')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_latency_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_latency_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_latency_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.ttftEma") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.ttftEma')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_ttft_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_ttft_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_ttft_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                     </div>
                   </div>
@@ -4280,42 +4280,42 @@
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightSuccess") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightSuccess')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_success" class="input" type="number" min="0" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_weight_success" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_success')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightCost") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightCost')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_cost" class="input" type="number" min="0" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_weight_cost" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_cost')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightCapacity") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightCapacity')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_capacity" class="input" type="number" min="0" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_weight_capacity" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_capacity')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightLatency") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightLatency')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_latency" class="input" type="number" min="0" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_weight_latency" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_latency')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightStability") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightStability')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_stability" class="input" type="number" min="0" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_weight_stability" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_stability')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightExploration") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightExploration')" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_exploration" class="input" type="number" min="0" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input v-model.number="form.openai_adaptive_scheduler_weight_exploration" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_exploration')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                     </div>
                   </div>
@@ -8275,6 +8275,12 @@ const openAIAdaptiveSchedulerRecommendedValues = {
 
 type OpenAIAdaptiveSchedulerRecommendedKey =
   keyof typeof openAIAdaptiveSchedulerRecommendedValues;
+
+function openAIAdaptiveSchedulerPlaceholder(
+  key: OpenAIAdaptiveSchedulerRecommendedKey,
+): string {
+  return String(openAIAdaptiveSchedulerRecommendedValues[key]);
+}
 
 function openAIAdaptiveSchedulerNumber(
   key: OpenAIAdaptiveSchedulerRecommendedKey,

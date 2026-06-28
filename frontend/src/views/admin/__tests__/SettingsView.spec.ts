@@ -873,6 +873,38 @@ describe("admin SettingsView payment visible method controls", () => {
       ).value,
     ).toBe("1200");
 
+    await wrapper
+      .find(
+        'input[placeholder="0.05"][type="number"]',
+      )
+      .setValue("");
+    await wrapper.find('input[placeholder="1.2"][type="number"]').setValue("");
+    await wrapper
+      .find(
+        'input[placeholder="1200"][type="number"]',
+      )
+      .setValue("");
+
+    expect(
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+      ).placeholder,
+    ).toBe("0.05");
+    expect(
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+      ).value,
+    ).toBe("");
+    expect(
+      inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor")
+        .placeholder,
+    ).toBe("1.2");
+    expect(
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
+      ).placeholder,
+    ).toBe("1200");
+
     for (const key of Object.keys(openAIAdaptiveSchedulerDefaults)) {
       if (form) {
         form[key as OpenAIAdaptiveSchedulerDefaultKey] = "";
