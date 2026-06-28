@@ -58,6 +58,33 @@ func TestEffectiveOpenAIAdaptiveCapacityUsesInitialFractionAndBurstProbe(t *test
 	require.Equal(t, 3600, effective)
 }
 
+func TestOpenAIAdaptiveReportInitializesCapacityFromConfiguredConcurrency(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction = 0.05
+	cfg.OpenAIAdaptiveSchedulerMinCapacity = 2
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	account := &Account{ID: 1, Concurrency: 1000}
+
+	store.reportWithAccount(account, account.ID, cfg, true, nil, 0)
+
+	state := store.snapshot(account.ID, cfg)
+	require.Equal(t, 50, state.EstimatedCapacity)
+	require.Equal(t, 1, int(state.TotalSamples))
+}
+
+func TestOpenAIAdaptiveReportInitialCapacityFallsBackToMinimum(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction = 0.05
+	cfg.OpenAIAdaptiveSchedulerMinCapacity = 2
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	account := &Account{ID: 1, Concurrency: 10}
+
+	store.reportWithAccount(account, account.ID, cfg, true, nil, 0)
+
+	state := store.snapshot(account.ID, cfg)
+	require.Equal(t, 2, state.EstimatedCapacity)
+}
+
 func TestEffectiveOpenAIAdaptiveCapacityUsesHalfOpenProbeAfterCooldown(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 	cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity = 5

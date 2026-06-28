@@ -94,6 +94,47 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	}
 }
 
+func TestClaimOpenAISameAccountRetryClaimsUntilLimit(t *testing.T) {
+	account := &service.Account{
+		ID:          42,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"pool_mode": true, "pool_mode_retry_count": 2},
+	}
+	failoverErr := &service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, RetryableOnSameAccount: true}
+	retryCounts := map[int64]int{}
+
+	retryLimit, retryCount, ok := claimOpenAISameAccountRetry(account, failoverErr, retryCounts)
+	require.True(t, ok)
+	require.Equal(t, 2, retryLimit)
+	require.Equal(t, 1, retryCount)
+	require.Equal(t, 1, retryCounts[account.ID])
+
+	retryLimit, retryCount, ok = claimOpenAISameAccountRetry(account, failoverErr, retryCounts)
+	require.True(t, ok)
+	require.Equal(t, 2, retryLimit)
+	require.Equal(t, 2, retryCount)
+	require.Equal(t, 2, retryCounts[account.ID])
+
+	retryLimit, retryCount, ok = claimOpenAISameAccountRetry(account, failoverErr, retryCounts)
+	require.False(t, ok)
+	require.Equal(t, 2, retryLimit)
+	require.Equal(t, 2, retryCount)
+	require.Equal(t, 2, retryCounts[account.ID])
+}
+
+func TestClaimOpenAISameAccountRetryRejectsNonRetryable(t *testing.T) {
+	account := &service.Account{
+		ID:          42,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"pool_mode": true},
+	}
+	retryCounts := map[int64]int{}
+
+	_, _, ok := claimOpenAISameAccountRetry(account, &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway}, retryCounts)
+	require.False(t, ok)
+	require.Empty(t, retryCounts)
+}
+
 func TestResolveOpenAIMessagesMetadataSession_DoesNotDerivePromptCacheKey(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4-5","metadata":{"user_id":"claude-code-session"},"messages":[{"role":"user","content":"hello"}]}`)
 

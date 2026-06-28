@@ -781,7 +781,11 @@ func (s *adaptiveOpenAIAccountScheduler) ReportResult(accountID int64, success b
 	if !cfg.OpenAIAdaptiveSchedulerEnabled {
 		return
 	}
-	s.state.report(accountID, cfg, success, firstTokenMs, 0)
+	var account *Account
+	if !s.state.has(accountID) {
+		account = s.reportAccountSnapshot(accountID)
+	}
+	s.state.reportWithAccount(account, accountID, cfg, success, firstTokenMs, 0)
 }
 
 func (s *adaptiveOpenAIAccountScheduler) ReportSwitch() {
@@ -823,6 +827,22 @@ func (s *adaptiveOpenAIAccountScheduler) SnapshotMetrics() OpenAIAccountSchedule
 	return snapshot
 }
 
+func (s *adaptiveOpenAIAccountScheduler) reportAccountSnapshot(accountID int64) *Account {
+	if s == nil || s.service == nil || accountID <= 0 {
+		return nil
+	}
+	if s.service.schedulerSnapshot == nil && s.service.accountRepo == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	account, err := s.service.getSchedulableAccount(ctx, accountID)
+	if err != nil {
+		return nil
+	}
+	return account
+}
+
 func (s *openAIAdaptiveSchedulerStateStore) snapshot(accountID int64, cfg OpenAIAdaptiveSchedulerSettings) openAIAdaptiveAccountState {
 	if s == nil || accountID <= 0 {
 		return defaultOpenAIAdaptiveAccountState(accountID, cfg)
@@ -836,7 +856,28 @@ func (s *openAIAdaptiveSchedulerStateStore) snapshot(accountID int64, cfg OpenAI
 	return defaultOpenAIAdaptiveAccountState(accountID, cfg)
 }
 
+func (s *openAIAdaptiveSchedulerStateStore) has(accountID int64) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	s.mu.RLock()
+	_, ok := s.states[accountID]
+	s.mu.RUnlock()
+	return ok
+}
+
 func (s *openAIAdaptiveSchedulerStateStore) report(
+	accountID int64,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	success bool,
+	firstTokenMs *int,
+	durationMs int64,
+) {
+	s.reportWithAccount(nil, accountID, cfg, success, firstTokenMs, durationMs)
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) reportWithAccount(
+	account *Account,
 	accountID int64,
 	cfg OpenAIAdaptiveSchedulerSettings,
 	success bool,
@@ -851,7 +892,7 @@ func (s *openAIAdaptiveSchedulerStateStore) report(
 	defer s.mu.Unlock()
 	state := s.states[accountID]
 	if state == nil {
-		initial := defaultOpenAIAdaptiveAccountState(accountID, cfg)
+		initial := defaultOpenAIAdaptiveAccountStateForAccount(account, accountID, cfg)
 		state = &initial
 		s.states[accountID] = state
 	}
@@ -1025,6 +1066,17 @@ func defaultOpenAIAdaptiveAccountState(accountID int64, cfg OpenAIAdaptiveSchedu
 		ThompsonBeta:       cfg.OpenAIAdaptiveSchedulerThompsonPriorBeta,
 		ConsecutiveSuccess: 0,
 	}
+}
+
+func defaultOpenAIAdaptiveAccountStateForAccount(account *Account, accountID int64, cfg OpenAIAdaptiveSchedulerSettings) openAIAdaptiveAccountState {
+	if account != nil && account.ID > 0 {
+		accountID = account.ID
+	}
+	state := defaultOpenAIAdaptiveAccountState(accountID, cfg)
+	if account != nil {
+		state.EstimatedCapacity = initialOpenAIAdaptiveCapacityForAccount(account, cfg)
+	}
+	return state
 }
 
 func updateOpenAIAdaptiveEMA(current float64, sample float64, alpha float64) float64 {
