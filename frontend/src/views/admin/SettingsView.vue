@@ -8239,38 +8239,38 @@ type SettingsForm = Omit<
 };
 
 const openAIAdaptiveSchedulerRecommendedValues = {
-  openai_adaptive_scheduler_top_k: 10,
-  openai_adaptive_scheduler_exploration_rate: 0.05,
-  openai_adaptive_scheduler_softmax_temperature: 0.35,
-  openai_adaptive_scheduler_min_cost_multiplier: 0.01,
+  openai_adaptive_scheduler_top_k: 15,
+  openai_adaptive_scheduler_exploration_rate: 0.03,
+  openai_adaptive_scheduler_softmax_temperature: 0.45,
+  openai_adaptive_scheduler_min_cost_multiplier: 0.03,
   openai_adaptive_scheduler_thompson_prior_alpha: 1,
   openai_adaptive_scheduler_thompson_prior_beta: 1,
-  openai_adaptive_scheduler_initial_capacity_fraction: 0.1,
-  openai_adaptive_scheduler_min_capacity: 1,
-  openai_adaptive_scheduler_capacity_increase_step: 1,
-  openai_adaptive_scheduler_capacity_growth_factor: 1.25,
-  openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
-  openai_adaptive_scheduler_burst_probe_ratio: 0.2,
-  openai_adaptive_scheduler_capacity_success_threshold: 0.98,
-  openai_adaptive_scheduler_capacity_failure_threshold: 3,
-  openai_adaptive_scheduler_min_recent_samples_for_shrink: 10,
-  openai_adaptive_scheduler_shrink_error_threshold: 0.2,
-  openai_adaptive_scheduler_shrink_factor_soft: 0.8,
-  openai_adaptive_scheduler_shrink_factor_hard: 0.5,
-  openai_adaptive_scheduler_half_open_probe_capacity: 5,
-  openai_adaptive_scheduler_learning_window_seconds: 900,
-  openai_adaptive_scheduler_success_ema_alpha: 0.05,
-  openai_adaptive_scheduler_error_ema_alpha: 0.1,
+  openai_adaptive_scheduler_initial_capacity_fraction: 0.05,
+  openai_adaptive_scheduler_min_capacity: 2,
+  openai_adaptive_scheduler_capacity_increase_step: 2,
+  openai_adaptive_scheduler_capacity_growth_factor: 1.2,
+  openai_adaptive_scheduler_capacity_probe_load_threshold: 0.75,
+  openai_adaptive_scheduler_burst_probe_ratio: 0.3,
+  openai_adaptive_scheduler_capacity_success_threshold: 0.95,
+  openai_adaptive_scheduler_capacity_failure_threshold: 5,
+  openai_adaptive_scheduler_min_recent_samples_for_shrink: 20,
+  openai_adaptive_scheduler_shrink_error_threshold: 0.3,
+  openai_adaptive_scheduler_shrink_factor_soft: 0.85,
+  openai_adaptive_scheduler_shrink_factor_hard: 0.6,
+  openai_adaptive_scheduler_half_open_probe_capacity: 3,
+  openai_adaptive_scheduler_learning_window_seconds: 1200,
+  openai_adaptive_scheduler_success_ema_alpha: 0.04,
+  openai_adaptive_scheduler_error_ema_alpha: 0.06,
   openai_adaptive_scheduler_latency_ema_alpha: 0.05,
   openai_adaptive_scheduler_ttft_ema_alpha: 0.05,
-  openai_adaptive_scheduler_cooldown_base_seconds: 60,
-  openai_adaptive_scheduler_cooldown_max_seconds: 600,
-  openai_adaptive_scheduler_weight_success: 0.3,
-  openai_adaptive_scheduler_weight_cost: 0.25,
+  openai_adaptive_scheduler_cooldown_base_seconds: 30,
+  openai_adaptive_scheduler_cooldown_max_seconds: 180,
+  openai_adaptive_scheduler_weight_success: 0.35,
+  openai_adaptive_scheduler_weight_cost: 0.3,
   openai_adaptive_scheduler_weight_capacity: 0.2,
-  openai_adaptive_scheduler_weight_latency: 0.15,
+  openai_adaptive_scheduler_weight_latency: 0.1,
   openai_adaptive_scheduler_weight_stability: 0.05,
-  openai_adaptive_scheduler_weight_exploration: 0.05,
+  openai_adaptive_scheduler_weight_exploration: 0.03,
 } satisfies Partial<SettingsForm>;
 
 type OpenAIAdaptiveSchedulerRecommendedKey =
@@ -8464,7 +8464,7 @@ const form = reactive<SettingsForm>({
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
   openai_adaptive_scheduler_enabled: false,
-  openai_adaptive_scheduler_mode: "shadow",
+  openai_adaptive_scheduler_mode: "enforce",
   openai_adaptive_scheduler_thompson_enabled: true,
   ...openAIAdaptiveSchedulerRecommendedValues,
   // Gateway forwarding behavior
@@ -9776,13 +9776,17 @@ async function saveSettings() {
         form.openai_adaptive_scheduler_enabled,
       openai_adaptive_scheduler_mode: form.openai_adaptive_scheduler_mode,
       openai_adaptive_scheduler_top_k:
-        Number(form.openai_adaptive_scheduler_top_k) || 10,
+        Number(form.openai_adaptive_scheduler_top_k) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_top_k,
       openai_adaptive_scheduler_exploration_rate:
-        Number(form.openai_adaptive_scheduler_exploration_rate) || 0,
+        Number(form.openai_adaptive_scheduler_exploration_rate) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_exploration_rate,
       openai_adaptive_scheduler_softmax_temperature:
-        Number(form.openai_adaptive_scheduler_softmax_temperature) || 0.35,
+        Number(form.openai_adaptive_scheduler_softmax_temperature) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_softmax_temperature,
       openai_adaptive_scheduler_min_cost_multiplier:
-        Number(form.openai_adaptive_scheduler_min_cost_multiplier) || 0.01,
+        Number(form.openai_adaptive_scheduler_min_cost_multiplier) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_min_cost_multiplier,
       openai_adaptive_scheduler_thompson_enabled:
         form.openai_adaptive_scheduler_thompson_enabled,
       openai_adaptive_scheduler_thompson_prior_alpha:
@@ -9790,60 +9794,83 @@ async function saveSettings() {
       openai_adaptive_scheduler_thompson_prior_beta:
         Number(form.openai_adaptive_scheduler_thompson_prior_beta) || 1,
       openai_adaptive_scheduler_initial_capacity_fraction:
-        Number(form.openai_adaptive_scheduler_initial_capacity_fraction) || 0,
+        Number(form.openai_adaptive_scheduler_initial_capacity_fraction) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_initial_capacity_fraction,
       openai_adaptive_scheduler_min_capacity:
-        Number(form.openai_adaptive_scheduler_min_capacity) || 1,
+        Number(form.openai_adaptive_scheduler_min_capacity) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_min_capacity,
       openai_adaptive_scheduler_capacity_increase_step:
-        Number(form.openai_adaptive_scheduler_capacity_increase_step) || 1,
+        Number(form.openai_adaptive_scheduler_capacity_increase_step) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_capacity_increase_step,
       openai_adaptive_scheduler_capacity_growth_factor:
-        Number(form.openai_adaptive_scheduler_capacity_growth_factor) || 1.25,
+        Number(form.openai_adaptive_scheduler_capacity_growth_factor) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_capacity_growth_factor,
       openai_adaptive_scheduler_capacity_probe_load_threshold:
         Number(form.openai_adaptive_scheduler_capacity_probe_load_threshold) ||
-        0.8,
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_capacity_probe_load_threshold,
       openai_adaptive_scheduler_burst_probe_ratio:
-        Number(form.openai_adaptive_scheduler_burst_probe_ratio) || 0,
+        Number(form.openai_adaptive_scheduler_burst_probe_ratio) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_burst_probe_ratio,
       openai_adaptive_scheduler_capacity_success_threshold:
         Number(form.openai_adaptive_scheduler_capacity_success_threshold) ||
-        0.98,
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_capacity_success_threshold,
       openai_adaptive_scheduler_capacity_failure_threshold:
-        Number(form.openai_adaptive_scheduler_capacity_failure_threshold) || 3,
+        Number(form.openai_adaptive_scheduler_capacity_failure_threshold) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_capacity_failure_threshold,
       openai_adaptive_scheduler_min_recent_samples_for_shrink:
         Number(form.openai_adaptive_scheduler_min_recent_samples_for_shrink) ||
-        10,
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_min_recent_samples_for_shrink,
       openai_adaptive_scheduler_shrink_error_threshold:
-        Number(form.openai_adaptive_scheduler_shrink_error_threshold) || 0,
+        Number(form.openai_adaptive_scheduler_shrink_error_threshold) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_shrink_error_threshold,
       openai_adaptive_scheduler_shrink_factor_soft:
-        Number(form.openai_adaptive_scheduler_shrink_factor_soft) || 0.8,
+        Number(form.openai_adaptive_scheduler_shrink_factor_soft) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_shrink_factor_soft,
       openai_adaptive_scheduler_shrink_factor_hard:
-        Number(form.openai_adaptive_scheduler_shrink_factor_hard) || 0.5,
+        Number(form.openai_adaptive_scheduler_shrink_factor_hard) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_shrink_factor_hard,
       openai_adaptive_scheduler_half_open_probe_capacity:
-        Number(form.openai_adaptive_scheduler_half_open_probe_capacity) || 5,
+        Number(form.openai_adaptive_scheduler_half_open_probe_capacity) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_half_open_probe_capacity,
       openai_adaptive_scheduler_learning_window_seconds:
-        Number(form.openai_adaptive_scheduler_learning_window_seconds) || 0,
+        Number(form.openai_adaptive_scheduler_learning_window_seconds) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_learning_window_seconds,
       openai_adaptive_scheduler_success_ema_alpha:
-        Number(form.openai_adaptive_scheduler_success_ema_alpha) || 0.05,
+        Number(form.openai_adaptive_scheduler_success_ema_alpha) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_success_ema_alpha,
       openai_adaptive_scheduler_error_ema_alpha:
-        Number(form.openai_adaptive_scheduler_error_ema_alpha) || 0.1,
+        Number(form.openai_adaptive_scheduler_error_ema_alpha) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_error_ema_alpha,
       openai_adaptive_scheduler_latency_ema_alpha:
-        Number(form.openai_adaptive_scheduler_latency_ema_alpha) || 0.05,
+        Number(form.openai_adaptive_scheduler_latency_ema_alpha) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_latency_ema_alpha,
       openai_adaptive_scheduler_ttft_ema_alpha:
-        Number(form.openai_adaptive_scheduler_ttft_ema_alpha) || 0.05,
+        Number(form.openai_adaptive_scheduler_ttft_ema_alpha) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_ttft_ema_alpha,
       openai_adaptive_scheduler_cooldown_base_seconds:
-        Number(form.openai_adaptive_scheduler_cooldown_base_seconds) || 60,
+        Number(form.openai_adaptive_scheduler_cooldown_base_seconds) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_cooldown_base_seconds,
       openai_adaptive_scheduler_cooldown_max_seconds:
-        Number(form.openai_adaptive_scheduler_cooldown_max_seconds) || 600,
+        Number(form.openai_adaptive_scheduler_cooldown_max_seconds) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_cooldown_max_seconds,
       openai_adaptive_scheduler_weight_success:
-        Number(form.openai_adaptive_scheduler_weight_success) || 0,
+        Number(form.openai_adaptive_scheduler_weight_success) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_weight_success,
       openai_adaptive_scheduler_weight_cost:
-        Number(form.openai_adaptive_scheduler_weight_cost) || 0,
+        Number(form.openai_adaptive_scheduler_weight_cost) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_weight_cost,
       openai_adaptive_scheduler_weight_capacity:
-        Number(form.openai_adaptive_scheduler_weight_capacity) || 0,
+        Number(form.openai_adaptive_scheduler_weight_capacity) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_weight_capacity,
       openai_adaptive_scheduler_weight_latency:
-        Number(form.openai_adaptive_scheduler_weight_latency) || 0,
+        Number(form.openai_adaptive_scheduler_weight_latency) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_weight_latency,
       openai_adaptive_scheduler_weight_stability:
-        Number(form.openai_adaptive_scheduler_weight_stability) || 0,
+        Number(form.openai_adaptive_scheduler_weight_stability) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_weight_stability,
       openai_adaptive_scheduler_weight_exploration:
-        Number(form.openai_adaptive_scheduler_weight_exploration) || 0,
+        Number(form.openai_adaptive_scheduler_weight_exploration) ||
+        openAIAdaptiveSchedulerRecommendedValues.openai_adaptive_scheduler_weight_exploration,
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

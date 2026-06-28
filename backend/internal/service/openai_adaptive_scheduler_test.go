@@ -76,6 +76,7 @@ func TestOpenAIAdaptiveSchedulerAIMDDecreasesCapacityOnFailures(t *testing.T) {
 	cfg.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink = 10
 	cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold = 0.2
 	cfg.OpenAIAdaptiveSchedulerShrinkFactorSoft = 0.5
+	cfg.OpenAIAdaptiveSchedulerShrinkFactorHard = 0.5
 	cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds = 1
 	store := newOpenAIAdaptiveSchedulerStateStore()
 	state := defaultOpenAIAdaptiveAccountState(1, cfg)

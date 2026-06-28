@@ -146,6 +146,7 @@ func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
 		return nil, err
 	}
 	accounts = filterOpenAIAdaptiveLearningAccountsByGroup(accounts, groupIDFilter)
+	accounts = filterOpenAIAdaptiveLearningSchedulableAccounts(accounts)
 
 	now := time.Now()
 	states := make(map[int64]openAIAdaptiveAccountState, len(accounts))
@@ -255,6 +256,19 @@ func filterOpenAIAdaptiveLearningAccountsByGroup(accounts []Account, groupIDFilt
 				out = append(out, acc)
 				break
 			}
+		}
+	}
+	return out
+}
+
+func filterOpenAIAdaptiveLearningSchedulableAccounts(accounts []Account) []Account {
+	if len(accounts) == 0 {
+		return accounts
+	}
+	out := accounts[:0]
+	for _, acc := range accounts {
+		if acc.Schedulable {
+			out = append(out, acc)
 		}
 	}
 	return out
