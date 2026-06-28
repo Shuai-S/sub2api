@@ -425,6 +425,44 @@ const baseSettingsResponse = {
   },
 };
 
+const openAIAdaptiveSchedulerDefaults = {
+  openai_adaptive_scheduler_top_k: 15,
+  openai_adaptive_scheduler_exploration_rate: 0.03,
+  openai_adaptive_scheduler_softmax_temperature: 0.45,
+  openai_adaptive_scheduler_min_cost_multiplier: 0.03,
+  openai_adaptive_scheduler_thompson_prior_alpha: 1,
+  openai_adaptive_scheduler_thompson_prior_beta: 1,
+  openai_adaptive_scheduler_initial_capacity_fraction: 0.05,
+  openai_adaptive_scheduler_min_capacity: 2,
+  openai_adaptive_scheduler_capacity_increase_step: 2,
+  openai_adaptive_scheduler_capacity_growth_factor: 1.2,
+  openai_adaptive_scheduler_capacity_probe_load_threshold: 0.75,
+  openai_adaptive_scheduler_burst_probe_ratio: 0.3,
+  openai_adaptive_scheduler_capacity_success_threshold: 0.95,
+  openai_adaptive_scheduler_capacity_failure_threshold: 5,
+  openai_adaptive_scheduler_min_recent_samples_for_shrink: 20,
+  openai_adaptive_scheduler_shrink_error_threshold: 0.3,
+  openai_adaptive_scheduler_shrink_factor_soft: 0.85,
+  openai_adaptive_scheduler_shrink_factor_hard: 0.6,
+  openai_adaptive_scheduler_half_open_probe_capacity: 3,
+  openai_adaptive_scheduler_learning_window_seconds: 1200,
+  openai_adaptive_scheduler_success_ema_alpha: 0.04,
+  openai_adaptive_scheduler_error_ema_alpha: 0.06,
+  openai_adaptive_scheduler_latency_ema_alpha: 0.05,
+  openai_adaptive_scheduler_ttft_ema_alpha: 0.05,
+  openai_adaptive_scheduler_cooldown_base_seconds: 30,
+  openai_adaptive_scheduler_cooldown_max_seconds: 180,
+  openai_adaptive_scheduler_weight_success: 0.35,
+  openai_adaptive_scheduler_weight_cost: 0.3,
+  openai_adaptive_scheduler_weight_capacity: 0.2,
+  openai_adaptive_scheduler_weight_latency: 0.1,
+  openai_adaptive_scheduler_weight_stability: 0.05,
+  openai_adaptive_scheduler_weight_exploration: 0.03,
+} as const;
+
+type OpenAIAdaptiveSchedulerDefaultKey =
+  keyof typeof openAIAdaptiveSchedulerDefaults;
+
 function mountView() {
   return mount(SettingsView, {
     global: {
@@ -444,6 +482,24 @@ function mountView() {
       },
     },
   });
+}
+
+function settingsForm(wrapper: ReturnType<typeof mountView>) {
+  const vm = wrapper.vm as unknown as {
+    form?: Record<OpenAIAdaptiveSchedulerDefaultKey, unknown>;
+    $?: { setupState?: { form?: Record<OpenAIAdaptiveSchedulerDefaultKey, unknown> } };
+  };
+  return vm.form ?? vm.$?.setupState?.form;
+}
+
+async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
+  const gatewayTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.gateway"));
+
+  expect(gatewayTabButton).toBeDefined();
+  await gatewayTabButton?.trigger("click");
+  await flushPromises();
 }
 
 async function openPaymentTab(wrapper: ReturnType<typeof mountView>) {
@@ -774,6 +830,62 @@ describe("admin SettingsView payment visible method controls", () => {
       "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑",
     );
     expect(wrapper.text()).not.toContain("OpenAI 高级调度器");
+  });
+
+  it("fills OpenAI adaptive scheduler inputs with defaults and saves defaults when cleared", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      ...Object.fromEntries(
+        Object.keys(openAIAdaptiveSchedulerDefaults).map((key) => [key, ""]),
+      ),
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+
+    const form = settingsForm(wrapper);
+    expect(form).toBeDefined();
+    for (const [key, value] of Object.entries(openAIAdaptiveSchedulerDefaults)) {
+      expect(Number(form?.[key as OpenAIAdaptiveSchedulerDefaultKey])).toBe(value);
+    }
+
+    await openGatewayTab(wrapper);
+    const inputForLabel = (labelKey: string): HTMLInputElement => {
+      const labels = Array.from(wrapper.element.querySelectorAll("label"));
+      const label = labels.find((node) => node.textContent?.includes(labelKey));
+      const input = label?.parentElement?.querySelector("input");
+      expect(input).toBeInstanceOf(HTMLInputElement);
+      return input as HTMLInputElement;
+    };
+
+    expect(
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+      ).value,
+    ).toBe("0.05");
+    expect(
+      inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor").value,
+    ).toBe("1.2");
+    expect(
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
+      ).value,
+    ).toBe("1200");
+
+    for (const key of Object.keys(openAIAdaptiveSchedulerDefaults)) {
+      if (form) {
+        form[key as OpenAIAdaptiveSchedulerDefaultKey] = "";
+      }
+    }
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining(openAIAdaptiveSchedulerDefaults),
+    );
   });
 
   it("passes translated upload and remove labels to the payment help image uploader", async () => {
