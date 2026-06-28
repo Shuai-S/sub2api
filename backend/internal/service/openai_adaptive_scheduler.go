@@ -1008,9 +1008,6 @@ func nextOpenAIAdaptiveShrinkCapacity(state *openAIAdaptiveAccountState, cfg Ope
 		recentFailureRate >= hardErrorThreshold {
 		factor = cfg.OpenAIAdaptiveSchedulerShrinkFactorHard
 	}
-	if factor <= 0 || factor > 1 {
-		factor = cfg.OpenAIAdaptiveSchedulerCapacityDecreaseFactor
-	}
 	nextCapacity := int(math.Floor(float64(state.EstimatedCapacity) * factor))
 	if nextCapacity < cfg.OpenAIAdaptiveSchedulerMinCapacity {
 		nextCapacity = cfg.OpenAIAdaptiveSchedulerMinCapacity
@@ -1021,7 +1018,7 @@ func nextOpenAIAdaptiveShrinkCapacity(state *openAIAdaptiveAccountState, cfg Ope
 func defaultOpenAIAdaptiveAccountState(accountID int64, cfg OpenAIAdaptiveSchedulerSettings) openAIAdaptiveAccountState {
 	return openAIAdaptiveAccountState{
 		AccountID:          accountID,
-		EstimatedCapacity:  cfg.OpenAIAdaptiveSchedulerInitialCapacity,
+		EstimatedCapacity:  cfg.OpenAIAdaptiveSchedulerMinCapacity,
 		SuccessEMA:         0.5,
 		ErrorEMA:           0,
 		ThompsonAlpha:      cfg.OpenAIAdaptiveSchedulerThompsonPriorAlpha,
@@ -1077,7 +1074,7 @@ func effectiveOpenAIAdaptiveCapacityWithLoad(
 func stableOpenAIAdaptiveCapacity(account *Account, state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) int {
 	estimated := state.EstimatedCapacity
 	if estimated <= 0 {
-		estimated = cfg.OpenAIAdaptiveSchedulerInitialCapacity
+		estimated = cfg.OpenAIAdaptiveSchedulerMinCapacity
 	}
 	if estimated < cfg.OpenAIAdaptiveSchedulerMinCapacity {
 		estimated = cfg.OpenAIAdaptiveSchedulerMinCapacity
@@ -1090,10 +1087,7 @@ func stableOpenAIAdaptiveCapacity(account *Account, state openAIAdaptiveAccountS
 }
 
 func initialOpenAIAdaptiveCapacityForAccount(account *Account, cfg OpenAIAdaptiveSchedulerSettings) int {
-	initial := cfg.OpenAIAdaptiveSchedulerInitialCapacity
-	if initial < cfg.OpenAIAdaptiveSchedulerMinCapacity {
-		initial = cfg.OpenAIAdaptiveSchedulerMinCapacity
-	}
+	initial := cfg.OpenAIAdaptiveSchedulerMinCapacity
 	if account != nil && account.Concurrency > 0 && cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction > 0 {
 		fractionCapacity := int(math.Ceil(float64(account.Concurrency) * cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction))
 		if fractionCapacity > initial {

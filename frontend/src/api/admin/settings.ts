@@ -614,12 +614,10 @@ export interface SystemSettings {
   openai_adaptive_scheduler_thompson_enabled?: boolean;
   openai_adaptive_scheduler_thompson_prior_alpha?: number;
   openai_adaptive_scheduler_thompson_prior_beta?: number;
-  openai_adaptive_scheduler_initial_capacity?: number;
   openai_adaptive_scheduler_initial_capacity_fraction?: number;
   openai_adaptive_scheduler_min_capacity?: number;
   openai_adaptive_scheduler_capacity_increase_step?: number;
   openai_adaptive_scheduler_capacity_growth_factor?: number;
-  openai_adaptive_scheduler_capacity_decrease_factor?: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold?: number;
   openai_adaptive_scheduler_burst_probe_ratio?: number;
   openai_adaptive_scheduler_capacity_success_threshold?: number;
@@ -899,12 +897,10 @@ export interface UpdateSettingsRequest {
   openai_adaptive_scheduler_thompson_enabled?: boolean;
   openai_adaptive_scheduler_thompson_prior_alpha?: number;
   openai_adaptive_scheduler_thompson_prior_beta?: number;
-  openai_adaptive_scheduler_initial_capacity?: number;
   openai_adaptive_scheduler_initial_capacity_fraction?: number;
   openai_adaptive_scheduler_min_capacity?: number;
   openai_adaptive_scheduler_capacity_increase_step?: number;
   openai_adaptive_scheduler_capacity_growth_factor?: number;
-  openai_adaptive_scheduler_capacity_decrease_factor?: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold?: number;
   openai_adaptive_scheduler_burst_probe_ratio?: number;
   openai_adaptive_scheduler_capacity_success_threshold?: number;

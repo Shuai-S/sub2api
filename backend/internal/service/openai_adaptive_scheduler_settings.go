@@ -28,12 +28,10 @@ const (
 	openAIAdaptiveSchedulerThompsonEnabledKey            = openAIAdaptiveSchedulerSettingPrefix + "thompson_enabled"
 	openAIAdaptiveSchedulerThompsonPriorAlphaKey         = openAIAdaptiveSchedulerSettingPrefix + "thompson_prior_alpha"
 	openAIAdaptiveSchedulerThompsonPriorBetaKey          = openAIAdaptiveSchedulerSettingPrefix + "thompson_prior_beta"
-	openAIAdaptiveSchedulerInitialCapacityKey            = openAIAdaptiveSchedulerSettingPrefix + "initial_capacity"
 	openAIAdaptiveSchedulerInitialCapacityFractionKey    = openAIAdaptiveSchedulerSettingPrefix + "initial_capacity_fraction"
 	openAIAdaptiveSchedulerMinCapacityKey                = openAIAdaptiveSchedulerSettingPrefix + "min_capacity"
 	openAIAdaptiveSchedulerCapacityIncreaseStepKey       = openAIAdaptiveSchedulerSettingPrefix + "capacity_increase_step"
 	openAIAdaptiveSchedulerCapacityGrowthFactorKey       = openAIAdaptiveSchedulerSettingPrefix + "capacity_growth_factor"
-	openAIAdaptiveSchedulerCapacityDecreaseFactorKey     = openAIAdaptiveSchedulerSettingPrefix + "capacity_decrease_factor"
 	openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey = openAIAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
 	openAIAdaptiveSchedulerBurstProbeRatioKey            = openAIAdaptiveSchedulerSettingPrefix + "burst_probe_ratio"
 	openAIAdaptiveSchedulerCapacitySuccessThresholdKey   = openAIAdaptiveSchedulerSettingPrefix + "capacity_success_threshold"
@@ -73,12 +71,10 @@ type OpenAIAdaptiveSchedulerSettings struct {
 	OpenAIAdaptiveSchedulerThompsonEnabled            bool    `json:"openai_adaptive_scheduler_thompson_enabled"`
 	OpenAIAdaptiveSchedulerThompsonPriorAlpha         float64 `json:"openai_adaptive_scheduler_thompson_prior_alpha"`
 	OpenAIAdaptiveSchedulerThompsonPriorBeta          float64 `json:"openai_adaptive_scheduler_thompson_prior_beta"`
-	OpenAIAdaptiveSchedulerInitialCapacity            int     `json:"openai_adaptive_scheduler_initial_capacity"`
 	OpenAIAdaptiveSchedulerInitialCapacityFraction    float64 `json:"openai_adaptive_scheduler_initial_capacity_fraction"`
 	OpenAIAdaptiveSchedulerMinCapacity                int     `json:"openai_adaptive_scheduler_min_capacity"`
 	OpenAIAdaptiveSchedulerCapacityIncreaseStep       int     `json:"openai_adaptive_scheduler_capacity_increase_step"`
 	OpenAIAdaptiveSchedulerCapacityGrowthFactor       float64 `json:"openai_adaptive_scheduler_capacity_growth_factor"`
-	OpenAIAdaptiveSchedulerCapacityDecreaseFactor     float64 `json:"openai_adaptive_scheduler_capacity_decrease_factor"`
 	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
 	OpenAIAdaptiveSchedulerBurstProbeRatio            float64 `json:"openai_adaptive_scheduler_burst_probe_ratio"`
 	OpenAIAdaptiveSchedulerCapacitySuccessThreshold   float64 `json:"openai_adaptive_scheduler_capacity_success_threshold"`
@@ -123,12 +119,10 @@ func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 		OpenAIAdaptiveSchedulerThompsonEnabled:            true,
 		OpenAIAdaptiveSchedulerThompsonPriorAlpha:         1,
 		OpenAIAdaptiveSchedulerThompsonPriorBeta:          1,
-		OpenAIAdaptiveSchedulerInitialCapacity:            1,
 		OpenAIAdaptiveSchedulerInitialCapacityFraction:    0.10,
 		OpenAIAdaptiveSchedulerMinCapacity:                1,
 		OpenAIAdaptiveSchedulerCapacityIncreaseStep:       1,
 		OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.25,
-		OpenAIAdaptiveSchedulerCapacityDecreaseFactor:     0.6,
 		OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.8,
 		OpenAIAdaptiveSchedulerBurstProbeRatio:            0.20,
 		OpenAIAdaptiveSchedulerCapacitySuccessThreshold:   0.98,
@@ -166,12 +160,10 @@ func NormalizeOpenAIAdaptiveSchedulerSettings(settings OpenAIAdaptiveSchedulerSe
 	settings.OpenAIAdaptiveSchedulerMinCostMultiplier = minPositiveFloat(settings.OpenAIAdaptiveSchedulerMinCostMultiplier, defaults.OpenAIAdaptiveSchedulerMinCostMultiplier)
 	settings.OpenAIAdaptiveSchedulerThompsonPriorAlpha = minPositiveFloat(settings.OpenAIAdaptiveSchedulerThompsonPriorAlpha, defaults.OpenAIAdaptiveSchedulerThompsonPriorAlpha)
 	settings.OpenAIAdaptiveSchedulerThompsonPriorBeta = minPositiveFloat(settings.OpenAIAdaptiveSchedulerThompsonPriorBeta, defaults.OpenAIAdaptiveSchedulerThompsonPriorBeta)
-	settings.OpenAIAdaptiveSchedulerInitialCapacity = clampIntMin(settings.OpenAIAdaptiveSchedulerInitialCapacity, 1, defaults.OpenAIAdaptiveSchedulerInitialCapacity)
 	settings.OpenAIAdaptiveSchedulerInitialCapacityFraction = clampFloat(settings.OpenAIAdaptiveSchedulerInitialCapacityFraction, 0, 1, defaults.OpenAIAdaptiveSchedulerInitialCapacityFraction)
 	settings.OpenAIAdaptiveSchedulerMinCapacity = clampIntMin(settings.OpenAIAdaptiveSchedulerMinCapacity, 1, defaults.OpenAIAdaptiveSchedulerMinCapacity)
 	settings.OpenAIAdaptiveSchedulerCapacityIncreaseStep = clampIntMin(settings.OpenAIAdaptiveSchedulerCapacityIncreaseStep, 1, defaults.OpenAIAdaptiveSchedulerCapacityIncreaseStep)
 	settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor = clampFloat(settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor, 1, 10, defaults.OpenAIAdaptiveSchedulerCapacityGrowthFactor)
-	settings.OpenAIAdaptiveSchedulerCapacityDecreaseFactor = clampFloat(settings.OpenAIAdaptiveSchedulerCapacityDecreaseFactor, 0.01, 1, defaults.OpenAIAdaptiveSchedulerCapacityDecreaseFactor)
 	settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = clampFloat(settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold, 0, 1, defaults.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold)
 	settings.OpenAIAdaptiveSchedulerBurstProbeRatio = clampFloat(settings.OpenAIAdaptiveSchedulerBurstProbeRatio, 0, 1, defaults.OpenAIAdaptiveSchedulerBurstProbeRatio)
 	settings.OpenAIAdaptiveSchedulerCapacitySuccessThreshold = clampFloat(settings.OpenAIAdaptiveSchedulerCapacitySuccessThreshold, 0, 1, defaults.OpenAIAdaptiveSchedulerCapacitySuccessThreshold)
@@ -234,12 +226,10 @@ func openAIAdaptiveSchedulerSettingsToMap(settings OpenAIAdaptiveSchedulerSettin
 		openAIAdaptiveSchedulerThompsonEnabledKey:            strconv.FormatBool(settings.OpenAIAdaptiveSchedulerThompsonEnabled),
 		openAIAdaptiveSchedulerThompsonPriorAlphaKey:         formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerThompsonPriorAlpha),
 		openAIAdaptiveSchedulerThompsonPriorBetaKey:          formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerThompsonPriorBeta),
-		openAIAdaptiveSchedulerInitialCapacityKey:            strconv.Itoa(settings.OpenAIAdaptiveSchedulerInitialCapacity),
 		openAIAdaptiveSchedulerInitialCapacityFractionKey:    formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerInitialCapacityFraction),
 		openAIAdaptiveSchedulerMinCapacityKey:                strconv.Itoa(settings.OpenAIAdaptiveSchedulerMinCapacity),
 		openAIAdaptiveSchedulerCapacityIncreaseStepKey:       strconv.Itoa(settings.OpenAIAdaptiveSchedulerCapacityIncreaseStep),
 		openAIAdaptiveSchedulerCapacityGrowthFactorKey:       formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor),
-		openAIAdaptiveSchedulerCapacityDecreaseFactorKey:     formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityDecreaseFactor),
 		openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey: formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold),
 		openAIAdaptiveSchedulerBurstProbeRatioKey:            formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerBurstProbeRatio),
 		openAIAdaptiveSchedulerCapacitySuccessThresholdKey:   formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacitySuccessThreshold),
@@ -276,12 +266,10 @@ func parseOpenAIAdaptiveSchedulerSettings(settings map[string]string) OpenAIAdap
 	result.OpenAIAdaptiveSchedulerThompsonEnabled = parseBoolSetting(settings, openAIAdaptiveSchedulerThompsonEnabledKey, result.OpenAIAdaptiveSchedulerThompsonEnabled)
 	result.OpenAIAdaptiveSchedulerThompsonPriorAlpha = parseFloatSetting(settings, openAIAdaptiveSchedulerThompsonPriorAlphaKey, result.OpenAIAdaptiveSchedulerThompsonPriorAlpha)
 	result.OpenAIAdaptiveSchedulerThompsonPriorBeta = parseFloatSetting(settings, openAIAdaptiveSchedulerThompsonPriorBetaKey, result.OpenAIAdaptiveSchedulerThompsonPriorBeta)
-	result.OpenAIAdaptiveSchedulerInitialCapacity = parseIntSetting(settings, openAIAdaptiveSchedulerInitialCapacityKey, result.OpenAIAdaptiveSchedulerInitialCapacity)
 	result.OpenAIAdaptiveSchedulerInitialCapacityFraction = parseFloatSetting(settings, openAIAdaptiveSchedulerInitialCapacityFractionKey, result.OpenAIAdaptiveSchedulerInitialCapacityFraction)
 	result.OpenAIAdaptiveSchedulerMinCapacity = parseIntSetting(settings, openAIAdaptiveSchedulerMinCapacityKey, result.OpenAIAdaptiveSchedulerMinCapacity)
 	result.OpenAIAdaptiveSchedulerCapacityIncreaseStep = parseIntSetting(settings, openAIAdaptiveSchedulerCapacityIncreaseStepKey, result.OpenAIAdaptiveSchedulerCapacityIncreaseStep)
 	result.OpenAIAdaptiveSchedulerCapacityGrowthFactor = parseFloatSetting(settings, openAIAdaptiveSchedulerCapacityGrowthFactorKey, result.OpenAIAdaptiveSchedulerCapacityGrowthFactor)
-	result.OpenAIAdaptiveSchedulerCapacityDecreaseFactor = parseFloatSetting(settings, openAIAdaptiveSchedulerCapacityDecreaseFactorKey, result.OpenAIAdaptiveSchedulerCapacityDecreaseFactor)
 	result.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = parseFloatSetting(settings, openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey, result.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold)
 	result.OpenAIAdaptiveSchedulerBurstProbeRatio = parseFloatSetting(settings, openAIAdaptiveSchedulerBurstProbeRatioKey, result.OpenAIAdaptiveSchedulerBurstProbeRatio)
 	result.OpenAIAdaptiveSchedulerCapacitySuccessThreshold = parseFloatSetting(settings, openAIAdaptiveSchedulerCapacitySuccessThresholdKey, result.OpenAIAdaptiveSchedulerCapacitySuccessThreshold)

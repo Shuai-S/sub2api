@@ -43,7 +43,6 @@ func TestEffectiveOpenAIAdaptiveCapacityCapsConfiguredConcurrency(t *testing.T) 
 
 func TestEffectiveOpenAIAdaptiveCapacityUsesInitialFractionAndBurstProbe(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
-	cfg.OpenAIAdaptiveSchedulerInitialCapacity = 1
 	cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction = 0.1
 	cfg.OpenAIAdaptiveSchedulerBurstProbeRatio = 0.2
 	state := defaultOpenAIAdaptiveAccountState(1, cfg)
@@ -72,13 +71,16 @@ func TestEffectiveOpenAIAdaptiveCapacityUsesHalfOpenProbeAfterCooldown(t *testin
 
 func TestOpenAIAdaptiveSchedulerAIMDDecreasesCapacityOnFailures(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
-	cfg.OpenAIAdaptiveSchedulerInitialCapacity = 100
+	cfg.OpenAIAdaptiveSchedulerMinCapacity = 1
 	cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold = 2
 	cfg.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink = 10
 	cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold = 0.2
 	cfg.OpenAIAdaptiveSchedulerShrinkFactorSoft = 0.5
 	cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds = 1
 	store := newOpenAIAdaptiveSchedulerStateStore()
+	state := defaultOpenAIAdaptiveAccountState(1, cfg)
+	state.EstimatedCapacity = 100
+	store.states[1] = &state
 
 	for i := 0; i < 8; i++ {
 		store.report(1, cfg, true, nil, 0)
@@ -88,25 +90,28 @@ func TestOpenAIAdaptiveSchedulerAIMDDecreasesCapacityOnFailures(t *testing.T) {
 	require.Equal(t, 100, store.snapshot(1, cfg).EstimatedCapacity)
 
 	store.report(1, cfg, false, nil, 0)
-	state := store.snapshot(1, cfg)
+	state = store.snapshot(1, cfg)
 	require.Equal(t, 50, state.EstimatedCapacity)
 	require.True(t, state.CooldownUntil.After(state.LastCapacityFailureAt))
 }
 
 func TestOpenAIAdaptiveSchedulerDoesNotShrinkOnSparseFailures(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
-	cfg.OpenAIAdaptiveSchedulerInitialCapacity = 100
+	cfg.OpenAIAdaptiveSchedulerMinCapacity = 1
 	cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold = 3
 	cfg.OpenAIAdaptiveSchedulerMinRecentSamplesForShrink = 10
 	cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold = 0.2
 	cfg.OpenAIAdaptiveSchedulerShrinkFactorSoft = 0.5
 	store := newOpenAIAdaptiveSchedulerStateStore()
+	state := defaultOpenAIAdaptiveAccountState(1, cfg)
+	state.EstimatedCapacity = 100
+	store.states[1] = &state
 
 	for i := 0; i < 3; i++ {
 		store.report(1, cfg, false, nil, 0)
 	}
 
-	state := store.snapshot(1, cfg)
+	state = store.snapshot(1, cfg)
 	require.Equal(t, 100, state.EstimatedCapacity)
 	require.True(t, state.CooldownUntil.IsZero())
 }

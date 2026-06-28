@@ -5003,6 +5003,62 @@ export default {
           requestsWithFirstToken: '首 Token 样本数'
         }
       },
+      openaiAdaptiveLearning: {
+        title: 'OpenAI 自适应调度学习',
+        description: '展示观察/执行模式下的账号学习状态、容量计算和风险信号。',
+        disabled: '已关闭',
+        realtimeOff: '实时并发关闭',
+        openSettings: '调度设置',
+        openSettingsTitle: '打开系统设置，调整或关闭 OpenAI 自适应调度',
+        failedToLoad: '加载 OpenAI 自适应调度学习状态失败',
+        empty: '当前筛选条件下暂无 OpenAI 账号',
+        rateMultiplier: '倍率 {value}',
+        queued: '排队 {count}',
+        recentFailureRate: '近期失败率',
+        cooldownRemaining: '冷却剩余 {value}',
+        consecutiveFailures: '连续失败 {count}',
+        scoreNote: '当前分值为 0-100 的参考分，用于观察当前账号池的自适应计算效果；真实调度还会受模型能力、会话粘滞、排除账号和请求上下文影响。',
+        mode: {
+          enforce: '执行模式',
+          shadow: '观察模式'
+        },
+        status: {
+          disabled: '已关闭',
+          unavailable: '不可调度',
+          cooldown: '冷却中',
+          halfOpen: '半开探测',
+          highError: '错误偏高',
+          saturated: '容量打满',
+          learning: '学习中',
+          unlearned: '未学习',
+          healthy: '健康'
+        },
+        summary: {
+          tracked: '已学习账号',
+          healthy: '健康',
+          risk: '风险',
+          unavailable: '不可调度'
+        },
+        settings: {
+          window: '学习窗口',
+          noReset: '不重置',
+          minSamples: '缩容样本',
+          shrinkThreshold: '缩容阈值',
+          burstRatio: '高峰探测',
+          topK: 'TopK'
+        },
+        table: {
+          account: '账号',
+          status: '状态',
+          capacity: '容量',
+          capacityHint: '稳定/有效/配置',
+          load: '负载',
+          score: '当前分值',
+          samples: '样本',
+          error: '错误',
+          lastEvent: '最近事件'
+        }
+      },
       customTimeRange: {
         startTime: '开始时间',
         endTime: '结束时间'
@@ -6733,12 +6789,10 @@ export default {
         thompsonAlpha: 'Thompson Alpha',
         thompsonBeta: 'Thompson Beta',
         capacityLearning: '容量学习',
-        initialCapacity: '初始容量',
         initialCapacityFraction: '初始容量比例',
         minCapacity: '最小容量',
         increaseStep: '升容步长',
         growthFactor: '升容倍数',
-        decreaseFactor: '降容系数',
         probeThreshold: '升容负载阈值',
         burstProbeRatio: '突发探测比例',
         successThreshold: '升容成功率阈值',
@@ -6774,12 +6828,10 @@ export default {
           thompsonAlpha: 'Thompson 成功先验。值越大，系统初始越相信账号容易成功。',
           thompsonBeta: 'Thompson 失败先验。值越大，系统初始越保守。',
           capacityLearning: '根据成功、失败、负载和冷却结果动态学习账号真实可用容量，不完全相信手动配置的并发。',
-          initialCapacity: '账号尚无学习数据时使用的初始可用容量。',
-          initialCapacityFraction: '账号配置了并发上限时，新账号初始稳定容量至少取配置并发的该比例。例如 30000 并发、0.1 表示从 3000 开始学习。',
+          initialCapacityFraction: '新账号初始稳定容量按配置并发的该比例计算。例如 30000 并发、0.1 表示从 3000 开始学习。',
           minCapacity: '容量被降级后允许保留的最小容量，避免账号被永久压到 0。',
           increaseStep: '账号在高负载且成功率达标时，每次向上探测增加的容量。',
           growthFactor: '高负载且成功率达标时的比例增长因子。实际升容取升容步长和该倍数增长中的较大值。',
-          decreaseFactor: '账号连续失败或过载时的降容比例。例如 0.6 表示降为当前容量的 60%。',
           probeThreshold: '当前负载达到该比例后才允许继续升容探测，防止低负载时过早提高容量。',
           burstProbeRatio: '高峰或排队出现时，在稳定容量之上临时开放的探测比例。例如 0.2 表示最多额外开放 20% 容量。',
           successThreshold: '升容探测需要达到的成功率门槛。',

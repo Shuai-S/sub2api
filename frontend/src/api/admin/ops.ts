@@ -244,6 +244,116 @@ export interface OpsOpenAITokenStatsParams {
   top_n?: number
 }
 
+export type OpsOpenAIAdaptiveLearningStatus =
+  | 'disabled'
+  | 'unavailable'
+  | 'cooldown'
+  | 'half_open'
+  | 'high_error'
+  | 'saturated'
+  | 'learning'
+  | 'unlearned'
+  | 'healthy'
+
+export interface OpsOpenAIAdaptiveLearningSettingsSnapshot {
+  top_k: number
+  exploration_rate: number
+  softmax_temperature: number
+  initial_capacity_fraction: number
+  min_capacity: number
+  capacity_growth_factor: number
+  burst_probe_ratio: number
+  capacity_failure_threshold: number
+  min_recent_samples_for_shrink: number
+  shrink_error_threshold: number
+  shrink_factor_soft: number
+  shrink_factor_hard: number
+  half_open_probe_capacity: number
+  learning_window_seconds: number
+}
+
+export interface OpsOpenAIAdaptiveLearningSummary {
+  tracked_accounts: number
+  unlearned_accounts: number
+  learning_accounts: number
+  healthy_accounts: number
+  high_error_accounts: number
+  cooldown_accounts: number
+  half_open_accounts: number
+  saturated_accounts: number
+  unavailable_accounts: number
+}
+
+export interface OpsOpenAIAdaptiveLearningAccount {
+  account_id: number
+  account_name: string
+  platform: string
+  type: string
+  account_status: string
+  schedulable: boolean
+  priority: number
+
+  configured_concurrency: number
+  stable_capacity: number
+  effective_capacity: number
+  burst_capacity: number
+  rate_multiplier: number
+
+  current_concurrency: number
+  waiting_count: number
+  load_percentage: number
+
+  scheduler_status: OpsOpenAIAdaptiveLearningStatus | string
+  status_reason?: string
+  learned: boolean
+
+  scheduler_score: number
+  success_score: number
+  cost_score: number
+  capacity_score: number
+  latency_score: number
+  stability_score: number
+  exploration_score: number
+
+  success_ema: number
+  error_ema: number
+  latency_ema: number
+  ttft_ema: number
+
+  total_samples: number
+  recent_samples: number
+  recent_failures: number
+  recent_failure_rate: number
+  consecutive_success: number
+  consecutive_failure: number
+  consecutive_capacity_failure: number
+
+  learning_window_started_at?: string
+  last_success_at?: string
+  last_failure_at?: string
+  last_capacity_failure_at?: string
+  cooldown_until?: string
+  cooldown_remaining_sec: number
+}
+
+export interface OpsOpenAIAdaptiveLearningResponse {
+  enabled: boolean
+  mode: string
+  realtime_enabled: boolean
+  generated_at: string
+  total_accounts: number
+  returned_accounts: number
+  limit: number
+  settings: OpsOpenAIAdaptiveLearningSettingsSnapshot
+  summary: OpsOpenAIAdaptiveLearningSummary
+  accounts: OpsOpenAIAdaptiveLearningAccount[]
+}
+
+export interface OpsOpenAIAdaptiveLearningParams {
+  group_id?: number | null
+  limit?: number
+}
+
 export interface OpsSystemMetricsSnapshot {
   id: number
   created_at: string
@@ -1077,6 +1187,17 @@ export async function getOpenAITokenStats(
   return data
 }
 
+export async function getOpenAIAdaptiveLearning(
+  params: OpsOpenAIAdaptiveLearningParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsOpenAIAdaptiveLearningResponse> {
+  const { data } = await apiClient.get<OpsOpenAIAdaptiveLearningResponse>('/admin/ops/dashboard/openai-adaptive-learning', {
+    params,
+    signal: options.signal
+  })
+  return data
+}
+
 export type OpsErrorListView = 'errors' | 'excluded' | 'all'
 
 export type OpsErrorListQueryParams = {
@@ -1305,6 +1426,7 @@ export const opsAPI = {
   getErrorTrend,
   getErrorDistribution,
   getOpenAITokenStats,
+  getOpenAIAdaptiveLearning,
   getConcurrencyStats,
   getUserConcurrencyStats,
   getAccountAvailabilityStats,

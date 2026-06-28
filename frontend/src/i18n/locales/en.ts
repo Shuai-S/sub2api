@@ -4848,6 +4848,62 @@ export default {
           requestsWithFirstToken: 'Requests With First Token'
         }
       },
+      openaiAdaptiveLearning: {
+        title: 'OpenAI Adaptive Scheduling Learning',
+        description: 'Shows account learning state, capacity calculation, and risk signals in shadow or enforce mode.',
+        disabled: 'Disabled',
+        realtimeOff: 'Realtime concurrency off',
+        openSettings: 'Scheduler Settings',
+        openSettingsTitle: 'Open system settings to tune or disable OpenAI adaptive scheduling',
+        failedToLoad: 'Failed to load OpenAI adaptive scheduling learning state',
+        empty: 'No OpenAI accounts for the current filters',
+        rateMultiplier: 'rate {value}',
+        queued: 'queued {count}',
+        recentFailureRate: 'recent fail',
+        cooldownRemaining: 'cooldown {value}',
+        consecutiveFailures: 'fail streak {count}',
+        scoreNote: 'Current score is a 0-100 reference score for observing adaptive calculation in the current account pool; real scheduling still depends on model capability, sticky session, excluded accounts, and request context.',
+        mode: {
+          enforce: 'Enforce',
+          shadow: 'Shadow'
+        },
+        status: {
+          disabled: 'Disabled',
+          unavailable: 'Unavailable',
+          cooldown: 'Cooldown',
+          halfOpen: 'Half-open',
+          highError: 'High error',
+          saturated: 'Saturated',
+          learning: 'Learning',
+          unlearned: 'Unlearned',
+          healthy: 'Healthy'
+        },
+        summary: {
+          tracked: 'Tracked',
+          healthy: 'Healthy',
+          risk: 'Risk',
+          unavailable: 'Unavailable'
+        },
+        settings: {
+          window: 'Window',
+          noReset: 'No reset',
+          minSamples: 'Shrink samples',
+          shrinkThreshold: 'Shrink threshold',
+          burstRatio: 'Burst probe',
+          topK: 'TopK'
+        },
+        table: {
+          account: 'Account',
+          status: 'Status',
+          capacity: 'Capacity',
+          capacityHint: 'stable/effective/config',
+          load: 'Load',
+          score: 'Current Score',
+          samples: 'Samples',
+          error: 'Error',
+          lastEvent: 'Last Event'
+        }
+      },
       fullscreen: {
         enter: 'Enter Fullscreen'
       },
@@ -6578,12 +6634,10 @@ export default {
         thompsonAlpha: 'Thompson alpha',
         thompsonBeta: 'Thompson beta',
         capacityLearning: 'Capacity learning',
-        initialCapacity: 'Initial capacity',
         initialCapacityFraction: 'Initial capacity fraction',
         minCapacity: 'Minimum capacity',
         increaseStep: 'Increase step',
         growthFactor: 'Growth factor',
-        decreaseFactor: 'Decrease factor',
         probeThreshold: 'Probe load threshold',
         burstProbeRatio: 'Burst probe ratio',
         successThreshold: 'Success threshold',
@@ -6619,12 +6673,10 @@ export default {
           thompsonAlpha: 'Success prior for Thompson Sampling. Higher values make the scheduler initially trust accounts more.',
           thompsonBeta: 'Failure prior for Thompson Sampling. Higher values make the scheduler initially more conservative.',
           capacityLearning: 'Dynamically learns real account capacity from successes, failures, load, and cooldowns instead of fully trusting configured concurrency.',
-          initialCapacity: 'Capacity used before an account has learned runtime data.',
-          initialCapacityFraction: 'When an account has a configured concurrency limit, initial stable capacity is at least this fraction of that limit. For example, 30000 and 0.1 starts at 3000.',
+          initialCapacityFraction: 'Initial stable capacity is this fraction of configured concurrency. For example, 30000 and 0.1 starts at 3000.',
           minCapacity: 'Minimum retained capacity after down-scaling, preventing an account from being pushed permanently to 0.',
           increaseStep: 'Capacity added on each upward probe when the account is highly loaded and meets the success threshold.',
           growthFactor: 'Proportional growth factor when load is high and success rate is healthy. The scheduler uses the larger of additive step and factor growth.',
-          decreaseFactor: 'Capacity reduction ratio after repeated failures or overload. For example, 0.6 reduces capacity to 60% of the current value.',
           probeThreshold: 'Load ratio required before upward capacity probing is allowed, preventing premature growth under low load.',
           burstProbeRatio: 'Temporary capacity opened above stable capacity when traffic spikes or requests are waiting. 0.2 allows up to 20% extra probe capacity.',
           successThreshold: 'Success-rate threshold required for capacity increase probing.',

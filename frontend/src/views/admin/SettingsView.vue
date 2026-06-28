@@ -4110,13 +4110,6 @@
                     <div class="grid gap-4 md:grid-cols-4">
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.initialCapacity") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.initialCapacity')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_initial_capacity" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                           <span>{{ t("admin.settings.openaiAdaptiveScheduler.minCapacity") }}</span>
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minCapacity')" />
                         </label>
@@ -4128,13 +4121,6 @@
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.increaseStep')" />
                         </label>
                         <input v-model.number="form.openai_adaptive_scheduler_capacity_increase_step" class="input" type="number" min="1" step="1" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.decreaseFactor") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.decreaseFactor')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_decrease_factor" class="input" type="number" min="0.01" max="1" step="0.01" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -8222,12 +8208,10 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_thompson_enabled: boolean;
   openai_adaptive_scheduler_thompson_prior_alpha: number;
   openai_adaptive_scheduler_thompson_prior_beta: number;
-  openai_adaptive_scheduler_initial_capacity: number;
   openai_adaptive_scheduler_initial_capacity_fraction: number;
   openai_adaptive_scheduler_min_capacity: number;
   openai_adaptive_scheduler_capacity_increase_step: number;
   openai_adaptive_scheduler_capacity_growth_factor: number;
-  openai_adaptive_scheduler_capacity_decrease_factor: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold: number;
   openai_adaptive_scheduler_burst_probe_ratio: number;
   openai_adaptive_scheduler_capacity_success_threshold: number;
@@ -8261,12 +8245,10 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_min_cost_multiplier: 0.01,
   openai_adaptive_scheduler_thompson_prior_alpha: 1,
   openai_adaptive_scheduler_thompson_prior_beta: 1,
-  openai_adaptive_scheduler_initial_capacity: 1,
   openai_adaptive_scheduler_initial_capacity_fraction: 0.1,
   openai_adaptive_scheduler_min_capacity: 1,
   openai_adaptive_scheduler_capacity_increase_step: 1,
   openai_adaptive_scheduler_capacity_growth_factor: 1.25,
-  openai_adaptive_scheduler_capacity_decrease_factor: 0.6,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
   openai_adaptive_scheduler_burst_probe_ratio: 0.2,
   openai_adaptive_scheduler_capacity_success_threshold: 0.98,
@@ -9807,8 +9789,6 @@ async function saveSettings() {
         Number(form.openai_adaptive_scheduler_thompson_prior_alpha) || 1,
       openai_adaptive_scheduler_thompson_prior_beta:
         Number(form.openai_adaptive_scheduler_thompson_prior_beta) || 1,
-      openai_adaptive_scheduler_initial_capacity:
-        Number(form.openai_adaptive_scheduler_initial_capacity) || 1,
       openai_adaptive_scheduler_initial_capacity_fraction:
         Number(form.openai_adaptive_scheduler_initial_capacity_fraction) || 0,
       openai_adaptive_scheduler_min_capacity:
@@ -9817,8 +9797,6 @@ async function saveSettings() {
         Number(form.openai_adaptive_scheduler_capacity_increase_step) || 1,
       openai_adaptive_scheduler_capacity_growth_factor:
         Number(form.openai_adaptive_scheduler_capacity_growth_factor) || 1.25,
-      openai_adaptive_scheduler_capacity_decrease_factor:
-        Number(form.openai_adaptive_scheduler_capacity_decrease_factor) || 0.6,
       openai_adaptive_scheduler_capacity_probe_load_threshold:
         Number(form.openai_adaptive_scheduler_capacity_probe_load_threshold) ||
         0.8,

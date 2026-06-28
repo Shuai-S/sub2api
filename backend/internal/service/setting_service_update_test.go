@@ -280,12 +280,10 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 			OpenAIAdaptiveSchedulerThompsonEnabled:            false,
 			OpenAIAdaptiveSchedulerThompsonPriorAlpha:         2,
 			OpenAIAdaptiveSchedulerThompsonPriorBeta:          3,
-			OpenAIAdaptiveSchedulerInitialCapacity:            5,
 			OpenAIAdaptiveSchedulerInitialCapacityFraction:    0.12,
 			OpenAIAdaptiveSchedulerMinCapacity:                2,
 			OpenAIAdaptiveSchedulerCapacityIncreaseStep:       4,
 			OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.4,
-			OpenAIAdaptiveSchedulerCapacityDecreaseFactor:     0.4,
 			OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.75,
 			OpenAIAdaptiveSchedulerBurstProbeRatio:            0.3,
 			OpenAIAdaptiveSchedulerCapacitySuccessThreshold:   0.95,
@@ -325,12 +323,10 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "false", repo.updates[openAIAdaptiveSchedulerThompsonEnabledKey])
 	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerThompsonPriorAlphaKey])
 	require.Equal(t, "3", repo.updates[openAIAdaptiveSchedulerThompsonPriorBetaKey])
-	require.Equal(t, "5", repo.updates[openAIAdaptiveSchedulerInitialCapacityKey])
 	require.Equal(t, "0.12", repo.updates[openAIAdaptiveSchedulerInitialCapacityFractionKey])
 	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerMinCapacityKey])
 	require.Equal(t, "4", repo.updates[openAIAdaptiveSchedulerCapacityIncreaseStepKey])
 	require.Equal(t, "1.4", repo.updates[openAIAdaptiveSchedulerCapacityGrowthFactorKey])
-	require.Equal(t, "0.4", repo.updates[openAIAdaptiveSchedulerCapacityDecreaseFactorKey])
 	require.Equal(t, "0.75", repo.updates[openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey])
 	require.Equal(t, "0.3", repo.updates[openAIAdaptiveSchedulerBurstProbeRatioKey])
 	require.Equal(t, "0.95", repo.updates[openAIAdaptiveSchedulerCapacitySuccessThresholdKey])

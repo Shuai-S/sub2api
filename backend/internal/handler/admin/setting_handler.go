@@ -700,12 +700,10 @@ type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerThompsonEnabled            *bool    `json:"openai_adaptive_scheduler_thompson_enabled"`
 	OpenAIAdaptiveSchedulerThompsonPriorAlpha         *float64 `json:"openai_adaptive_scheduler_thompson_prior_alpha"`
 	OpenAIAdaptiveSchedulerThompsonPriorBeta          *float64 `json:"openai_adaptive_scheduler_thompson_prior_beta"`
-	OpenAIAdaptiveSchedulerInitialCapacity            *int     `json:"openai_adaptive_scheduler_initial_capacity"`
 	OpenAIAdaptiveSchedulerInitialCapacityFraction    *float64 `json:"openai_adaptive_scheduler_initial_capacity_fraction"`
 	OpenAIAdaptiveSchedulerMinCapacity                *int     `json:"openai_adaptive_scheduler_min_capacity"`
 	OpenAIAdaptiveSchedulerCapacityIncreaseStep       *int     `json:"openai_adaptive_scheduler_capacity_increase_step"`
 	OpenAIAdaptiveSchedulerCapacityGrowthFactor       *float64 `json:"openai_adaptive_scheduler_capacity_growth_factor"`
-	OpenAIAdaptiveSchedulerCapacityDecreaseFactor     *float64 `json:"openai_adaptive_scheduler_capacity_decrease_factor"`
 	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold *float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
 	OpenAIAdaptiveSchedulerBurstProbeRatio            *float64 `json:"openai_adaptive_scheduler_burst_probe_ratio"`
 	OpenAIAdaptiveSchedulerCapacitySuccessThreshold   *float64 `json:"openai_adaptive_scheduler_capacity_success_threshold"`
@@ -759,9 +757,6 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	if req.OpenAIAdaptiveSchedulerThompsonPriorBeta != nil {
 		settings.OpenAIAdaptiveSchedulerThompsonPriorBeta = *req.OpenAIAdaptiveSchedulerThompsonPriorBeta
 	}
-	if req.OpenAIAdaptiveSchedulerInitialCapacity != nil {
-		settings.OpenAIAdaptiveSchedulerInitialCapacity = *req.OpenAIAdaptiveSchedulerInitialCapacity
-	}
 	if req.OpenAIAdaptiveSchedulerInitialCapacityFraction != nil {
 		settings.OpenAIAdaptiveSchedulerInitialCapacityFraction = *req.OpenAIAdaptiveSchedulerInitialCapacityFraction
 	}
@@ -773,9 +768,6 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	}
 	if req.OpenAIAdaptiveSchedulerCapacityGrowthFactor != nil {
 		settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor = *req.OpenAIAdaptiveSchedulerCapacityGrowthFactor
-	}
-	if req.OpenAIAdaptiveSchedulerCapacityDecreaseFactor != nil {
-		settings.OpenAIAdaptiveSchedulerCapacityDecreaseFactor = *req.OpenAIAdaptiveSchedulerCapacityDecreaseFactor
 	}
 	if req.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold != nil {
 		settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = *req.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold
