@@ -143,3 +143,17 @@ func TestOpenAIAdaptiveSchedulerDoesNotShrinkOnSparseFailures(t *testing.T) {
 	require.Equal(t, 100, state.EstimatedCapacity)
 	require.True(t, state.CooldownUntil.IsZero())
 }
+
+func TestOpenAIAdaptiveDiagnosticSamplingRespectsSwitchAndRate(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	req := OpenAIAccountScheduleRequest{RequestedModel: "gpt-5"}
+
+	require.False(t, shouldLogOpenAIAdaptiveDiagnostic(t.Context(), req, cfg))
+
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0
+	require.False(t, shouldLogOpenAIAdaptiveDiagnostic(t.Context(), req, cfg))
+
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 1
+	require.True(t, shouldLogOpenAIAdaptiveDiagnostic(t.Context(), req, cfg))
+}

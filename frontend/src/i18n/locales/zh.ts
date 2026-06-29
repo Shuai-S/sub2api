@@ -6781,6 +6781,8 @@ export default {
           shadow: 'Shadow 只观察',
           enforce: 'Enforce 接管调度'
         },
+        diagnosticLog: '诊断日志',
+        diagnosticSampleRate: '诊断采样率',
         topK: 'TopK 候选数',
         explorationRate: '探索比例',
         softmaxTemperature: 'Softmax 温度',
@@ -6820,6 +6822,8 @@ export default {
         weightExploration: '探索',
         tooltips: {
           mode: 'Shadow 只记录和学习，不改变真实调度；Enforce 会按学习分数接管 OpenAI 账号选择。',
+          diagnosticLog: '开启后在 Enforce 执行模式下按采样记录结构化调度诊断日志，包含 request_id、候选分数摘要、最终选择和结果反馈，不记录请求正文或凭据。',
+          diagnosticSampleRate: '诊断日志采样比例。0 表示不记录，1 表示全量记录；建议生产环境保持较低比例，例如 0.05。',
           topK: '每次先按综合评分取前 N 个候选账号，再在候选中做随机/权重选择。数值越大越分散，越小越集中。',
           explorationRate: '强制探索低使用或新账号的概率，用于发现真实容量。0 表示不额外探索，0.05 表示约 5% 请求用于探索。',
           softmaxTemperature: '控制分数转概率时的离散程度。数值越低越偏向最高分账号，数值越高越平均分流。',

@@ -6626,6 +6626,8 @@ export default {
           shadow: 'Shadow observe only',
           enforce: 'Enforce scheduling'
         },
+        diagnosticLog: 'Diagnostic logs',
+        diagnosticSampleRate: 'Diagnostic sample rate',
         topK: 'TopK candidates',
         explorationRate: 'Exploration rate',
         softmaxTemperature: 'Softmax temperature',
@@ -6665,6 +6667,8 @@ export default {
         weightExploration: 'Exploration',
         tooltips: {
           mode: 'Shadow only records and learns without changing live routing. Enforce lets the learned score select OpenAI accounts.',
+          diagnosticLog: 'When enabled, Enforce mode writes sampled structured scheduler diagnostics with request_id, candidate score summaries, final selection, and result feedback. Request bodies and credentials are not logged.',
+          diagnosticSampleRate: 'Sampling ratio for diagnostic logs. 0 disables logging, 1 logs every request. Keep this low in production, for example 0.05.',
           topK: 'For each request, take the top N accounts by score first, then choose within that candidate set. Higher values spread traffic wider; lower values concentrate it.',
           explorationRate: 'Probability of forcing exploration for new or under-sampled accounts. 0 disables extra exploration; 0.05 means about 5% exploratory traffic.',
           softmaxTemperature: 'Controls how scores become probabilities. Lower values favor the best account more strongly; higher values distribute traffic more evenly.',

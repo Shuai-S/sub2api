@@ -10,6 +10,8 @@ func TestDefaultOpenAIAdaptiveSchedulerSettingsBalanceAvailabilityAndCost(t *tes
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 
 	require.False(t, cfg.OpenAIAdaptiveSchedulerEnabled)
+	require.False(t, cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
+	require.Equal(t, 0.05, cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 	require.Equal(t, openAIAdaptiveSchedulerModeEnforce, cfg.OpenAIAdaptiveSchedulerMode)
 	require.Equal(t, 15, cfg.OpenAIAdaptiveSchedulerTopK)
 	require.Equal(t, 0.03, cfg.OpenAIAdaptiveSchedulerExplorationRate)
@@ -45,4 +47,26 @@ func TestDefaultOpenAIAdaptiveSchedulerSettingsBalanceAvailabilityAndCost(t *tes
 	require.Equal(t, 0.10, cfg.OpenAIAdaptiveSchedulerWeightLatency)
 	require.Equal(t, 0.05, cfg.OpenAIAdaptiveSchedulerWeightStability)
 	require.Equal(t, 0.03, cfg.OpenAIAdaptiveSchedulerWeightExploration)
+}
+
+func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0.25
+
+	values := openAIAdaptiveSchedulerSettingsToMap(cfg)
+	require.Equal(t, "true", values[openAIAdaptiveSchedulerDiagnosticLogEnabledKey])
+	require.Equal(t, "0.25", values[openAIAdaptiveSchedulerDiagnosticLogSampleRateKey])
+
+	parsed := parseOpenAIAdaptiveSchedulerSettings(values)
+	require.True(t, parsed.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
+	require.Equal(t, 0.25, parsed.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
+}
+
+func TestNormalizeOpenAIAdaptiveSchedulerDiagnosticSampleRate(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 2
+
+	normalized := NormalizeOpenAIAdaptiveSchedulerSettings(cfg)
+	require.Equal(t, 0.05, normalized.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 }

@@ -426,6 +426,7 @@ const baseSettingsResponse = {
 };
 
 const openAIAdaptiveSchedulerDefaults = {
+  openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
   openai_adaptive_scheduler_top_k: 15,
   openai_adaptive_scheduler_exploration_rate: 0.03,
   openai_adaptive_scheduler_softmax_temperature: 0.45,
@@ -835,6 +836,7 @@ describe("admin SettingsView payment visible method controls", () => {
   it("fills OpenAI adaptive scheduler inputs with defaults and saves defaults when cleared", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
+      openai_adaptive_scheduler_diagnostic_log_enabled: true,
       ...Object.fromEntries(
         Object.keys(openAIAdaptiveSchedulerDefaults).map((key) => [key, ""]),
       ),
@@ -872,18 +874,28 @@ describe("admin SettingsView payment visible method controls", () => {
         "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
       ).value,
     ).toBe("1200");
+    expect(
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.diagnosticSampleRate",
+      ).value,
+    ).toBe("0.05");
 
-    await wrapper
-      .find(
-        'input[placeholder="0.05"][type="number"]',
-      )
-      .setValue("");
-    await wrapper.find('input[placeholder="1.2"][type="number"]').setValue("");
-    await wrapper
-      .find(
-        'input[placeholder="1200"][type="number"]',
-      )
-      .setValue("");
+    await wrapper.findAll("input").find((node) =>
+      node.element ===
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+      ),
+    )?.setValue("");
+    await wrapper.findAll("input").find((node) =>
+      node.element ===
+      inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor"),
+    )?.setValue("");
+    await wrapper.findAll("input").find((node) =>
+      node.element ===
+      inputForLabel(
+        "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
+      ),
+    )?.setValue("");
 
     expect(
       inputForLabel(
@@ -916,7 +928,10 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining(openAIAdaptiveSchedulerDefaults),
+      expect.objectContaining({
+        ...openAIAdaptiveSchedulerDefaults,
+        openai_adaptive_scheduler_diagnostic_log_enabled: true,
+      }),
     );
   });
 

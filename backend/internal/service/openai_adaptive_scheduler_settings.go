@@ -20,6 +20,8 @@ const (
 	openAIAdaptiveSchedulerSettingPrefix = "openai_adaptive_scheduler_"
 
 	openAIAdaptiveSchedulerEnabledKey                    = openAIAdaptiveSchedulerSettingPrefix + "enabled"
+	openAIAdaptiveSchedulerDiagnosticLogEnabledKey       = openAIAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
+	openAIAdaptiveSchedulerDiagnosticLogSampleRateKey    = openAIAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
 	openAIAdaptiveSchedulerModeKey                       = openAIAdaptiveSchedulerSettingPrefix + "mode"
 	openAIAdaptiveSchedulerTopKKey                       = openAIAdaptiveSchedulerSettingPrefix + "top_k"
 	openAIAdaptiveSchedulerExplorationRateKey            = openAIAdaptiveSchedulerSettingPrefix + "exploration_rate"
@@ -63,6 +65,8 @@ const (
 
 type OpenAIAdaptiveSchedulerSettings struct {
 	OpenAIAdaptiveSchedulerEnabled                    bool    `json:"openai_adaptive_scheduler_enabled"`
+	OpenAIAdaptiveSchedulerDiagnosticLogEnabled       bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`
+	OpenAIAdaptiveSchedulerDiagnosticLogSampleRate    float64 `json:"openai_adaptive_scheduler_diagnostic_log_sample_rate"`
 	OpenAIAdaptiveSchedulerMode                       string  `json:"openai_adaptive_scheduler_mode"`
 	OpenAIAdaptiveSchedulerTopK                       int     `json:"openai_adaptive_scheduler_top_k"`
 	OpenAIAdaptiveSchedulerExplorationRate            float64 `json:"openai_adaptive_scheduler_exploration_rate"`
@@ -111,6 +115,8 @@ var openAIAdaptiveSchedulerSettingSF singleflight.Group
 func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 	return OpenAIAdaptiveSchedulerSettings{
 		OpenAIAdaptiveSchedulerEnabled:                    false,
+		OpenAIAdaptiveSchedulerDiagnosticLogEnabled:       false,
+		OpenAIAdaptiveSchedulerDiagnosticLogSampleRate:    0.05,
 		OpenAIAdaptiveSchedulerMode:                       openAIAdaptiveSchedulerModeEnforce,
 		OpenAIAdaptiveSchedulerTopK:                       15,
 		OpenAIAdaptiveSchedulerExplorationRate:            0.03,
@@ -154,6 +160,7 @@ func NormalizeOpenAIAdaptiveSchedulerSettings(settings OpenAIAdaptiveSchedulerSe
 	if settings.OpenAIAdaptiveSchedulerMode == "" {
 		settings.OpenAIAdaptiveSchedulerMode = defaults.OpenAIAdaptiveSchedulerMode
 	}
+	settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = clampFloat(settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate, 0, 1, defaults.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 	settings.OpenAIAdaptiveSchedulerTopK = clampInt(settings.OpenAIAdaptiveSchedulerTopK, 1, 100, defaults.OpenAIAdaptiveSchedulerTopK)
 	settings.OpenAIAdaptiveSchedulerExplorationRate = clampFloat(settings.OpenAIAdaptiveSchedulerExplorationRate, 0, 1, defaults.OpenAIAdaptiveSchedulerExplorationRate)
 	settings.OpenAIAdaptiveSchedulerSoftmaxTemperature = clampFloat(settings.OpenAIAdaptiveSchedulerSoftmaxTemperature, 0.01, 10, defaults.OpenAIAdaptiveSchedulerSoftmaxTemperature)
@@ -218,6 +225,8 @@ func openAIAdaptiveSchedulerSettingsToMap(settings OpenAIAdaptiveSchedulerSettin
 	settings = NormalizeOpenAIAdaptiveSchedulerSettings(settings)
 	return map[string]string{
 		openAIAdaptiveSchedulerEnabledKey:                    strconv.FormatBool(settings.OpenAIAdaptiveSchedulerEnabled),
+		openAIAdaptiveSchedulerDiagnosticLogEnabledKey:       strconv.FormatBool(settings.OpenAIAdaptiveSchedulerDiagnosticLogEnabled),
+		openAIAdaptiveSchedulerDiagnosticLogSampleRateKey:    formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate),
 		openAIAdaptiveSchedulerModeKey:                       settings.OpenAIAdaptiveSchedulerMode,
 		openAIAdaptiveSchedulerTopKKey:                       strconv.Itoa(settings.OpenAIAdaptiveSchedulerTopK),
 		openAIAdaptiveSchedulerExplorationRateKey:            formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerExplorationRate),
@@ -258,6 +267,8 @@ func openAIAdaptiveSchedulerSettingsToMap(settings OpenAIAdaptiveSchedulerSettin
 func parseOpenAIAdaptiveSchedulerSettings(settings map[string]string) OpenAIAdaptiveSchedulerSettings {
 	result := DefaultOpenAIAdaptiveSchedulerSettings()
 	result.OpenAIAdaptiveSchedulerEnabled = parseBoolSetting(settings, openAIAdaptiveSchedulerEnabledKey, result.OpenAIAdaptiveSchedulerEnabled)
+	result.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = parseBoolSetting(settings, openAIAdaptiveSchedulerDiagnosticLogEnabledKey, result.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
+	result.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = parseFloatSetting(settings, openAIAdaptiveSchedulerDiagnosticLogSampleRateKey, result.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 	result.OpenAIAdaptiveSchedulerMode = firstNonEmpty(settings[openAIAdaptiveSchedulerModeKey], result.OpenAIAdaptiveSchedulerMode)
 	result.OpenAIAdaptiveSchedulerTopK = parseIntSetting(settings, openAIAdaptiveSchedulerTopKKey, result.OpenAIAdaptiveSchedulerTopK)
 	result.OpenAIAdaptiveSchedulerExplorationRate = parseFloatSetting(settings, openAIAdaptiveSchedulerExplorationRateKey, result.OpenAIAdaptiveSchedulerExplorationRate)

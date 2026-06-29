@@ -692,6 +692,8 @@ type UpdateSettingsRequest struct {
 
 type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerEnabled                    *bool    `json:"openai_adaptive_scheduler_enabled"`
+	OpenAIAdaptiveSchedulerDiagnosticLogEnabled       *bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`
+	OpenAIAdaptiveSchedulerDiagnosticLogSampleRate    *float64 `json:"openai_adaptive_scheduler_diagnostic_log_sample_rate"`
 	OpenAIAdaptiveSchedulerMode                       *string  `json:"openai_adaptive_scheduler_mode"`
 	OpenAIAdaptiveSchedulerTopK                       *int     `json:"openai_adaptive_scheduler_top_k"`
 	OpenAIAdaptiveSchedulerExplorationRate            *float64 `json:"openai_adaptive_scheduler_exploration_rate"`
@@ -732,6 +734,12 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	settings := previous
 	if req.OpenAIAdaptiveSchedulerEnabled != nil {
 		settings.OpenAIAdaptiveSchedulerEnabled = *req.OpenAIAdaptiveSchedulerEnabled
+	}
+	if req.OpenAIAdaptiveSchedulerDiagnosticLogEnabled != nil {
+		settings.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = *req.OpenAIAdaptiveSchedulerDiagnosticLogEnabled
+	}
+	if req.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate != nil {
+		settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = *req.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate
 	}
 	if req.OpenAIAdaptiveSchedulerMode != nil {
 		settings.OpenAIAdaptiveSchedulerMode = strings.TrimSpace(*req.OpenAIAdaptiveSchedulerMode)

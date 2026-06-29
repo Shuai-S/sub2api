@@ -1105,6 +1105,10 @@ func (s *defaultOpenAIAccountScheduler) ReportResult(accountID int64, success bo
 	s.stats.report(accountID, success, firstTokenMs)
 }
 
+func (s *defaultOpenAIAccountScheduler) ReportResultWithContext(_ context.Context, accountID int64, success bool, firstTokenMs *int) {
+	s.ReportResult(accountID, success, firstTokenMs)
+}
+
 func (s *defaultOpenAIAccountScheduler) ReportSwitch() {
 	if s == nil {
 		return
@@ -1397,8 +1401,21 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64, success bool, firstTokenMs *int) {
-	scheduler := s.getOpenAIAccountScheduler(context.Background())
+	s.ReportOpenAIAccountScheduleResultWithContext(context.Background(), accountID, success, firstTokenMs)
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithContext(ctx context.Context, accountID int64, success bool, firstTokenMs *int) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	scheduler := s.getOpenAIAccountScheduler(ctx)
 	if scheduler == nil {
+		return
+	}
+	if reporter, ok := scheduler.(interface {
+		ReportResultWithContext(context.Context, int64, bool, *int)
+	}); ok {
+		reporter.ReportResultWithContext(ctx, accountID, success, firstTokenMs)
 		return
 	}
 	scheduler.ReportResult(accountID, success, firstTokenMs)

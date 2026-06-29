@@ -606,6 +606,8 @@ export interface SystemSettings {
   payment_visible_method_wxpay_enabled?: boolean;
   openai_advanced_scheduler_enabled?: boolean;
   openai_adaptive_scheduler_enabled?: boolean;
+  openai_adaptive_scheduler_diagnostic_log_enabled?: boolean;
+  openai_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   openai_adaptive_scheduler_mode?: string;
   openai_adaptive_scheduler_top_k?: number;
   openai_adaptive_scheduler_exploration_rate?: number;
@@ -889,6 +891,8 @@ export interface UpdateSettingsRequest {
   payment_visible_method_wxpay_enabled?: boolean;
   openai_advanced_scheduler_enabled?: boolean;
   openai_adaptive_scheduler_enabled?: boolean;
+  openai_adaptive_scheduler_diagnostic_log_enabled?: boolean;
+  openai_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   openai_adaptive_scheduler_mode?: string;
   openai_adaptive_scheduler_top_k?: number;
   openai_adaptive_scheduler_exploration_rate?: number;

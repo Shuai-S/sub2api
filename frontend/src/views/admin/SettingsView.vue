@@ -4051,6 +4051,20 @@
                         </option>
                       </select>
                     </div>
+                    <div class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 dark:border-dark-700">
+                      <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticLog") }}</span>
+                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.diagnosticLog')" />
+                      </span>
+                      <Toggle v-model="form.openai_adaptive_scheduler_diagnostic_log_enabled" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                    </div>
+                    <div>
+                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticSampleRate") }}</span>
+                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.diagnosticSampleRate')" />
+                      </label>
+                      <input v-model.number="form.openai_adaptive_scheduler_diagnostic_log_sample_rate" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_diagnostic_log_sample_rate')" :disabled="!form.openai_adaptive_scheduler_enabled || !form.openai_adaptive_scheduler_diagnostic_log_enabled" />
+                    </div>
                     <div>
                       <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.topK") }}</span>
@@ -8200,6 +8214,8 @@ type SettingsForm = Omit<
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
   openai_adaptive_scheduler_enabled: boolean;
+  openai_adaptive_scheduler_diagnostic_log_enabled: boolean;
+  openai_adaptive_scheduler_diagnostic_log_sample_rate: number;
   openai_adaptive_scheduler_mode: string;
   openai_adaptive_scheduler_top_k: number;
   openai_adaptive_scheduler_exploration_rate: number;
@@ -8239,6 +8255,7 @@ type SettingsForm = Omit<
 };
 
 const openAIAdaptiveSchedulerRecommendedValues = {
+  openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
   openai_adaptive_scheduler_top_k: 15,
   openai_adaptive_scheduler_exploration_rate: 0.03,
   openai_adaptive_scheduler_softmax_temperature: 0.45,
@@ -8488,6 +8505,7 @@ const form = reactive<SettingsForm>({
   allow_ungrouped_key_scheduling: false,
   openai_advanced_scheduler_enabled: false,
   openai_adaptive_scheduler_enabled: false,
+  openai_adaptive_scheduler_diagnostic_log_enabled: false,
   openai_adaptive_scheduler_mode: "enforce",
   openai_adaptive_scheduler_thompson_enabled: true,
   ...openAIAdaptiveSchedulerRecommendedValues,
@@ -9798,6 +9816,10 @@ async function saveSettings() {
       openai_advanced_scheduler_enabled: form.openai_advanced_scheduler_enabled,
       openai_adaptive_scheduler_enabled:
         form.openai_adaptive_scheduler_enabled,
+      openai_adaptive_scheduler_diagnostic_log_enabled:
+        form.openai_adaptive_scheduler_diagnostic_log_enabled,
+      openai_adaptive_scheduler_diagnostic_log_sample_rate:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_diagnostic_log_sample_rate"),
       openai_adaptive_scheduler_mode: form.openai_adaptive_scheduler_mode,
       openai_adaptive_scheduler_top_k:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_top_k"),
