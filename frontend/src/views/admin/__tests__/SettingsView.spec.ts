@@ -427,38 +427,38 @@ const baseSettingsResponse = {
 
 const openAIAdaptiveSchedulerDefaults = {
   openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
-  openai_adaptive_scheduler_top_k: 15,
-  openai_adaptive_scheduler_exploration_rate: 0.03,
-  openai_adaptive_scheduler_softmax_temperature: 0.45,
+  openai_adaptive_scheduler_top_k: 10,
+  openai_adaptive_scheduler_exploration_rate: 0.01,
+  openai_adaptive_scheduler_softmax_temperature: 0.35,
   openai_adaptive_scheduler_min_cost_multiplier: 0.03,
   openai_adaptive_scheduler_thompson_prior_alpha: 1,
   openai_adaptive_scheduler_thompson_prior_beta: 1,
-  openai_adaptive_scheduler_initial_capacity_fraction: 0.05,
+  openai_adaptive_scheduler_initial_capacity_fraction: 0.03,
   openai_adaptive_scheduler_min_capacity: 2,
   openai_adaptive_scheduler_capacity_increase_step: 2,
-  openai_adaptive_scheduler_capacity_growth_factor: 1.2,
-  openai_adaptive_scheduler_capacity_probe_load_threshold: 0.75,
-  openai_adaptive_scheduler_burst_probe_ratio: 0.3,
+  openai_adaptive_scheduler_capacity_growth_factor: 1.15,
+  openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
+  openai_adaptive_scheduler_burst_probe_ratio: 0.15,
   openai_adaptive_scheduler_capacity_success_threshold: 0.95,
-  openai_adaptive_scheduler_capacity_failure_threshold: 5,
-  openai_adaptive_scheduler_min_recent_samples_for_shrink: 20,
-  openai_adaptive_scheduler_shrink_error_threshold: 0.3,
-  openai_adaptive_scheduler_shrink_factor_soft: 0.85,
-  openai_adaptive_scheduler_shrink_factor_hard: 0.6,
+  openai_adaptive_scheduler_capacity_failure_threshold: 3,
+  openai_adaptive_scheduler_min_recent_samples_for_shrink: 50,
+  openai_adaptive_scheduler_shrink_error_threshold: 0.35,
+  openai_adaptive_scheduler_shrink_factor_soft: 0.9,
+  openai_adaptive_scheduler_shrink_factor_hard: 0.7,
   openai_adaptive_scheduler_half_open_probe_capacity: 3,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
   openai_adaptive_scheduler_success_ema_alpha: 0.04,
   openai_adaptive_scheduler_error_ema_alpha: 0.06,
   openai_adaptive_scheduler_latency_ema_alpha: 0.05,
   openai_adaptive_scheduler_ttft_ema_alpha: 0.05,
-  openai_adaptive_scheduler_cooldown_base_seconds: 30,
-  openai_adaptive_scheduler_cooldown_max_seconds: 180,
-  openai_adaptive_scheduler_weight_success: 0.35,
-  openai_adaptive_scheduler_weight_cost: 0.3,
+  openai_adaptive_scheduler_cooldown_base_seconds: 60,
+  openai_adaptive_scheduler_cooldown_max_seconds: 600,
+  openai_adaptive_scheduler_weight_success: 0.4,
+  openai_adaptive_scheduler_weight_cost: 0.25,
   openai_adaptive_scheduler_weight_capacity: 0.2,
   openai_adaptive_scheduler_weight_latency: 0.1,
-  openai_adaptive_scheduler_weight_stability: 0.05,
-  openai_adaptive_scheduler_weight_exploration: 0.03,
+  openai_adaptive_scheduler_weight_stability: 0.03,
+  openai_adaptive_scheduler_weight_exploration: 0.02,
 } as const;
 
 type OpenAIAdaptiveSchedulerDefaultKey =
@@ -865,10 +865,10 @@ describe("admin SettingsView payment visible method controls", () => {
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
       ).value,
-    ).toBe("0.05");
+    ).toBe("0.03");
     expect(
       inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor").value,
-    ).toBe("1.2");
+    ).toBe("1.15");
     expect(
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
@@ -901,7 +901,7 @@ describe("admin SettingsView payment visible method controls", () => {
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
       ).placeholder,
-    ).toBe("0.05");
+    ).toBe("0.03");
     expect(
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
@@ -910,7 +910,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(
       inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor")
         .placeholder,
-    ).toBe("1.2");
+    ).toBe("1.15");
     expect(
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
