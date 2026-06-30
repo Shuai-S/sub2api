@@ -257,6 +257,20 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+						upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
+						wroteFallback := false
+						if !upstreamErrorAlreadyCommunicated {
+							wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
+						}
+						reqLog.Warn("openai.images.forward_failed",
+							zap.Int64("account_id", account.ID),
+							zap.Bool("fallback_error_response_written", wroteFallback),
+							zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
+							zap.Error(err),
+						)
+						return
+					}
 					if c.Writer.Size() != writerSizeBeforeForward {
 						h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, false, nil)
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
@@ -280,7 +294,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						}
 						continue
 					}
-					h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, false, nil)
+					h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -301,7 +315,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, false, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {

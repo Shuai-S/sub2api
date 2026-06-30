@@ -182,11 +182,22 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+					h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+					if c.Writer.Size() == writerSizeBeforeForward {
+						h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+					}
+					reqLog.Warn("openai_embeddings.forward_failed",
+						zap.Int64("account_id", account.ID),
+						zap.Error(err),
+					)
+					return
+				}
 				if c.Writer.Size() != writerSizeBeforeForward {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, false, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
@@ -203,7 +214,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, false, nil)
+			h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
