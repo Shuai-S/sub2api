@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick, ref } from 'vue'
-import Select from '@/components/common/Select.vue'
+import UiSelect from '@/components/common/Select.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 
 vi.mock('vue-i18n', () => ({
@@ -20,7 +20,7 @@ describe('Select group option layout', () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 720 })
 
     const Host = defineComponent({
-      components: { Select, GroupOptionItem },
+      components: { UiSelect, GroupOptionItem },
       setup() {
         const groupId = ref<number | null>(null)
         return {
@@ -37,7 +37,7 @@ describe('Select group option layout', () => {
         }
       },
       template: `
-        <Select
+        <UiSelect
           v-model="groupId"
           :options="options"
           :searchable="true"
@@ -52,7 +52,7 @@ describe('Select group option layout', () => {
               :selected="selected"
             />
           </template>
-        </Select>
+        </UiSelect>
       `
     })
 
@@ -65,7 +65,7 @@ describe('Select group option layout', () => {
         }
       }
     })
-    const selectRoot = wrapper.findComponent(Select).element as HTMLElement
+    const selectRoot = wrapper.findComponent(UiSelect).element as HTMLElement
     selectRoot.getBoundingClientRect = () =>
       ({
         bottom: 48,
