@@ -11,12 +11,12 @@
         :platform="platform"
         :subscription-type="subscriptionType"
         :show-rate="false"
-        class="groupOptionItemBadge"
+        class="groupOptionItemBadge max-w-full"
       />
       <!-- Row 2: description with top spacing -->
       <span
         v-if="description"
-        class="mt-1.5 w-full text-left text-xs leading-relaxed text-gray-500 dark:text-gray-400 line-clamp-2"
+        class="groupOptionItemDescription mt-1.5 w-full text-left text-xs leading-relaxed text-gray-500 dark:text-gray-400"
       >
         {{ description }}
       </span>
@@ -101,5 +101,20 @@ const ratePillClass = computed(() => {
 /* Bold the group name inside GroupBadge when used in dropdown option */
 .groupOptionItemBadge :deep(span.truncate) {
   font-weight: 600;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.groupOptionItemDescription {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 </style>

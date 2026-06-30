@@ -982,12 +982,14 @@
       <div
         v-if="groupSelectorKeyId !== null && dropdownPosition"
         ref="dropdownRef"
-        class="animate-in fade-in slide-in-from-top-2 fixed z-[100000020] w-max min-w-[380px] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 duration-200 dark:bg-dark-800 dark:ring-white/10"
+        class="animate-in fade-in slide-in-from-top-2 fixed z-[100000020] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 duration-200 dark:bg-dark-800 dark:ring-white/10"
         style="pointer-events: auto !important;"
         :style="{
           top: dropdownPosition.top !== undefined ? dropdownPosition.top + 'px' : undefined,
           bottom: dropdownPosition.bottom !== undefined ? dropdownPosition.bottom + 'px' : undefined,
-          left: dropdownPosition.left + 'px'
+          left: dropdownPosition.left + 'px',
+          width: dropdownPosition.width + 'px',
+          maxWidth: 'calc(100vw - 24px)'
         }"
       >
         <!-- Search box -->
@@ -1150,7 +1152,7 @@ const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
-const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
+const dropdownPosition = ref<{ top?: number; bottom?: number; left: number; width: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
 
@@ -1437,18 +1439,26 @@ const openGroupSelector = (key: ApiKey) => {
       const dropdownEstHeight = 400 // estimated max dropdown height
       const spaceBelow = window.innerHeight - rect.bottom
       const spaceAbove = rect.top
+      const viewportPadding = 12
+      const dropdownWidth = Math.min(420, Math.max(280, window.innerWidth - viewportPadding * 2))
+      const left = Math.max(
+        viewportPadding,
+        Math.min(rect.left, window.innerWidth - dropdownWidth - viewportPadding)
+      )
 
       if (spaceBelow < dropdownEstHeight && spaceAbove > spaceBelow) {
         // Not enough space below, pop upward
         dropdownPosition.value = {
           bottom: window.innerHeight - rect.top + 4,
-          left: rect.left
+          left,
+          width: dropdownWidth
         }
       } else {
         // Default: pop downward
         dropdownPosition.value = {
           top: rect.bottom + 4,
-          left: rect.left
+          left,
+          width: dropdownWidth
         }
       }
     }

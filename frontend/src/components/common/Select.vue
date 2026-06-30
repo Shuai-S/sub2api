@@ -194,10 +194,17 @@ const dropdownStyle = computed(() => {
   if (!triggerRect.value) return {}
 
   const rect = triggerRect.value
+  const viewportPadding = 12
+  const maxViewportWidth = Math.max(200, window.innerWidth - viewportPadding * 2)
+  const preferredWidth = Math.max(rect.width, 360)
+  const dropdownWidth = Math.min(preferredWidth, maxViewportWidth)
+  const maxLeft = window.innerWidth - dropdownWidth - viewportPadding
+  const left = Math.max(viewportPadding, Math.min(rect.left, maxLeft))
   const style: Record<string, string> = {
     position: 'fixed',
-    left: `${rect.left}px`,
-    minWidth: `${rect.width}px`,
+    left: `${left}px`,
+    width: `${dropdownWidth}px`,
+    maxWidth: `calc(100vw - ${viewportPadding * 2}px)`,
     zIndex: '100000020'
   }
 
@@ -495,12 +502,13 @@ onUnmounted(() => {
 
 <style>
 .select-dropdown-portal {
-  @apply w-max min-w-[200px];
+  @apply min-w-[200px];
   @apply bg-white dark:bg-dark-800;
   @apply rounded-xl;
   @apply border border-gray-200 dark:border-dark-700;
   @apply shadow-lg shadow-black/10 dark:shadow-black/30;
   @apply overflow-hidden;
+  box-sizing: border-box;
   pointer-events: auto !important;
 }
 
@@ -510,7 +518,7 @@ onUnmounted(() => {
 }
 
 .select-dropdown-portal .select-search-input {
-  @apply flex-1 bg-transparent text-sm;
+  @apply min-w-0 flex-1 bg-transparent text-sm;
   @apply text-gray-900 dark:text-gray-100;
   @apply placeholder:text-gray-400 dark:placeholder:text-dark-400;
   @apply focus:outline-none;
@@ -526,6 +534,7 @@ onUnmounted(() => {
   @apply text-gray-700 dark:text-gray-300;
   @apply cursor-pointer transition-colors duration-150;
   @apply hover:bg-gray-50 dark:hover:bg-dark-700;
+  align-items: flex-start;
   pointer-events: auto !important;
 }
 
@@ -554,7 +563,10 @@ onUnmounted(() => {
 }
 
 .select-dropdown-portal .select-option-label {
-  @apply flex-1 min-w-0 truncate text-left;
+  @apply min-w-0 flex-1 text-left;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .select-dropdown-portal .select-empty {
