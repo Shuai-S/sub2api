@@ -446,6 +446,7 @@ const openAIAdaptiveSchedulerDefaults = {
   openai_adaptive_scheduler_shrink_error_threshold: 0.35,
   openai_adaptive_scheduler_shrink_factor_soft: 0.9,
   openai_adaptive_scheduler_shrink_factor_hard: 0.7,
+  openai_adaptive_scheduler_half_open_failure_threshold: 1,
   openai_adaptive_scheduler_half_open_probe_capacity: 3,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
   openai_adaptive_scheduler_success_ema_alpha: 0.04,
@@ -931,6 +932,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         ...openAIAdaptiveSchedulerDefaults,
+        openai_adaptive_scheduler_account_type_priority_mode: "mixed",
         openai_adaptive_scheduler_diagnostic_log_enabled: true,
       }),
     );

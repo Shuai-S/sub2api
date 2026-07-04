@@ -5204,8 +5204,15 @@ export default {
           noReset: '不重置',
           minSamples: '缩容样本',
           shrinkThreshold: '缩容阈值',
+          halfOpenFailures: '半开失败阈值',
           burstRatio: '高峰探测',
-          topK: 'TopK'
+          topK: 'TopK',
+          accountTypePriority: '类型优先级'
+        },
+        accountTypePriorityModes: {
+          mixed: '混合',
+          oauthFirst: 'OAuth 优先',
+          apiKeyFirst: 'API Key 优先'
         },
         table: {
           account: '账号',
@@ -6944,6 +6951,12 @@ export default {
           shadow: 'Shadow 只观察',
           enforce: 'Enforce 接管调度'
         },
+        accountTypePriority: '账号类型优先级',
+        accountTypePriorities: {
+          mixed: '混合模式',
+          oauthFirst: 'OAuth 优先',
+          apiKeyFirst: 'API Key 优先'
+        },
         diagnosticLog: '诊断日志',
         diagnosticSampleRate: '诊断采样率',
         topK: 'TopK 候选数',
@@ -6969,6 +6982,7 @@ export default {
         shrinkErrorThreshold: '缩容错误率阈值',
         shrinkFactorSoft: '软缩容系数',
         shrinkFactorHard: '硬缩容系数',
+        halfOpenFailureThreshold: '半开失败阈值',
         halfOpenProbeCapacity: '半开探测容量',
         learningWindowSeconds: '学习窗口秒数',
         ema: 'EMA 更新权重',
@@ -6985,6 +6999,7 @@ export default {
         weightExploration: '探索',
         tooltips: {
           mode: 'Shadow 只记录和学习，不改变真实调度；Enforce 会按学习分数接管 OpenAI 账号选择。',
+          accountTypePriority: '控制自适应调度在账号类型之间的优先顺序。混合模式保持原有按学习评分调度；OAuth/API Key 优先会先在对应账号类型内按评分选择，再尝试其他类型。',
           diagnosticLog: '开启后在 Enforce 执行模式下按采样记录结构化调度诊断日志，包含 request_id、候选分数摘要、最终选择和结果反馈，不记录请求正文或凭据。',
           diagnosticSampleRate: '诊断日志采样比例。0 表示不记录，1 表示全量记录；建议生产环境保持较低比例，例如 0.05。',
           topK: '每次先按综合评分取前 N 个候选账号，再在候选中做随机/权重选择。数值越大越分散，越小越集中。',
@@ -7010,7 +7025,8 @@ export default {
           shrinkErrorThreshold: '学习窗口错误率或错误 EMA 达到该阈值后才允许缩容。',
           shrinkFactorSoft: '满足缩容条件但尚未严重失败时使用的温和降容比例。',
           shrinkFactorHard: '连续失败翻倍或错误率严重超阈值时使用的强降容比例。',
-          halfOpenProbeCapacity: '账号冷却结束后，首次恢复时允许的小探测并发。成功后会退出半开限制。',
+          halfOpenFailureThreshold: '连续容量失败达到该次数后才进入半开探测限制。调大可避免单次失败就降到半开探测容量。',
+          halfOpenProbeCapacity: '进入半开探测后允许的小探测并发。成功后会退出半开限制。',
           learningWindowSeconds: '近期样本统计窗口。0 表示不按时间重置窗口，默认 900 秒用于平衡学习速度和抗抖动。',
           ema: 'EMA 是指数移动平均，用来平滑成功率、错误率和延迟。数值越大越敏感，越小越平滑。',
           successEma: '成功率样本进入历史成功率的更新权重。',

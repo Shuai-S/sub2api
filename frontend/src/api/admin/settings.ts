@@ -610,6 +610,7 @@ export interface SystemSettings {
   openai_adaptive_scheduler_diagnostic_log_enabled?: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   openai_adaptive_scheduler_mode?: string;
+  openai_adaptive_scheduler_account_type_priority_mode?: string;
   openai_adaptive_scheduler_top_k?: number;
   openai_adaptive_scheduler_exploration_rate?: number;
   openai_adaptive_scheduler_softmax_temperature?: number;
@@ -629,6 +630,7 @@ export interface SystemSettings {
   openai_adaptive_scheduler_shrink_error_threshold?: number;
   openai_adaptive_scheduler_shrink_factor_soft?: number;
   openai_adaptive_scheduler_shrink_factor_hard?: number;
+  openai_adaptive_scheduler_half_open_failure_threshold?: number;
   openai_adaptive_scheduler_half_open_probe_capacity?: number;
   openai_adaptive_scheduler_learning_window_seconds?: number;
   openai_adaptive_scheduler_success_ema_alpha?: number;
@@ -896,6 +898,7 @@ export interface UpdateSettingsRequest {
   openai_adaptive_scheduler_diagnostic_log_enabled?: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   openai_adaptive_scheduler_mode?: string;
+  openai_adaptive_scheduler_account_type_priority_mode?: string;
   openai_adaptive_scheduler_top_k?: number;
   openai_adaptive_scheduler_exploration_rate?: number;
   openai_adaptive_scheduler_softmax_temperature?: number;
@@ -915,6 +918,7 @@ export interface UpdateSettingsRequest {
   openai_adaptive_scheduler_shrink_error_threshold?: number;
   openai_adaptive_scheduler_shrink_factor_soft?: number;
   openai_adaptive_scheduler_shrink_factor_hard?: number;
+  openai_adaptive_scheduler_half_open_failure_threshold?: number;
   openai_adaptive_scheduler_half_open_probe_capacity?: number;
   openai_adaptive_scheduler_learning_window_seconds?: number;
   openai_adaptive_scheduler_success_ema_alpha?: number;

@@ -5050,8 +5050,15 @@ export default {
           noReset: 'No reset',
           minSamples: 'Shrink samples',
           shrinkThreshold: 'Shrink threshold',
+          halfOpenFailures: 'Half-open failures',
           burstRatio: 'Burst probe',
-          topK: 'TopK'
+          topK: 'TopK',
+          accountTypePriority: 'Type priority'
+        },
+        accountTypePriorityModes: {
+          mixed: 'Mixed',
+          oauthFirst: 'OAuth first',
+          apiKeyFirst: 'API Key first'
         },
         table: {
           account: 'Account',
@@ -6790,6 +6797,12 @@ export default {
           shadow: 'Shadow observe only',
           enforce: 'Enforce scheduling'
         },
+        accountTypePriority: 'Account type priority',
+        accountTypePriorities: {
+          mixed: 'Mixed mode',
+          oauthFirst: 'OAuth first',
+          apiKeyFirst: 'API Key first'
+        },
         diagnosticLog: 'Diagnostic logs',
         diagnosticSampleRate: 'Diagnostic sample rate',
         topK: 'TopK candidates',
@@ -6815,6 +6828,7 @@ export default {
         shrinkErrorThreshold: 'Shrink error threshold',
         shrinkFactorSoft: 'Soft shrink factor',
         shrinkFactorHard: 'Hard shrink factor',
+        halfOpenFailureThreshold: 'Half-open failure threshold',
         halfOpenProbeCapacity: 'Half-open probe capacity',
         learningWindowSeconds: 'Learning window seconds',
         ema: 'EMA update weights',
@@ -6831,6 +6845,7 @@ export default {
         weightExploration: 'Exploration',
         tooltips: {
           mode: 'Shadow only records and learns without changing live routing. Enforce lets the learned score select OpenAI accounts.',
+          accountTypePriority: 'Controls the preferred order between account types. Mixed mode keeps the original learned-score routing; OAuth/API Key first selects by score within that type before trying other types.',
           diagnosticLog: 'When enabled, Enforce mode writes sampled structured scheduler diagnostics with request_id, candidate score summaries, final selection, and result feedback. Request bodies and credentials are not logged.',
           diagnosticSampleRate: 'Sampling ratio for diagnostic logs. 0 disables logging, 1 logs every request. Keep this low in production, for example 0.05.',
           topK: 'For each request, take the top N accounts by score first, then choose within that candidate set. Higher values spread traffic wider; lower values concentrate it.',
@@ -6856,7 +6871,8 @@ export default {
           shrinkErrorThreshold: 'Down-scaling is allowed only when recent error rate or error EMA reaches this threshold.',
           shrinkFactorSoft: 'Gentler down-scaling ratio used when shrink conditions are met but failures are not severe.',
           shrinkFactorHard: 'Stronger down-scaling ratio used when consecutive failures double the threshold or error rate is far above threshold.',
-          halfOpenProbeCapacity: 'Small probe concurrency allowed after cooldown. A success exits half-open limitation.',
+          halfOpenFailureThreshold: 'Consecutive capacity failures required before limiting the account to half-open probe capacity. Increase this to avoid half-open mode after a single failure.',
+          halfOpenProbeCapacity: 'Small probe concurrency allowed in half-open mode. A success exits half-open limitation.',
           learningWindowSeconds: 'Recent sample window. 0 disables time-based window reset; default 900 seconds balances learning speed and noise resistance.',
           ema: 'EMA is exponential moving average for smoothing success rate, error rate, and latency. Higher values react faster; lower values smooth more.',
           successEma: 'Update weight for feeding new success samples into historical success rate.',

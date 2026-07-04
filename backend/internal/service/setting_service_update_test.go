@@ -273,6 +273,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 		OpenAIAdaptiveScheduler: OpenAIAdaptiveSchedulerSettings{
 			OpenAIAdaptiveSchedulerEnabled:                    true,
 			OpenAIAdaptiveSchedulerMode:                       openAIAdaptiveSchedulerModeEnforce,
+			OpenAIAdaptiveSchedulerAccountTypePriorityMode:    openAIAdaptiveSchedulerAccountTypePriorityAPIKeyFirst,
 			OpenAIAdaptiveSchedulerTopK:                       20,
 			OpenAIAdaptiveSchedulerExplorationRate:            0.07,
 			OpenAIAdaptiveSchedulerSoftmaxTemperature:         0.5,
@@ -292,6 +293,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 			OpenAIAdaptiveSchedulerShrinkErrorThreshold:       0.25,
 			OpenAIAdaptiveSchedulerShrinkFactorSoft:           0.85,
 			OpenAIAdaptiveSchedulerShrinkFactorHard:           0.45,
+			OpenAIAdaptiveSchedulerHalfOpenFailureThreshold:   2,
 			OpenAIAdaptiveSchedulerHalfOpenProbeCapacity:      7,
 			OpenAIAdaptiveSchedulerLearningWindowSeconds:      1200,
 			OpenAIAdaptiveSchedulerSuccessEMAAlpha:            0.06,
@@ -316,6 +318,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
 	require.Equal(t, "true", repo.updates[openAIAdaptiveSchedulerEnabledKey])
 	require.Equal(t, "enforce", repo.updates[openAIAdaptiveSchedulerModeKey])
+	require.Equal(t, "apikey_first", repo.updates[openAIAdaptiveSchedulerAccountTypePriorityModeKey])
 	require.Equal(t, "20", repo.updates[openAIAdaptiveSchedulerTopKKey])
 	require.Equal(t, "0.07", repo.updates[openAIAdaptiveSchedulerExplorationRateKey])
 	require.Equal(t, "0.5", repo.updates[openAIAdaptiveSchedulerSoftmaxTemperatureKey])
@@ -335,6 +338,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "0.25", repo.updates[openAIAdaptiveSchedulerShrinkErrorThresholdKey])
 	require.Equal(t, "0.85", repo.updates[openAIAdaptiveSchedulerShrinkFactorSoftKey])
 	require.Equal(t, "0.45", repo.updates[openAIAdaptiveSchedulerShrinkFactorHardKey])
+	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerHalfOpenFailureThresholdKey])
 	require.Equal(t, "7", repo.updates[openAIAdaptiveSchedulerHalfOpenProbeCapacityKey])
 	require.Equal(t, "1200", repo.updates[openAIAdaptiveSchedulerLearningWindowSecondsKey])
 	require.Equal(t, "0.06", repo.updates[openAIAdaptiveSchedulerSuccessEMAAlphaKey])

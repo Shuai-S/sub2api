@@ -697,6 +697,7 @@ type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerDiagnosticLogEnabled       *bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`
 	OpenAIAdaptiveSchedulerDiagnosticLogSampleRate    *float64 `json:"openai_adaptive_scheduler_diagnostic_log_sample_rate"`
 	OpenAIAdaptiveSchedulerMode                       *string  `json:"openai_adaptive_scheduler_mode"`
+	OpenAIAdaptiveSchedulerAccountTypePriorityMode    *string  `json:"openai_adaptive_scheduler_account_type_priority_mode"`
 	OpenAIAdaptiveSchedulerTopK                       *int     `json:"openai_adaptive_scheduler_top_k"`
 	OpenAIAdaptiveSchedulerExplorationRate            *float64 `json:"openai_adaptive_scheduler_exploration_rate"`
 	OpenAIAdaptiveSchedulerSoftmaxTemperature         *float64 `json:"openai_adaptive_scheduler_softmax_temperature"`
@@ -716,6 +717,7 @@ type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerShrinkErrorThreshold       *float64 `json:"openai_adaptive_scheduler_shrink_error_threshold"`
 	OpenAIAdaptiveSchedulerShrinkFactorSoft           *float64 `json:"openai_adaptive_scheduler_shrink_factor_soft"`
 	OpenAIAdaptiveSchedulerShrinkFactorHard           *float64 `json:"openai_adaptive_scheduler_shrink_factor_hard"`
+	OpenAIAdaptiveSchedulerHalfOpenFailureThreshold   *int     `json:"openai_adaptive_scheduler_half_open_failure_threshold"`
 	OpenAIAdaptiveSchedulerHalfOpenProbeCapacity      *int     `json:"openai_adaptive_scheduler_half_open_probe_capacity"`
 	OpenAIAdaptiveSchedulerLearningWindowSeconds      *int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
 	OpenAIAdaptiveSchedulerSuccessEMAAlpha            *float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
@@ -745,6 +747,9 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	}
 	if req.OpenAIAdaptiveSchedulerMode != nil {
 		settings.OpenAIAdaptiveSchedulerMode = strings.TrimSpace(*req.OpenAIAdaptiveSchedulerMode)
+	}
+	if req.OpenAIAdaptiveSchedulerAccountTypePriorityMode != nil {
+		settings.OpenAIAdaptiveSchedulerAccountTypePriorityMode = strings.TrimSpace(*req.OpenAIAdaptiveSchedulerAccountTypePriorityMode)
 	}
 	if req.OpenAIAdaptiveSchedulerTopK != nil {
 		settings.OpenAIAdaptiveSchedulerTopK = *req.OpenAIAdaptiveSchedulerTopK
@@ -802,6 +807,9 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	}
 	if req.OpenAIAdaptiveSchedulerShrinkFactorHard != nil {
 		settings.OpenAIAdaptiveSchedulerShrinkFactorHard = *req.OpenAIAdaptiveSchedulerShrinkFactorHard
+	}
+	if req.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold != nil {
+		settings.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold = *req.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold
 	}
 	if req.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity != nil {
 		settings.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity = *req.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity

@@ -32,6 +32,47 @@ func TestOpenAIAdaptiveSchedulerCostScoreUsesRateMultiplier(t *testing.T) {
 	require.Greater(t, candidates[0].score, candidates[1].score)
 }
 
+func TestOpenAIAdaptiveSchedulerAccountTypePriorityOrdersSelectionGroups(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerTopK = 3
+	cfg.OpenAIAdaptiveSchedulerExplorationRate = 0
+	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = openAIAdaptiveSchedulerAccountTypePriorityOAuthFirst
+	candidates := []openAIAdaptiveCandidateScore{
+		{
+			account:           &Account{ID: 1, Type: AccountTypeAPIKey},
+			loadInfo:          &AccountLoadInfo{},
+			effectiveCapacity: 10,
+			score:             0.99,
+		},
+		{
+			account:           &Account{ID: 2, Type: AccountTypeOAuth},
+			loadInfo:          &AccountLoadInfo{},
+			effectiveCapacity: 10,
+			score:             0.10,
+		},
+		{
+			account:           &Account{ID: 3, Type: AccountTypeSetupToken},
+			loadInfo:          &AccountLoadInfo{},
+			effectiveCapacity: 10,
+			score:             0.20,
+		},
+	}
+
+	order := buildOpenAIAdaptiveSelectionOrder(candidates, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5"}, cfg)
+
+	require.Len(t, order, 3)
+	require.True(t, order[0].account.IsOAuth())
+	require.True(t, order[1].account.IsOAuth())
+	require.Equal(t, AccountTypeAPIKey, order[2].account.Type)
+
+	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = openAIAdaptiveSchedulerAccountTypePriorityAPIKeyFirst
+	order = buildOpenAIAdaptiveSelectionOrder(candidates, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5"}, cfg)
+	require.Equal(t, AccountTypeAPIKey, order[0].account.Type)
+
+	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = openAIAdaptiveSchedulerAccountTypePriorityMixed
+	require.True(t, isOpenAIAdaptiveCandidateBetter(candidates[0], candidates[1], cfg))
+}
+
 func TestEffectiveOpenAIAdaptiveCapacityCapsConfiguredConcurrency(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 	state := defaultOpenAIAdaptiveAccountState(1, cfg)
@@ -93,6 +134,20 @@ func TestEffectiveOpenAIAdaptiveCapacityUsesHalfOpenProbeAfterCooldown(t *testin
 	state.ConsecutiveCapacityFailure = 3
 	state.CooldownUntil = time.Now().Add(-time.Second)
 
+	require.Equal(t, 5, effectiveOpenAIAdaptiveCapacity(&Account{Concurrency: 300}, state, cfg))
+}
+
+func TestEffectiveOpenAIAdaptiveCapacityWaitsForHalfOpenFailureThreshold(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold = 2
+	cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity = 5
+	state := defaultOpenAIAdaptiveAccountState(1, cfg)
+	state.EstimatedCapacity = 100
+	state.ConsecutiveCapacityFailure = 1
+
+	require.Equal(t, 100, effectiveOpenAIAdaptiveCapacity(&Account{Concurrency: 300}, state, cfg))
+
+	state.ConsecutiveCapacityFailure = 2
 	require.Equal(t, 5, effectiveOpenAIAdaptiveCapacity(&Account{Concurrency: 300}, state, cfg))
 }
 

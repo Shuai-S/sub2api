@@ -257,6 +257,7 @@ export type OpsOpenAIAdaptiveLearningStatus =
 
 export interface OpsOpenAIAdaptiveLearningSettingsSnapshot {
   top_k: number
+  account_type_priority_mode: string
   exploration_rate: number
   softmax_temperature: number
   initial_capacity_fraction: number
@@ -268,6 +269,7 @@ export interface OpsOpenAIAdaptiveLearningSettingsSnapshot {
   shrink_error_threshold: number
   shrink_factor_soft: number
   shrink_factor_hard: number
+  half_open_failure_threshold: number
   half_open_probe_capacity: number
   learning_window_seconds: number
 }

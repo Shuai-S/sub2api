@@ -13,6 +13,7 @@ func TestDefaultOpenAIAdaptiveSchedulerSettingsBalanceAvailabilityAndCost(t *tes
 	require.False(t, cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
 	require.Equal(t, 0.05, cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 	require.Equal(t, openAIAdaptiveSchedulerModeEnforce, cfg.OpenAIAdaptiveSchedulerMode)
+	require.Equal(t, openAIAdaptiveSchedulerAccountTypePriorityMixed, cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode)
 	require.Equal(t, 10, cfg.OpenAIAdaptiveSchedulerTopK)
 	require.Equal(t, 0.01, cfg.OpenAIAdaptiveSchedulerExplorationRate)
 	require.Equal(t, 0.35, cfg.OpenAIAdaptiveSchedulerSoftmaxTemperature)
@@ -31,6 +32,7 @@ func TestDefaultOpenAIAdaptiveSchedulerSettingsBalanceAvailabilityAndCost(t *tes
 	require.Equal(t, 0.35, cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold)
 	require.Equal(t, 0.90, cfg.OpenAIAdaptiveSchedulerShrinkFactorSoft)
 	require.Equal(t, 0.70, cfg.OpenAIAdaptiveSchedulerShrinkFactorHard)
+	require.Equal(t, 1, cfg.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold)
 	require.Equal(t, 3, cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity)
 	require.Equal(t, 1200, cfg.OpenAIAdaptiveSchedulerLearningWindowSeconds)
 
@@ -53,14 +55,17 @@ func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
 	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0.25
+	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = openAIAdaptiveSchedulerAccountTypePriorityOAuthFirst
 
 	values := openAIAdaptiveSchedulerSettingsToMap(cfg)
 	require.Equal(t, "true", values[openAIAdaptiveSchedulerDiagnosticLogEnabledKey])
 	require.Equal(t, "0.25", values[openAIAdaptiveSchedulerDiagnosticLogSampleRateKey])
+	require.Equal(t, openAIAdaptiveSchedulerAccountTypePriorityOAuthFirst, values[openAIAdaptiveSchedulerAccountTypePriorityModeKey])
 
 	parsed := parseOpenAIAdaptiveSchedulerSettings(values)
 	require.True(t, parsed.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
 	require.Equal(t, 0.25, parsed.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
+	require.Equal(t, openAIAdaptiveSchedulerAccountTypePriorityOAuthFirst, parsed.OpenAIAdaptiveSchedulerAccountTypePriorityMode)
 }
 
 func TestNormalizeOpenAIAdaptiveSchedulerDiagnosticSampleRate(t *testing.T) {
@@ -69,4 +74,13 @@ func TestNormalizeOpenAIAdaptiveSchedulerDiagnosticSampleRate(t *testing.T) {
 
 	normalized := NormalizeOpenAIAdaptiveSchedulerSettings(cfg)
 	require.Equal(t, 0.05, normalized.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
+}
+
+func TestNormalizeOpenAIAdaptiveSchedulerAccountTypePriorityMode(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = "api_key_first"
+	require.Equal(t, openAIAdaptiveSchedulerAccountTypePriorityAPIKeyFirst, NormalizeOpenAIAdaptiveSchedulerSettings(cfg).OpenAIAdaptiveSchedulerAccountTypePriorityMode)
+
+	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = "not-a-mode"
+	require.Equal(t, openAIAdaptiveSchedulerAccountTypePriorityMixed, NormalizeOpenAIAdaptiveSchedulerSettings(cfg).OpenAIAdaptiveSchedulerAccountTypePriorityMode)
 }

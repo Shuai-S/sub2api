@@ -665,7 +665,7 @@ func buildOpenAIAdaptiveSelectionOrder(
 	}
 	ranked := append([]openAIAdaptiveCandidateScore(nil), candidates...)
 	sort.SliceStable(ranked, func(i, j int) bool {
-		return isOpenAIAdaptiveCandidateBetter(ranked[i], ranked[j])
+		return isOpenAIAdaptiveCandidateBetter(ranked[i], ranked[j], cfg)
 	})
 	topK := cfg.OpenAIAdaptiveSchedulerTopK
 	if topK <= 0 || topK > len(ranked) {
@@ -682,7 +682,7 @@ func buildOpenAIAdaptiveSelectionOrder(
 			if explorePool[i].explorationScore != explorePool[j].explorationScore {
 				return explorePool[i].explorationScore > explorePool[j].explorationScore
 			}
-			return isOpenAIAdaptiveCandidateBetter(explorePool[i], explorePool[j])
+			return isOpenAIAdaptiveCandidateBetter(explorePool[i], explorePool[j], cfg)
 		})
 		return append(explorePool, ranked[:topK]...)
 	}
@@ -699,13 +699,37 @@ func buildOpenAIAdaptiveSoftmaxOrder(
 	if len(top) <= 1 {
 		return append(append([]openAIAdaptiveCandidateScore(nil), top...), rest...)
 	}
-	pool := append([]openAIAdaptiveCandidateScore(nil), top...)
 	temperature := cfg.OpenAIAdaptiveSchedulerSoftmaxTemperature
 	if temperature <= 0 {
 		temperature = 0.35
 	}
 	order := make([]openAIAdaptiveCandidateScore, 0, len(top)+len(rest))
 	rng := newOpenAISelectionRNG(deriveOpenAISelectionSeed(req))
+	if cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode == openAIAdaptiveSchedulerAccountTypePriorityMixed {
+		order = appendOpenAIAdaptiveSoftmaxPool(order, top, temperature, &rng)
+		return append(order, rest...)
+	}
+
+	groups := groupOpenAIAdaptiveCandidatesByAccountTypePriority(top, cfg)
+	for _, group := range groups {
+		order = appendOpenAIAdaptiveSoftmaxPool(order, group, temperature, &rng)
+	}
+	return append(order, rest...)
+}
+
+func appendOpenAIAdaptiveSoftmaxPool(
+	order []openAIAdaptiveCandidateScore,
+	top []openAIAdaptiveCandidateScore,
+	temperature float64,
+	rng *openAISelectionRNG,
+) []openAIAdaptiveCandidateScore {
+	if len(top) == 0 {
+		return order
+	}
+	if len(top) == 1 {
+		return append(order, top[0])
+	}
+	pool := append([]openAIAdaptiveCandidateScore(nil), top...)
 	for len(pool) > 0 {
 		maxScore := pool[0].score
 		for _, item := range pool[1:] {
@@ -738,7 +762,7 @@ func buildOpenAIAdaptiveSoftmaxOrder(
 		order = append(order, pool[selectedIdx])
 		pool = append(pool[:selectedIdx], pool[selectedIdx+1:]...)
 	}
-	return append(order, rest...)
+	return order
 }
 
 func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
@@ -1322,7 +1346,7 @@ func effectiveOpenAIAdaptiveCapacityWithLoad(
 	stable := stableOpenAIAdaptiveCapacity(account, state, cfg)
 	effective := stable
 	now := time.Now()
-	if state.ConsecutiveCapacityFailure > 0 && !state.CooldownUntil.After(now) {
+	if shouldUseOpenAIAdaptiveHalfOpenProbe(state, cfg, now) {
 		if cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity < effective {
 			effective = cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity
 		}
@@ -1338,6 +1362,14 @@ func effectiveOpenAIAdaptiveCapacityWithLoad(
 		}
 	}
 	return capOpenAIAdaptiveCapacity(account, effective)
+}
+
+func shouldUseOpenAIAdaptiveHalfOpenProbe(state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings, now time.Time) bool {
+	threshold := cfg.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold
+	if threshold <= 0 {
+		threshold = 1
+	}
+	return state.ConsecutiveCapacityFailure >= threshold && !state.CooldownUntil.After(now)
 }
 
 func stableOpenAIAdaptiveCapacity(account *Account, state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) int {
@@ -1430,7 +1462,31 @@ func normalizeAdaptiveValue(value, minValue, maxValue, fallback float64) float64
 	return clamp01((value - minValue) / (maxValue - minValue))
 }
 
-func isOpenAIAdaptiveCandidateBetter(left openAIAdaptiveCandidateScore, right openAIAdaptiveCandidateScore) bool {
+func groupOpenAIAdaptiveCandidatesByAccountTypePriority(
+	candidates []openAIAdaptiveCandidateScore,
+	cfg OpenAIAdaptiveSchedulerSettings,
+) [][]openAIAdaptiveCandidateScore {
+	groupsByRank := make(map[int][]openAIAdaptiveCandidateScore, 3)
+	ranks := make([]int, 0, 3)
+	for _, candidate := range candidates {
+		rank := openAIAdaptiveAccountTypePriorityRank(candidate.account, cfg)
+		if _, ok := groupsByRank[rank]; !ok {
+			ranks = append(ranks, rank)
+		}
+		groupsByRank[rank] = append(groupsByRank[rank], candidate)
+	}
+	sort.Ints(ranks)
+	groups := make([][]openAIAdaptiveCandidateScore, 0, len(ranks))
+	for _, rank := range ranks {
+		groups = append(groups, groupsByRank[rank])
+	}
+	return groups
+}
+
+func isOpenAIAdaptiveCandidateBetter(left openAIAdaptiveCandidateScore, right openAIAdaptiveCandidateScore, cfg OpenAIAdaptiveSchedulerSettings) bool {
+	if leftRank, rightRank := openAIAdaptiveAccountTypePriorityRank(left.account, cfg), openAIAdaptiveAccountTypePriorityRank(right.account, cfg); leftRank != rightRank {
+		return leftRank < rightRank
+	}
 	if left.score != right.score {
 		return left.score > right.score
 	}
@@ -1446,4 +1502,27 @@ func isOpenAIAdaptiveCandidateBetter(left openAIAdaptiveCandidateScore, right op
 		return left.loadInfo.WaitingCount < right.loadInfo.WaitingCount
 	}
 	return left.account.ID < right.account.ID
+}
+
+func openAIAdaptiveAccountTypePriorityRank(account *Account, cfg OpenAIAdaptiveSchedulerSettings) int {
+	switch cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode {
+	case openAIAdaptiveSchedulerAccountTypePriorityOAuthFirst:
+		if account != nil && account.IsOAuth() {
+			return 0
+		}
+		if account != nil && account.Type == AccountTypeAPIKey {
+			return 1
+		}
+		return 2
+	case openAIAdaptiveSchedulerAccountTypePriorityAPIKeyFirst:
+		if account != nil && account.Type == AccountTypeAPIKey {
+			return 0
+		}
+		if account != nil && account.IsOAuth() {
+			return 1
+		}
+		return 2
+	default:
+		return 0
+	}
 }

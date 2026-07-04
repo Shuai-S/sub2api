@@ -39,6 +39,7 @@ type OpenAIAdaptiveSchedulerLearningSnapshot struct {
 
 type OpenAIAdaptiveSchedulerLearningSettingsSnapshot struct {
 	TopK                      int     `json:"top_k"`
+	AccountTypePriorityMode   string  `json:"account_type_priority_mode"`
 	ExplorationRate           float64 `json:"exploration_rate"`
 	SoftmaxTemperature        float64 `json:"softmax_temperature"`
 	InitialCapacityFraction   float64 `json:"initial_capacity_fraction"`
@@ -50,6 +51,7 @@ type OpenAIAdaptiveSchedulerLearningSettingsSnapshot struct {
 	ShrinkErrorThreshold      float64 `json:"shrink_error_threshold"`
 	ShrinkFactorSoft          float64 `json:"shrink_factor_soft"`
 	ShrinkFactorHard          float64 `json:"shrink_factor_hard"`
+	HalfOpenFailureThreshold  int     `json:"half_open_failure_threshold"`
 	HalfOpenProbeCapacity     int     `json:"half_open_probe_capacity"`
 	LearningWindowSeconds     int     `json:"learning_window_seconds"`
 }
@@ -366,7 +368,7 @@ func openAIAdaptiveLearningAccountStatus(
 	if state.CooldownUntil.After(now) {
 		return OpenAIAdaptiveLearningStatusCooldown, "adaptive cooldown after capacity failures"
 	}
-	if state.ConsecutiveCapacityFailure > 0 {
+	if shouldUseOpenAIAdaptiveHalfOpenProbe(state, cfg, now) {
 		return OpenAIAdaptiveLearningStatusHalfOpen, "probing with half-open capacity"
 	}
 	if state.ErrorEMA >= cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold ||
@@ -516,6 +518,7 @@ func summarizeOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLe
 func openAIAdaptiveLearningSettingsSnapshot(cfg OpenAIAdaptiveSchedulerSettings) OpenAIAdaptiveSchedulerLearningSettingsSnapshot {
 	return OpenAIAdaptiveSchedulerLearningSettingsSnapshot{
 		TopK:                      cfg.OpenAIAdaptiveSchedulerTopK,
+		AccountTypePriorityMode:   cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode,
 		ExplorationRate:           cfg.OpenAIAdaptiveSchedulerExplorationRate,
 		SoftmaxTemperature:        cfg.OpenAIAdaptiveSchedulerSoftmaxTemperature,
 		InitialCapacityFraction:   cfg.OpenAIAdaptiveSchedulerInitialCapacityFraction,
@@ -527,6 +530,7 @@ func openAIAdaptiveLearningSettingsSnapshot(cfg OpenAIAdaptiveSchedulerSettings)
 		ShrinkErrorThreshold:      cfg.OpenAIAdaptiveSchedulerShrinkErrorThreshold,
 		ShrinkFactorSoft:          cfg.OpenAIAdaptiveSchedulerShrinkFactorSoft,
 		ShrinkFactorHard:          cfg.OpenAIAdaptiveSchedulerShrinkFactorHard,
+		HalfOpenFailureThreshold:  cfg.OpenAIAdaptiveSchedulerHalfOpenFailureThreshold,
 		HalfOpenProbeCapacity:     cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity,
 		LearningWindowSeconds:     cfg.OpenAIAdaptiveSchedulerLearningWindowSeconds,
 	}

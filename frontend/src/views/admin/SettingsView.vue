@@ -4051,6 +4051,23 @@
                         </option>
                       </select>
                     </div>
+                    <div>
+                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriority") }}</span>
+                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.accountTypePriority')" />
+                      </label>
+                      <select v-model="form.openai_adaptive_scheduler_account_type_priority_mode" class="input" :disabled="!form.openai_adaptive_scheduler_enabled">
+                        <option value="mixed">
+                          {{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriorities.mixed") }}
+                        </option>
+                        <option value="oauth_first">
+                          {{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriorities.oauthFirst") }}
+                        </option>
+                        <option value="apikey_first">
+                          {{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriorities.apiKeyFirst") }}
+                        </option>
+                      </select>
+                    </div>
                     <div class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 dark:border-dark-700">
                       <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticLog") }}</span>
@@ -4228,6 +4245,13 @@
                           <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorHard')" />
                         </label>
                         <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_hard" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_factor_hard')" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                      </div>
+                      <div>
+                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.halfOpenFailureThreshold") }}</span>
+                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.halfOpenFailureThreshold')" />
+                        </label>
+                        <input v-model.number="form.openai_adaptive_scheduler_half_open_failure_threshold" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_half_open_failure_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
                       </div>
                       <div>
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -8242,6 +8266,7 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_diagnostic_log_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate: number;
   openai_adaptive_scheduler_mode: string;
+  openai_adaptive_scheduler_account_type_priority_mode: string;
   openai_adaptive_scheduler_top_k: number;
   openai_adaptive_scheduler_exploration_rate: number;
   openai_adaptive_scheduler_softmax_temperature: number;
@@ -8261,6 +8286,7 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_shrink_error_threshold: number;
   openai_adaptive_scheduler_shrink_factor_soft: number;
   openai_adaptive_scheduler_shrink_factor_hard: number;
+  openai_adaptive_scheduler_half_open_failure_threshold: number;
   openai_adaptive_scheduler_half_open_probe_capacity: number;
   openai_adaptive_scheduler_learning_window_seconds: number;
   openai_adaptive_scheduler_success_ema_alpha: number;
@@ -8299,6 +8325,7 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_shrink_error_threshold: 0.35,
   openai_adaptive_scheduler_shrink_factor_soft: 0.9,
   openai_adaptive_scheduler_shrink_factor_hard: 0.7,
+  openai_adaptive_scheduler_half_open_failure_threshold: 1,
   openai_adaptive_scheduler_half_open_probe_capacity: 3,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
   openai_adaptive_scheduler_success_ema_alpha: 0.04,
@@ -8532,6 +8559,7 @@ const form = reactive<SettingsForm>({
   openai_adaptive_scheduler_enabled: false,
   openai_adaptive_scheduler_diagnostic_log_enabled: false,
   openai_adaptive_scheduler_mode: "enforce",
+  openai_adaptive_scheduler_account_type_priority_mode: "mixed",
   openai_adaptive_scheduler_thompson_enabled: true,
   ...openAIAdaptiveSchedulerRecommendedValues,
   // Gateway forwarding behavior
@@ -9835,6 +9863,8 @@ async function saveSettings() {
       openai_adaptive_scheduler_diagnostic_log_sample_rate:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_diagnostic_log_sample_rate"),
       openai_adaptive_scheduler_mode: form.openai_adaptive_scheduler_mode,
+      openai_adaptive_scheduler_account_type_priority_mode:
+        form.openai_adaptive_scheduler_account_type_priority_mode || "mixed",
       openai_adaptive_scheduler_top_k:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_top_k"),
       openai_adaptive_scheduler_exploration_rate:
@@ -9873,6 +9903,8 @@ async function saveSettings() {
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_shrink_factor_soft"),
       openai_adaptive_scheduler_shrink_factor_hard:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_shrink_factor_hard"),
+      openai_adaptive_scheduler_half_open_failure_threshold:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_half_open_failure_threshold"),
       openai_adaptive_scheduler_half_open_probe_capacity:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_half_open_probe_capacity"),
       openai_adaptive_scheduler_learning_window_seconds:

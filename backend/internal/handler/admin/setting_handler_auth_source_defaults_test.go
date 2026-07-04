@@ -225,6 +225,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		"openai_advanced_scheduler_enabled":                       true,
 		"openai_adaptive_scheduler_enabled":                       true,
 		"openai_adaptive_scheduler_mode":                          "enforce",
+		"openai_adaptive_scheduler_account_type_priority_mode":    "oauth_first",
 		"openai_adaptive_scheduler_top_k":                         15,
 		"openai_adaptive_scheduler_burst_probe_ratio":             0.25,
 		"openai_adaptive_scheduler_min_recent_samples_for_shrink": 20,
@@ -249,6 +250,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values["openai_advanced_scheduler_enabled"])
 	require.Equal(t, "true", repo.values["openai_adaptive_scheduler_enabled"])
 	require.Equal(t, "enforce", repo.values["openai_adaptive_scheduler_mode"])
+	require.Equal(t, "oauth_first", repo.values["openai_adaptive_scheduler_account_type_priority_mode"])
 	require.Equal(t, "15", repo.values["openai_adaptive_scheduler_top_k"])
 	require.Equal(t, "0.25", repo.values["openai_adaptive_scheduler_burst_probe_ratio"])
 	require.Equal(t, "20", repo.values["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
@@ -266,6 +268,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
 	require.Equal(t, true, data["openai_adaptive_scheduler_enabled"])
 	require.Equal(t, "enforce", data["openai_adaptive_scheduler_mode"])
+	require.Equal(t, "oauth_first", data["openai_adaptive_scheduler_account_type_priority_mode"])
 	require.Equal(t, float64(15), data["openai_adaptive_scheduler_top_k"])
 	require.Equal(t, 0.25, data["openai_adaptive_scheduler_burst_probe_ratio"])
 	require.Equal(t, float64(20), data["openai_adaptive_scheduler_min_recent_samples_for_shrink"])

@@ -52,6 +52,12 @@ const modeKeyMap: Record<string, string> = {
   shadow: 'admin.ops.openaiAdaptiveLearning.mode.shadow'
 }
 
+const accountTypePriorityKeyMap: Record<string, string> = {
+  mixed: 'admin.ops.openaiAdaptiveLearning.accountTypePriorityModes.mixed',
+  oauth_first: 'admin.ops.openaiAdaptiveLearning.accountTypePriorityModes.oauthFirst',
+  apikey_first: 'admin.ops.openaiAdaptiveLearning.accountTypePriorityModes.apiKeyFirst'
+}
+
 const statusClassMap: Record<string, string> = {
   disabled: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   unavailable: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
@@ -117,6 +123,11 @@ const settingsItems = computed(() => {
       value: formatPercent(settings.shrink_error_threshold, 1)
     },
     {
+      key: 'halfOpenFailures',
+      label: t('admin.ops.openaiAdaptiveLearning.settings.halfOpenFailures'),
+      value: formatNumber(settings.half_open_failure_threshold)
+    },
+    {
       key: 'burst',
       label: t('admin.ops.openaiAdaptiveLearning.settings.burstRatio'),
       value: formatPercent(settings.burst_probe_ratio, 1)
@@ -125,6 +136,11 @@ const settingsItems = computed(() => {
       key: 'topK',
       label: t('admin.ops.openaiAdaptiveLearning.settings.topK'),
       value: formatNumber(settings.top_k)
+    },
+    {
+      key: 'accountTypePriority',
+      label: t('admin.ops.openaiAdaptiveLearning.settings.accountTypePriority'),
+      value: t(accountTypePriorityKeyMap[settings.account_type_priority_mode] ?? accountTypePriorityKeyMap.mixed)
     }
   ]
 })
