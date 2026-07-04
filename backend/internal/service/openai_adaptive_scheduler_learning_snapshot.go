@@ -141,7 +141,7 @@ func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
 	}
 	realtimeEnabled := s.IsRealtimeMonitoringEnabled(ctx)
 
-	accounts, err := s.listAllAccountsForOps(ctx, PlatformOpenAI)
+	accounts, err := s.listAllAccountsForOps(ctx, PlatformOpenAI, groupIDFilter)
 	if err != nil {
 		return nil, err
 	}
