@@ -236,6 +236,26 @@ func (s *AccountRepoSuite) TestList() {
 	s.Require().Equal(int64(2), page.Total)
 }
 
+func (s *AccountRepoSuite) TestListOpsAccountsForStatsIncludesDisplayFields() {
+	rate := 1.75
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "ops-display",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Priority:    7,
+		Concurrency: 12,
+	})
+	_, err := s.client.Account.UpdateOneID(account.ID).SetRateMultiplier(rate).Save(s.ctx)
+	s.Require().NoError(err)
+
+	accounts, err := s.repo.ListOpsAccountsForStats(s.ctx, service.PlatformOpenAI, nil)
+	s.Require().NoError(err)
+	s.Require().Len(accounts, 1)
+	s.Require().Equal(service.AccountTypeAPIKey, accounts[0].Type)
+	s.Require().Equal(7, accounts[0].Priority)
+	s.Require().Equal(rate, accounts[0].BillingRateMultiplier())
+}
+
 func (s *AccountRepoSuite) TestListWithFilters() {
 	tests := []struct {
 		name        string
