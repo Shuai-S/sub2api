@@ -4357,6 +4357,8 @@
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
 
               <div
                 v-if="form.openai_advanced_scheduler_enabled"
