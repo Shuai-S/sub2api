@@ -1,6 +1,9 @@
 package service
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -30,6 +33,127 @@ func TestOpenAIAdaptiveSchedulerCostScoreUsesRateMultiplier(t *testing.T) {
 
 	require.Greater(t, candidates[0].costScore, candidates[1].costScore)
 	require.Greater(t, candidates[0].score, candidates[1].score)
+}
+
+func TestOpenAIAdaptiveFailureHealthSampleSkipsUserInputErrors(t *testing.T) {
+	require.False(t, openAIAdaptiveFailureHealthSample(errors.New("invalid_request_error: missing required parameter")))
+	require.False(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode:   http.StatusBadRequest,
+		ResponseBody: []byte(`{"error":{"type":"invalid_request_error","message":"bad input"}}`),
+	}))
+	require.True(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode: http.StatusTooManyRequests,
+	}))
+	require.Empty(t, openAIAdaptiveFailureCooldownReason(errors.New("invalid_request_error: missing required parameter")))
+	require.Equal(t, "upstream_429", openAIAdaptiveFailureCooldownReason(&UpstreamFailoverError{StatusCode: http.StatusTooManyRequests}))
+	require.Equal(t, "upstream_502", openAIAdaptiveFailureCooldownReason(&UpstreamFailoverError{StatusCode: http.StatusBadGateway}))
+	require.Equal(t, "upstream_503", openAIAdaptiveFailureCooldownReason(&UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}))
+	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(errors.New("upstream websocket is busy, please retry later")))
+}
+
+func TestOpenAIAdaptiveSchedulerCooldownAppliedImmediately(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds = 30
+	cfg.OpenAIAdaptiveSchedulerCooldownMaxSeconds = 60
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	now := time.Now()
+
+	store.applyCooldown(1001, cfg, "upstream_429", now)
+
+	state := store.snapshot(1001, cfg)
+	require.True(t, state.CooldownUntil.After(now))
+	require.Equal(t, "active", openAIAdaptiveCooldownStatus(state, now))
+	require.Equal(t, "expired", openAIAdaptiveCooldownStatus(state, state.CooldownUntil.Add(time.Nanosecond)))
+}
+
+func TestOpenAIAdaptiveSchedulerActiveCooldownDoesNotExcludeCandidates(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11001)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerTopK = 1
+	cfg.OpenAIAdaptiveSchedulerExplorationRate = 0
+	account := Account{
+		ID:          22001,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{
+			accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+			concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		},
+		baseline: &defaultOpenAIAccountScheduler{},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.baseline.service = scheduler.service
+	scheduler.state.applyCooldown(account.ID, cfg, "upstream_429", time.Now())
+
+	order, candidateCount, _, err := scheduler.buildAdaptiveSelectionOrder(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, cfg)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, candidateCount)
+	require.Len(t, order, 1)
+	require.Equal(t, account.ID, order[0].account.ID)
+	require.Equal(t, "active", openAIAdaptiveCooldownStatus(order[0].state, time.Now()))
+}
+
+func TestOpenAIAdaptiveSchedulerActiveCooldownDoesNotBreakStickyHit(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11002)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	account := Account{
+		ID:          22002,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		GroupIDs:    []int64{groupID},
+	}
+	cache := &schedulerTestGatewayCache{
+		sessionBindings: map[string]int64{"openai:sticky_cooldown": account.ID},
+	}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{
+			accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+			cache:       cache,
+			concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+				acquireResults: map[int64]bool{account.ID: true},
+			}),
+		},
+		baseline: &defaultOpenAIAccountScheduler{},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.baseline.service = scheduler.service
+	scheduler.state.applyCooldown(account.ID, cfg, "upstream_503", time.Now())
+
+	selection, escapedSticky, err := scheduler.selectByAdaptiveSticky(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		SessionHash:       "sticky_cooldown",
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, cfg)
+
+	require.NoError(t, err)
+	require.False(t, escapedSticky)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	require.Equal(t, "active", openAIAdaptiveCooldownStatus(scheduler.state.snapshot(account.ID, cfg), time.Now()))
+	require.Empty(t, cache.deletedSessions)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
 }
 
 func TestOpenAIAdaptiveSchedulerAccountTypePriorityOrdersSelectionGroups(t *testing.T) {

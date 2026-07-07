@@ -72,23 +72,25 @@ type openAIAdaptiveCandidateScore struct {
 }
 
 type openAIAdaptiveDiagnosticCandidate struct {
-	AccountID          int64   `json:"account_id"`
-	AccountType        string  `json:"account_type"`
-	Priority           int     `json:"priority"`
-	EffectiveCapacity  int     `json:"effective_capacity"`
-	CurrentConcurrency int     `json:"current_concurrency"`
-	WaitingCount       int     `json:"waiting_count"`
-	Score              float64 `json:"score"`
-	SuccessScore       float64 `json:"success_score"`
-	CostScore          float64 `json:"cost_score"`
-	CapacityScore      float64 `json:"capacity_score"`
-	LatencyScore       float64 `json:"latency_score"`
-	StabilityScore     float64 `json:"stability_score"`
-	ExplorationScore   float64 `json:"exploration_score"`
-	TotalSamples       int64   `json:"total_samples"`
-	RecentSamples      int     `json:"recent_samples"`
-	RecentFailures     int     `json:"recent_failures"`
-	ConsecutiveFailure int     `json:"consecutive_failure"`
+	AccountID          int64     `json:"account_id"`
+	AccountType        string    `json:"account_type"`
+	Priority           int       `json:"priority"`
+	EffectiveCapacity  int       `json:"effective_capacity"`
+	CurrentConcurrency int       `json:"current_concurrency"`
+	WaitingCount       int       `json:"waiting_count"`
+	Score              float64   `json:"score"`
+	SuccessScore       float64   `json:"success_score"`
+	CostScore          float64   `json:"cost_score"`
+	CapacityScore      float64   `json:"capacity_score"`
+	LatencyScore       float64   `json:"latency_score"`
+	StabilityScore     float64   `json:"stability_score"`
+	ExplorationScore   float64   `json:"exploration_score"`
+	TotalSamples       int64     `json:"total_samples"`
+	RecentSamples      int       `json:"recent_samples"`
+	RecentFailures     int       `json:"recent_failures"`
+	ConsecutiveFailure int       `json:"consecutive_failure"`
+	CooldownUntil      time.Time `json:"cooldown_until"`
+	CooldownStatus     string    `json:"cooldown_status"`
 }
 
 func newAdaptiveOpenAIAccountScheduler(service *OpenAIGatewayService, stats *openAIAccountRuntimeStats) OpenAIAccountScheduler {
@@ -167,6 +169,13 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 	decision.LoadSkew = loadSkew
 	if err != nil {
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, nil, diagnosticCandidates, "fallback", err)
+		s.logDiagnosticResult(ctx, cfg, OpenAIAccountScheduleReport{
+			AccountID:      0,
+			Success:        false,
+			HealthSample:   false,
+			TerminalReason: "adaptive_selection_fallback",
+			Err:            err,
+		})
 		slog.Warn("openai_adaptive_scheduler_fallback",
 			"reason", "adaptive_select_error",
 			"error", err,
@@ -277,7 +286,8 @@ func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 		return nil, true, err
 	}
 	if selection != nil && selection.Account != nil {
-		if !s.baseline.isAccountTransportCompatible(selection.Account, req.RequiredTransport) {
+		if s.service.isOpenAIAccountRuntimeBlocked(selection.Account) ||
+			!s.baseline.isAccountTransportCompatible(selection.Account, req.RequiredTransport) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
@@ -326,6 +336,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) ||
 		!account.IsOpenAICompatible() ||
 		!account.IsSchedulable() ||
+		s.service.isOpenAIAccountRuntimeBlocked(account) ||
 		!s.baseline.isAccountRequestCompatible(ctx, account, req) ||
 		!s.baseline.isAccountTransportCompatible(account, req.RequiredTransport) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
@@ -333,16 +344,13 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 	}
 	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 	if account == nil || !openAIStickyAccountMatchesGroup(account, req.GroupID) ||
+		s.service.isOpenAIAccountRuntimeBlocked(account) ||
 		!s.baseline.isAccountTransportCompatible(account, req.RequiredTransport) ||
 		!s.baseline.isAccountRequestCompatible(ctx, account, req) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
 	state := s.state.snapshot(account.ID, cfg)
-	now := time.Now()
-	if state.CooldownUntil.After(now) {
-		return nil, true, nil
-	}
 	effectiveCapacity := effectiveOpenAIAdaptiveCapacity(account, state, cfg)
 	loadInfo := &AccountLoadInfo{AccountID: account.ID}
 	if s.service.concurrencyService != nil {
@@ -358,7 +366,8 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 	state = s.state.observeLoad(account, cfg, loadInfo)
 	effectiveCapacity = effectiveOpenAIAdaptiveCapacityWithLoad(account, state, cfg, loadInfo)
 	if effectiveCapacity > 0 && loadInfo.CurrentConcurrency >= effectiveCapacity {
-		return nil, true, nil
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		return nil, false, nil
 	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, account.ID, effectiveCapacity)
 	if acquireErr != nil {
@@ -369,7 +378,8 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		selection, selectErr := s.service.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 		return selection, false, selectErr
 	}
-	return nil, true, nil
+	_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+	return nil, false, nil
 }
 
 func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
@@ -470,7 +480,6 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 	filtered := make([]*Account, 0, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	states := make(map[int64]openAIAdaptiveAccountState, len(accounts))
-	now := time.Now()
 	for i := range accounts {
 		account := &accounts[i]
 		if req.ExcludedIDs != nil {
@@ -496,9 +505,6 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 			continue
 		}
 		state := s.state.snapshot(account.ID, cfg)
-		if state.CooldownUntil.After(now) {
-			continue
-		}
 		effectiveCapacity := effectiveOpenAIAdaptiveCapacity(account, state, cfg)
 		filtered = append(filtered, account)
 		states[account.ID] = state
@@ -879,27 +885,28 @@ func (s *adaptiveOpenAIAccountScheduler) logEnforceDiagnosticDecision(
 
 func (s *adaptiveOpenAIAccountScheduler) logDiagnosticResult(
 	ctx context.Context,
-	accountID int64,
-	success bool,
-	firstTokenMs *int,
 	cfg OpenAIAdaptiveSchedulerSettings,
+	report OpenAIAccountScheduleReport,
 ) {
 	if !shouldLogOpenAIAdaptiveDiagnostic(ctx, OpenAIAccountScheduleRequest{
-		StickyAccountID: accountID,
+		StickyAccountID: report.AccountID,
 	}, cfg) {
 		return
 	}
-	ttft := 0
-	if firstTokenMs != nil {
-		ttft = *firstTokenMs
-	}
-	state := s.state.snapshot(accountID, cfg)
-	slog.Info("openai_adaptive_scheduler_diagnostic_result",
+	state := s.state.snapshot(report.AccountID, cfg)
+	firstTokenStatus := openAIAdaptiveFirstTokenStatus(report)
+	cooldownStatus := openAIAdaptiveCooldownStatus(state, time.Now())
+	fields := []any{
 		"request_id", contextStringValue(ctx, ctxkey.RequestID),
 		"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
-		"account_id", accountID,
-		"success", success,
-		"first_token_ms", ttft,
+		"account_id", report.AccountID,
+		"success", report.Success,
+		"health_sample", report.HealthSample,
+		"terminal_reason", report.TerminalReason,
+		"stream", report.Stream,
+		"first_token_ms", nullableIntForSlog(report.FirstTokenMs),
+		"first_token_status", firstTokenStatus,
+		"duration_ms", report.DurationMs,
 		"total_samples", state.TotalSamples,
 		"recent_samples", state.RecentSamples,
 		"recent_failures", state.RecentFailures,
@@ -912,7 +919,14 @@ func (s *adaptiveOpenAIAccountScheduler) logDiagnosticResult(
 		"consecutive_failure", state.ConsecutiveFailure,
 		"consecutive_capacity_failure", state.ConsecutiveCapacityFailure,
 		"cooldown_until", state.CooldownUntil,
-	)
+		"cooldown_status", cooldownStatus,
+		"cooldown_applied", report.Cooldown,
+		"cooldown_reason", report.CooldownReason,
+	}
+	if report.Err != nil {
+		fields = append(fields, "error", report.Err.Error())
+	}
+	slog.Info("openai_adaptive_scheduler_diagnostic_result", fields...)
 }
 
 func shouldLogOpenAIAdaptiveDiagnostic(
@@ -983,6 +997,8 @@ func openAIAdaptiveDiagnosticCandidates(
 			RecentSamples:      item.state.RecentSamples,
 			RecentFailures:     item.state.RecentFailures,
 			ConsecutiveFailure: item.state.ConsecutiveFailure,
+			CooldownUntil:      item.state.CooldownUntil,
+			CooldownStatus:     openAIAdaptiveCooldownStatus(item.state, time.Now()),
 		})
 	}
 	return out
@@ -994,6 +1010,39 @@ func contextStringValue(ctx context.Context, key ctxkey.Key) string {
 	}
 	value, _ := ctx.Value(key).(string)
 	return strings.TrimSpace(value)
+}
+
+func nullableIntForSlog(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func openAIAdaptiveFirstTokenStatus(report OpenAIAccountScheduleReport) string {
+	if report.FirstTokenMs != nil && *report.FirstTokenMs > 0 {
+		return "recorded"
+	}
+	if report.FirstTokenMs != nil {
+		return "zero_value"
+	}
+	if !report.Stream {
+		return "not_applicable"
+	}
+	if report.Success {
+		return "stream_first_token_missing"
+	}
+	return "stream_failed_before_first_token"
+}
+
+func openAIAdaptiveCooldownStatus(state openAIAdaptiveAccountState, now time.Time) string {
+	if state.CooldownUntil.IsZero() {
+		return "none"
+	}
+	if state.CooldownUntil.After(now) {
+		return "active"
+	}
+	return "expired"
 }
 
 func hashString64(value string) uint64 {
@@ -1010,10 +1059,22 @@ func (s *adaptiveOpenAIAccountScheduler) ReportResult(accountID int64, success b
 }
 
 func (s *adaptiveOpenAIAccountScheduler) ReportResultWithContext(ctx context.Context, accountID int64, success bool, firstTokenMs *int) {
+	s.ReportScheduleResultWithContext(ctx, OpenAIAccountScheduleReport{
+		AccountID:      accountID,
+		Success:        success,
+		FirstTokenMs:   firstTokenMs,
+		HealthSample:   true,
+		TerminalReason: "legacy_result",
+	})
+}
+
+func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx context.Context, report OpenAIAccountScheduleReport) {
 	if s == nil {
 		return
 	}
-	s.baseline.ReportResult(accountID, success, firstTokenMs)
+	if report.HealthSample {
+		s.baseline.ReportResult(report.AccountID, report.Success, report.FirstTokenMs)
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1022,11 +1083,16 @@ func (s *adaptiveOpenAIAccountScheduler) ReportResultWithContext(ctx context.Con
 		return
 	}
 	var account *Account
-	if !s.state.has(accountID) {
-		account = s.reportAccountSnapshot(accountID)
+	if report.HealthSample && !s.state.has(report.AccountID) {
+		account = s.reportAccountSnapshot(report.AccountID)
 	}
-	s.state.reportWithAccount(account, accountID, cfg, success, firstTokenMs, 0)
-	s.logDiagnosticResult(ctx, accountID, success, firstTokenMs, cfg)
+	if report.HealthSample {
+		s.state.reportWithAccount(account, report.AccountID, cfg, report.Success, report.FirstTokenMs, report.DurationMs)
+	}
+	if report.Cooldown {
+		s.state.applyCooldown(report.AccountID, cfg, report.CooldownReason, time.Now())
+	}
+	s.logDiagnosticResult(ctx, cfg, report)
 }
 
 func (s *adaptiveOpenAIAccountScheduler) ReportSwitch() {
@@ -1177,21 +1243,76 @@ func (s *openAIAdaptiveSchedulerStateStore) reportWithAccount(
 	if shouldShrinkOpenAIAdaptiveCapacity(state, cfg) {
 		state.EstimatedCapacity = nextOpenAIAdaptiveShrinkCapacity(state, cfg)
 		state.LastCapacityFailureAt = now
-		cooldown := time.Duration(cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds) * time.Second
-		if cooldown > 0 && cfg.OpenAIAdaptiveSchedulerCooldownMaxSeconds > 0 {
-			maxCooldown := time.Duration(cfg.OpenAIAdaptiveSchedulerCooldownMaxSeconds) * time.Second
-			failuresOverThreshold := state.ConsecutiveCapacityFailure - cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold
-			for i := 0; i < failuresOverThreshold && cooldown < maxCooldown; i++ {
-				cooldown *= 2
-				if cooldown > maxCooldown {
-					cooldown = maxCooldown
-				}
-			}
-		}
+		cooldown := openAIAdaptiveCooldownDurationForState(*state, cfg)
 		if cooldown > 0 {
 			state.CooldownUntil = now.Add(cooldown)
 		}
 	}
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) applyCooldown(
+	accountID int64,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	reason string,
+	now time.Time,
+) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	cooldown := openAIAdaptiveCooldownDurationForState(openAIAdaptiveAccountState{}, cfg)
+	if cooldown <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.states[accountID]
+	if state == nil {
+		initial := defaultOpenAIAdaptiveAccountState(accountID, cfg)
+		state = &initial
+		s.states[accountID] = state
+	}
+	cooldown = openAIAdaptiveCooldownDurationForState(*state, cfg)
+	if cooldown <= 0 {
+		return
+	}
+	until := now.Add(cooldown)
+	if state.CooldownUntil.Before(until) {
+		state.CooldownUntil = until
+	}
+	if state.LastCapacityFailureAt.Before(now) {
+		state.LastCapacityFailureAt = now
+	}
+	slog.Info("openai_adaptive_scheduler_cooldown_applied",
+		"account_id", accountID,
+		"reason", reason,
+		"cooldown_until", state.CooldownUntil,
+		"consecutive_capacity_failure", state.ConsecutiveCapacityFailure,
+	)
+}
+
+func openAIAdaptiveCooldownDurationForState(state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings) time.Duration {
+	cooldown := time.Duration(cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds) * time.Second
+	if cooldown <= 0 {
+		return 0
+	}
+	if cfg.OpenAIAdaptiveSchedulerCooldownMaxSeconds <= 0 {
+		return cooldown
+	}
+	maxCooldown := time.Duration(cfg.OpenAIAdaptiveSchedulerCooldownMaxSeconds) * time.Second
+	failuresOverThreshold := state.ConsecutiveCapacityFailure - cfg.OpenAIAdaptiveSchedulerCapacityFailureThreshold
+	for i := 0; i < failuresOverThreshold && cooldown < maxCooldown; i++ {
+		cooldown *= 2
+		if cooldown > maxCooldown {
+			return maxCooldown
+		}
+	}
+	if cooldown > maxCooldown {
+		return maxCooldown
+	}
+	return cooldown
 }
 
 func (s *openAIAdaptiveSchedulerStateStore) observeLoad(

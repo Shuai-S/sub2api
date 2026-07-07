@@ -141,7 +141,24 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	forwardBody := mappedBodyForMessages(channelMapping.Mapped, channelMapping.MappedModel)
 	defaultMappedModel := preferredMappedModel
 
+	forwardStart := time.Now()
 	if err := h.gatewayService.ForwardCountTokensAsAnthropic(c.Request.Context(), c, account, forwardBody, defaultMappedModel); err != nil {
+		h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+			AccountID:      account.ID,
+			Success:        false,
+			DurationMs:     time.Since(forwardStart).Milliseconds(),
+			HealthSample:   false,
+			TerminalReason: "count_tokens_error",
+			Err:            err,
+		})
 		reqLog.Error("openai_count_tokens.forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		return
 	}
+	h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+		AccountID:      account.ID,
+		Success:        true,
+		DurationMs:     time.Since(forwardStart).Milliseconds(),
+		HealthSample:   false,
+		TerminalReason: "count_tokens_success",
+	})
 }

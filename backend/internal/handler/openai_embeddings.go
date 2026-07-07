@@ -185,7 +185,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
-					h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+					h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, false)
 					if c.Writer.Size() == writerSizeBeforeForward {
 						h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 					}
@@ -199,7 +199,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, false)
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
@@ -216,7 +216,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				)
 				continue
 			}
-			h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+			h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, false)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -227,7 +227,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, nil)
+		h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
 		inboundEndpoint := GetInboundEndpoint(c)

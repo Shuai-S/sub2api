@@ -86,6 +86,19 @@ type OpenAIAccountScheduleDecision struct {
 	SelectedAccountType string
 }
 
+type OpenAIAccountScheduleReport struct {
+	AccountID      int64
+	Success        bool
+	FirstTokenMs   *int
+	DurationMs     int64
+	Stream         bool
+	HealthSample   bool
+	Cooldown       bool
+	CooldownReason string
+	TerminalReason string
+	Err            error
+}
+
 type OpenAIAccountSchedulerMetricsSnapshot struct {
 	SelectTotal              int64
 	StickyPreviousHitTotal   int64
@@ -413,6 +426,10 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
+	if s.service.isOpenAIAccountRuntimeBlocked(account) {
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		return nil, false, nil
+	}
 	if !s.isAccountRequestCompatible(ctx, account, req) {
 		return nil, false, nil
 	}
@@ -421,7 +438,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, nil
 	}
 	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
-	if account == nil || !openAIStickyAccountMatchesGroup(account, req.GroupID) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+	if account == nil || !openAIStickyAccountMatchesGroup(account, req.GroupID) ||
+		s.service.isOpenAIAccountRuntimeBlocked(account) ||
+		!s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
@@ -445,7 +464,6 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		}, false, nil
 	}
 
-	cfg := s.service.schedulingConfig()
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	if s.service.concurrencyService != nil {
 		if escapeCfg.enabled && acquireErr == nil && result != nil && !result.Acquired {
@@ -458,15 +476,8 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 			)
 			return nil, true, nil
 		}
-		return &AccountSelectionResult{
-			Account: account,
-			WaitPlan: &AccountWaitPlan{
-				AccountID:      accountID,
-				MaxConcurrency: account.Concurrency,
-				Timeout:        cfg.StickySessionWaitTimeout,
-				MaxWaiting:     cfg.StickySessionMaxWaiting,
-			},
-		}, false, nil
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		return nil, false, nil
 	}
 	return nil, false, nil
 }
@@ -1034,7 +1045,9 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 			continue
 		}
 		account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
-		if account == nil || !s.isAccountRequestCompatible(ctx, account, req) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+		if account == nil || s.service.isOpenAIAccountRuntimeBlocked(account) ||
+			!s.isAccountRequestCompatible(ctx, account, req) ||
+			!s.isAccountTransportCompatible(account, req.RequiredTransport) {
 			continue
 		}
 		// 粘性绑定只证明绑定时账号在分组内；账号被移出分组后绑定仍会在 TTL 内存活，
@@ -1060,18 +1073,6 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 				Account:     account,
 				Acquired:    true,
 				ReleaseFunc: result.ReleaseFunc,
-			}, nil
-		}
-		if s.service.concurrencyService != nil {
-			cfg := s.service.schedulingConfig()
-			return &AccountSelectionResult{
-				Account: account,
-				WaitPlan: &AccountWaitPlan{
-					AccountID:      account.ID,
-					MaxConcurrency: account.Concurrency,
-					Timeout:        cfg.StickySessionWaitTimeout,
-					MaxWaiting:     cfg.StickySessionMaxWaiting,
-				},
 			}, nil
 		}
 	}
@@ -1839,18 +1840,40 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 		return false
 	}
 	if requiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2Ingress {
-		if s.cfg == nil || !s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled {
-			return s.getOpenAIWSProtocolResolver().Resolve(account).Transport == OpenAIUpstreamTransportResponsesWebsocketV2
-		}
-		mode := account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault)
-		switch mode {
-		case OpenAIWSIngressModeCtxPool, OpenAIWSIngressModePassthrough, OpenAIWSIngressModeHTTPBridge, OpenAIWSIngressModeShared, OpenAIWSIngressModeDedicated:
+		decision := s.getOpenAIWSProtocolResolver().Resolve(account)
+		if decision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
 			return true
-		default:
-			return false
 		}
+		return s.shouldUseOpenAIWSIngressHTTPBridge(account, decision)
 	}
 	return s.getOpenAIWSProtocolResolver().Resolve(account).Transport == requiredTransport
+}
+
+func (s *OpenAIGatewayService) shouldUseOpenAIWSIngressHTTPBridge(account *Account, decision OpenAIWSProtocolDecision) bool {
+	if account == nil {
+		return false
+	}
+	if account.Platform == PlatformGrok {
+		return true
+	}
+	if decision.Transport != OpenAIUpstreamTransportHTTPSSE {
+		return false
+	}
+	if account.IsOpenAIWSForceHTTPEnabled() {
+		return true
+	}
+	if s == nil || s.cfg == nil {
+		return false
+	}
+	wsCfg := s.cfg.Gateway.OpenAIWS
+	mode := account.ResolveOpenAIResponsesWebSocketV2Mode(wsCfg.IngressModeDefault)
+	if wsCfg.ModeRouterV2Enabled {
+		return mode == OpenAIWSIngressModeHTTPBridge
+	}
+	if mode == OpenAIWSIngressModeOff {
+		return false
+	}
+	return wsCfg.HTTPBridgeEnabled
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64, success bool, firstTokenMs *int) {
@@ -1858,6 +1881,31 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithContext(ctx context.Context, accountID int64, success bool, firstTokenMs *int) {
+	s.ReportOpenAIAccountScheduleReportWithContext(ctx, OpenAIAccountScheduleReport{
+		AccountID:      accountID,
+		Success:        success,
+		FirstTokenMs:   firstTokenMs,
+		HealthSample:   true,
+		TerminalReason: "legacy_result",
+	})
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleSuccessWithContext(ctx context.Context, accountID int64, result *OpenAIForwardResult) {
+	report := OpenAIAccountScheduleReport{
+		AccountID:      accountID,
+		Success:        true,
+		HealthSample:   true,
+		TerminalReason: "success",
+	}
+	if result != nil {
+		report.FirstTokenMs = result.FirstTokenMs
+		report.DurationMs = result.Duration.Milliseconds()
+		report.Stream = result.Stream || result.OpenAIWSMode
+	}
+	s.ReportOpenAIAccountScheduleReportWithContext(ctx, report)
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleReportWithContext(ctx context.Context, report OpenAIAccountScheduleReport) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1865,13 +1913,20 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithContext(ctx 
 	if scheduler == nil {
 		return
 	}
+	if report.TerminalReason == "" {
+		if report.Success {
+			report.TerminalReason = "success"
+		} else {
+			report.TerminalReason = "failure"
+		}
+	}
 	if reporter, ok := scheduler.(interface {
-		ReportResultWithContext(context.Context, int64, bool, *int)
+		ReportScheduleResultWithContext(context.Context, OpenAIAccountScheduleReport)
 	}); ok {
-		reporter.ReportResultWithContext(ctx, accountID, success, firstTokenMs)
+		reporter.ReportScheduleResultWithContext(ctx, report)
 		return
 	}
-	scheduler.ReportResult(accountID, success, firstTokenMs)
+	scheduler.ReportResult(report.AccountID, report.Success, report.FirstTokenMs)
 }
 
 func (s *OpenAIGatewayService) RecordOpenAIAccountSwitch() {

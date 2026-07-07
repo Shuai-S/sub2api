@@ -2403,6 +2403,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 			return nil
 		}
+		if s.isOpenAIAccountRuntimeBlocked(account) {
+			return nil
+		}
 		return account
 	}
 

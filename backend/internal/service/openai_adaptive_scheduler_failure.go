@@ -3,15 +3,110 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+
+	coderws "github.com/coder/websocket"
 )
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureWithContext(ctx context.Context, accountID int64, err error, firstTokenMs *int) {
-	if !shouldLearnOpenAIAdaptiveFailure(err) {
-		return
+	s.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx, accountID, err, firstTokenMs, 0, false)
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx context.Context, accountID int64, err error, firstTokenMs *int, durationMs int64, stream bool) {
+	healthSample := openAIAdaptiveFailureHealthSample(err)
+	cooldownReason := openAIAdaptiveFailureCooldownReason(err)
+	s.ReportOpenAIAccountScheduleReportWithContext(ctx, OpenAIAccountScheduleReport{
+		AccountID:      accountID,
+		Success:        false,
+		FirstTokenMs:   firstTokenMs,
+		DurationMs:     durationMs,
+		Stream:         stream,
+		HealthSample:   healthSample,
+		Cooldown:       cooldownReason != "",
+		CooldownReason: cooldownReason,
+		TerminalReason: classifyOpenAIAdaptiveTerminalReason(err, healthSample),
+		Err:            err,
+	})
+}
+
+func openAIAdaptiveFailureHealthSample(err error) bool {
+	healthSample := shouldLearnOpenAIAdaptiveFailure(err)
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) && shouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+		healthSample = false
 	}
-	s.ReportOpenAIAccountScheduleResultWithContext(ctx, accountID, false, firstTokenMs)
+	return healthSample
+}
+
+func openAIAdaptiveFailureCooldownReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		switch failoverErr.StatusCode {
+		case http.StatusTooManyRequests:
+			return "upstream_429"
+		case http.StatusBadGateway:
+			return "upstream_502"
+		case http.StatusServiceUnavailable:
+			return "upstream_503"
+		}
+	}
+	var wsCloseErr *OpenAIWSClientCloseError
+	if errors.As(err, &wsCloseErr) {
+		if wsCloseErr.StatusCode() == coderws.StatusTryAgainLater {
+			return "ws_close_try_again"
+		}
+		var dialErr *openAIWSDialError
+		if errors.As(err, &dialErr) {
+			switch dialErr.StatusCode {
+			case http.StatusTooManyRequests:
+				return "ws_upstream_429"
+			case http.StatusBadGateway:
+				return "ws_upstream_502"
+			case http.StatusServiceUnavailable:
+				return "ws_upstream_503"
+			}
+		}
+	}
+	var closeErr coderws.CloseError
+	if errors.As(err, &closeErr) && closeErr.Code != coderws.StatusNormalClosure && closeErr.Code != coderws.StatusPolicyViolation {
+		return fmt.Sprintf("ws_close_%d", int(closeErr.Code))
+	}
+	if errors.Is(err, errOpenAIWSConnQueueFull) {
+		return "ws_connection_limit"
+	}
+	lower := strings.ToLower(strings.TrimSpace(err.Error()))
+	if lower == "" ||
+		strings.Contains(lower, "client disconnected") ||
+		strings.Contains(lower, "request canceled") {
+		return ""
+	}
+	if strings.Contains(lower, "concurrency limit") ||
+		strings.Contains(lower, "connection limit") ||
+		strings.Contains(lower, "queue full") ||
+		strings.Contains(lower, "too many concurrent") ||
+		strings.Contains(lower, "account is busy") ||
+		strings.Contains(lower, "upstream websocket is busy") {
+		return "concurrency_limit"
+	}
+	if strings.Contains(lower, "websocket") && strings.Contains(lower, "close") {
+		return "ws_close"
+	}
+	return ""
+}
+
+func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
+	if err == nil {
+		return "failure"
+	}
+	if !healthSample {
+		return "non_account_health_error"
+	}
+	return "account_health_failure"
 }
 
 func shouldLearnOpenAIAdaptiveFailure(err error) bool {
@@ -19,6 +114,10 @@ func shouldLearnOpenAIAdaptiveFailure(err error) bool {
 		return false
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var wsClientCloseErr *OpenAIWSClientCloseError
+	if errors.As(err, &wsClientCloseErr) {
 		return false
 	}
 

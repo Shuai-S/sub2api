@@ -232,6 +232,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 						upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 						wroteFallback := false
 						if !upstreamErrorAlreadyCommunicated {
@@ -264,7 +265,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						}
 						continue
 					}
-					h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
+					h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -285,7 +286,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -301,9 +302,16 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+				AccountID:      account.ID,
+				Success:        true,
+				DurationMs:     forwardDurationMs,
+				Stream:         reqStream,
+				HealthSample:   true,
+				TerminalReason: "success_no_result",
+			})
 		}
 
 		userAgent := c.GetHeader("User-Agent")

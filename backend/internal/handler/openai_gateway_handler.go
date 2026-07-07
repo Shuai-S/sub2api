@@ -459,6 +459,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 						upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 						wroteFallback := false
 						if !upstreamErrorAlreadyCommunicated {
@@ -496,7 +497,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						}
 						continue
 					}
-					h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
+					h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -517,7 +518,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -542,9 +543,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+				AccountID:      account.ID,
+				Success:        true,
+				DurationMs:     forwardDurationMs,
+				Stream:         reqStream,
+				HealthSample:   true,
+				TerminalReason: "success_no_result",
+			})
 		}
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
@@ -899,6 +907,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 						if result != nil && result.ClientDisconnect {
 							reqLog.Info("openai_messages.client_disconnected",
 								zap.Int64("account_id", account.ID),
@@ -933,7 +942,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						}
 						continue
 					}
-					h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
+					h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -961,7 +970,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					)
 					return
 				}
-				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
 				reqLog.Warn("openai_messages.forward_failed",
 					zap.Int64("account_id", account.ID),
@@ -972,9 +981,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+				AccountID:      account.ID,
+				Success:        true,
+				DurationMs:     forwardDurationMs,
+				Stream:         reqStream,
+				HealthSample:   true,
+				TerminalReason: "success_no_result",
+			})
 		}
 
 		userAgent := c.GetHeader("User-Agent")
@@ -1143,6 +1159,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 ) (func(), bool) {
 	if selection == nil || selection.Account == nil {
 		markOpsRoutingCapacityLimited(c)
+		h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+			AccountID:      0,
+			Success:        false,
+			Stream:         reqStream,
+			HealthSample:   false,
+			TerminalReason: "account_selection_empty",
+		})
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
 		return nil, false
 	}
@@ -1154,6 +1177,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
+		h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(ctx, service.OpenAIAccountScheduleReport{
+			AccountID:      account.ID,
+			Success:        false,
+			Stream:         reqStream,
+			HealthSample:   false,
+			TerminalReason: "account_selection_no_wait_plan",
+		})
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
 		return nil, false
 	}
@@ -1165,6 +1195,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	)
 	if err != nil {
 		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx, account.ID, err, nil, 0, reqStream)
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
 		return nil, false
 	}
@@ -1183,6 +1214,15 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
+		h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(ctx, service.OpenAIAccountScheduleReport{
+			AccountID:      account.ID,
+			Success:        false,
+			Stream:         reqStream,
+			HealthSample:   true,
+			Cooldown:       true,
+			CooldownReason: "concurrency_limit",
+			TerminalReason: "account_wait_queue_full",
+		})
 		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", *streamStarted)
 		return nil, false
 	}
@@ -1206,6 +1246,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	)
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx, account.ID, err, nil, 0, reqStream)
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
 		return nil, false
 	}
@@ -1458,6 +1499,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		accountReleaseFunc := selection.ReleaseFunc
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
+				h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+					AccountID:      account.ID,
+					Success:        false,
+					Stream:         true,
+					HealthSample:   false,
+					TerminalReason: "websocket_account_selection_no_wait_plan",
+				})
 				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 				return
 			}
@@ -1468,10 +1516,27 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			)
 			if err != nil {
 				reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+					AccountID:      account.ID,
+					Success:        false,
+					Stream:         true,
+					HealthSample:   false,
+					TerminalReason: "websocket_account_slot_acquire_error",
+					Err:            err,
+				})
 				closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
 				return
 			}
 			if !fastAcquired {
+				h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+					AccountID:      account.ID,
+					Success:        false,
+					Stream:         true,
+					HealthSample:   true,
+					Cooldown:       true,
+					CooldownReason: "concurrency_limit",
+					TerminalReason: "websocket_account_busy",
+				})
 				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
 				return
 			}
@@ -1485,6 +1550,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		token, _, err := h.gatewayService.GetAccessToken(ctx, account)
 		if err != nil {
 			reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, nil, 0, true)
 			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to get access token")
 			return
 		}
@@ -1586,7 +1652,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 					h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResultWithContext(c.Request.Context(), account.ID, true, result.FirstTokenMs)
+				h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
@@ -1641,7 +1707,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, failoverErr, nil)
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, nil, 0, true)
 				releaseAccountSlot()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr
@@ -1667,7 +1733,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				continue
 			}
 
-			h.gatewayService.ReportOpenAIAccountAdaptiveFailureWithContext(c.Request.Context(), account.ID, err, nil)
+			h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, nil, 0, true)
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			reqLog.Warn("openai.websocket_proxy_failed",
 				zap.Int64("account_id", account.ID),
@@ -1706,6 +1772,13 @@ func (h *OpenAIGatewayHandler) recoverResponsesPanic(c *gin.Context, streamStart
 		zap.Any("panic", recovered),
 		zap.ByteString("stack", debug.Stack()),
 	)
+}
+
+func openAIForwardFirstTokenMs(result *service.OpenAIForwardResult) *int {
+	if result == nil {
+		return nil
+	}
+	return result.FirstTokenMs
 }
 
 // recoverAnthropicMessagesPanic recovers from panics in the Anthropic Messages
