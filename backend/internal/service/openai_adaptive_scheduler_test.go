@@ -111,6 +111,17 @@ func TestOpenAIAdaptiveSchedulerConcurrencyCooldownClearsStickySessions(t *testi
 	require.Equal(t, 1, cache.deletedSessions["openai:sticky_a"])
 	require.Equal(t, 1, cache.deletedSessions["openai:sticky_b"])
 	require.Equal(t, "active", openAIAdaptiveCooldownStatus(scheduler.state.snapshot(1001, cfg), time.Now()))
+
+	scheduler.ReportScheduleResultWithContext(context.Background(), OpenAIAccountScheduleReport{
+		AccountID:      1001,
+		Success:        false,
+		HealthSample:   true,
+		Cooldown:       true,
+		CooldownReason: "concurrency_limit",
+		TerminalReason: "account_health_failure",
+		Err:            errors.New("upstream response failed: Concurrency limit exceeded for account, please retry later"),
+	})
+	require.Equal(t, 1, cache.accountCleanupCall[1001])
 }
 
 func TestOpenAIAdaptiveSchedulerActiveCooldownDoesNotExcludeCandidates(t *testing.T) {

@@ -18,11 +18,15 @@ const openAIAccountScheduleLayerAdaptive = "adaptive"
 
 var errOpenAIAdaptiveSchedulerFallback = errors.New("openai adaptive scheduler fallback")
 
+const openAIAdaptiveStickyCleanupMinInterval = 30 * time.Second
+
 type adaptiveOpenAIAccountScheduler struct {
-	service  *OpenAIGatewayService
-	baseline *defaultOpenAIAccountScheduler
-	state    *openAIAdaptiveSchedulerStateStore
-	metrics  openAIAccountSchedulerMetrics
+	service               *OpenAIGatewayService
+	baseline              *defaultOpenAIAccountScheduler
+	state                 *openAIAdaptiveSchedulerStateStore
+	metrics               openAIAccountSchedulerMetrics
+	stickyCleanupMu       sync.Mutex
+	stickyCleanupLastByID map[int64]time.Time
 }
 
 type openAIAdaptiveAccountState struct {
@@ -1104,6 +1108,9 @@ func (s *adaptiveOpenAIAccountScheduler) clearStickySessionsForCooldown(ctx cont
 	if !ok || cleaner == nil {
 		return
 	}
+	if !s.shouldRunStickyCleanup(accountID, time.Now()) {
+		return
+	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	deleted, err := cleaner.DeleteSessionsByAccountID(cleanupCtx, accountID)
@@ -1126,6 +1133,25 @@ func (s *adaptiveOpenAIAccountScheduler) clearStickySessionsForCooldown(ctx cont
 
 func openAIAdaptiveCooldownShouldClearSticky(reason string) bool {
 	return strings.TrimSpace(reason) == "concurrency_limit"
+}
+
+func (s *adaptiveOpenAIAccountScheduler) shouldRunStickyCleanup(accountID int64, now time.Time) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.stickyCleanupMu.Lock()
+	defer s.stickyCleanupMu.Unlock()
+	if s.stickyCleanupLastByID == nil {
+		s.stickyCleanupLastByID = make(map[int64]time.Time)
+	}
+	if last := s.stickyCleanupLastByID[accountID]; !last.IsZero() && now.Sub(last) < openAIAdaptiveStickyCleanupMinInterval {
+		return false
+	}
+	s.stickyCleanupLastByID[accountID] = now
+	return true
 }
 
 func (s *adaptiveOpenAIAccountScheduler) ReportSwitch() {

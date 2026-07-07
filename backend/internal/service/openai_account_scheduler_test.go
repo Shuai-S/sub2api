@@ -138,8 +138,9 @@ func (c schedulerTestConcurrencyCache) GetAccountWaitingCount(ctx context.Contex
 }
 
 type schedulerTestGatewayCache struct {
-	sessionBindings map[string]int64
-	deletedSessions map[string]int
+	sessionBindings    map[string]int64
+	deletedSessions    map[string]int
+	accountCleanupCall map[int64]int
 }
 
 func (c *schedulerTestGatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -180,6 +181,10 @@ func (c *schedulerTestGatewayCache) DeleteSessionsByAccountID(ctx context.Contex
 	if c.deletedSessions == nil {
 		c.deletedSessions = make(map[string]int)
 	}
+	if c.accountCleanupCall == nil {
+		c.accountCleanupCall = make(map[int64]int)
+	}
+	c.accountCleanupCall[accountID]++
 	var deleted int64
 	for sessionHash, boundAccountID := range c.sessionBindings {
 		if boundAccountID != accountID {
