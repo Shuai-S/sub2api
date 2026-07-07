@@ -5206,6 +5206,7 @@ export default {
         recentFailureRate: '近期失败率',
         cooldownRemaining: '冷却剩余 {value}',
         consecutiveFailures: '连续失败 {count}',
+        totalAccounts: '账号总数：{total}',
         scoreNote: '当前分值为 0-100 的参考分，用于观察当前账号池的自适应计算效果；真实调度还会受模型能力、会话粘滞、排除账号和请求上下文影响。',
         mode: {
           enforce: '执行模式',
@@ -5221,6 +5222,9 @@ export default {
           learning: '学习中',
           unlearned: '未学习',
           healthy: '健康'
+        },
+        statusFilter: {
+          all: '全部状态'
         },
         summary: {
           tracked: '已学习账号',

@@ -343,17 +343,45 @@ export interface OpsOpenAIAdaptiveLearningResponse {
   mode: string
   realtime_enabled: boolean
   generated_at: string
+  time_range?: OpsOpenAITokenStatsTimeRange
+  start_time?: string
+  end_time?: string
   total_accounts: number
+  total?: number
   returned_accounts: number
   limit: number
+  page?: number
+  page_size?: number
+  top_n?: number
+  sort_by?: OpsOpenAIAdaptiveLearningSortBy
+  sort_order?: OpsOpenAIAdaptiveLearningSortOrder
   settings: OpsOpenAIAdaptiveLearningSettingsSnapshot
   summary: OpsOpenAIAdaptiveLearningSummary
   accounts: OpsOpenAIAdaptiveLearningAccount[]
 }
 
+export type OpsOpenAIAdaptiveLearningSortBy =
+  | 'account'
+  | 'status'
+  | 'capacity'
+  | 'load'
+  | 'score'
+  | 'samples'
+  | 'error'
+  | 'last_event'
+
+export type OpsOpenAIAdaptiveLearningSortOrder = 'asc' | 'desc'
+
 export interface OpsOpenAIAdaptiveLearningParams {
+  time_range?: OpsOpenAITokenStatsTimeRange
   group_id?: number | null
+  status?: OpsOpenAIAdaptiveLearningStatus | string
+  page?: number
+  page_size?: number
+  top_n?: number
   limit?: number
+  sort_by?: OpsOpenAIAdaptiveLearningSortBy
+  sort_order?: OpsOpenAIAdaptiveLearningSortOrder
 }
 
 export interface OpsSystemMetricsSnapshot {

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import {
   opsAPI,
   type OpsOpenAIAdaptiveLearningAccount,
-  type OpsOpenAIAdaptiveLearningResponse
+  type OpsOpenAIAdaptiveLearningResponse,
+  type OpsOpenAIAdaptiveLearningSortBy,
+  type OpsOpenAIAdaptiveLearningSortOrder,
+  type OpsOpenAIAdaptiveLearningStatus
 } from '@/api/admin/ops'
 import { formatNumber } from '@/utils/format'
 
@@ -27,6 +31,17 @@ const errorMessage = ref('')
 const response = ref<OpsOpenAIAdaptiveLearningResponse | null>(null)
 let loadSeq = 0
 
+type ViewMode = 'topn' | 'pagination'
+type StatusFilter = '' | OpsOpenAIAdaptiveLearningStatus
+
+const statusFilter = ref<StatusFilter>('')
+const viewMode = ref<ViewMode>('topn')
+const topN = ref<number>(20)
+const page = ref<number>(1)
+const pageSize = ref<number>(20)
+const sortBy = ref<OpsOpenAIAdaptiveLearningSortBy>('status')
+const sortOrder = ref<OpsOpenAIAdaptiveLearningSortOrder>('desc')
+
 const enabledForPlatform = computed(() => {
   const platform = String(props.platformFilter || '').trim().toLowerCase()
   return !platform || platform === 'openai'
@@ -34,6 +49,44 @@ const enabledForPlatform = computed(() => {
 
 const accounts = computed(() => response.value?.accounts ?? [])
 const summary = computed(() => response.value?.summary ?? null)
+const total = computed(() => response.value?.total ?? response.value?.total_accounts ?? 0)
+const totalPages = computed(() => {
+  if (viewMode.value !== 'pagination') return 1
+  const size = pageSize.value > 0 ? pageSize.value : 20
+  return Math.max(1, Math.ceil(total.value / size))
+})
+
+const statusFilterOptions = computed(() => [
+  { value: '', label: t('admin.ops.openaiAdaptiveLearning.statusFilter.all') },
+  { value: 'healthy', label: t('admin.ops.openaiAdaptiveLearning.status.healthy') },
+  { value: 'learning', label: t('admin.ops.openaiAdaptiveLearning.status.learning') },
+  { value: 'unlearned', label: t('admin.ops.openaiAdaptiveLearning.status.unlearned') },
+  { value: 'high_error', label: t('admin.ops.openaiAdaptiveLearning.status.highError') },
+  { value: 'cooldown', label: t('admin.ops.openaiAdaptiveLearning.status.cooldown') },
+  { value: 'half_open', label: t('admin.ops.openaiAdaptiveLearning.status.halfOpen') },
+  { value: 'saturated', label: t('admin.ops.openaiAdaptiveLearning.status.saturated') },
+  { value: 'unavailable', label: t('admin.ops.openaiAdaptiveLearning.status.unavailable') },
+  { value: 'disabled', label: t('admin.ops.openaiAdaptiveLearning.status.disabled') }
+])
+
+const viewModeOptions = computed(() => [
+  { value: 'topn', label: t('admin.ops.openaiTokenStats.viewModeTopN') },
+  { value: 'pagination', label: t('admin.ops.openaiTokenStats.viewModePagination') }
+])
+
+const topNOptions = computed(() => [
+  { value: 10, label: 'Top 10' },
+  { value: 20, label: 'Top 20' },
+  { value: 50, label: 'Top 50' },
+  { value: 100, label: 'Top 100' }
+])
+
+const pageSizeOptions = computed(() => [
+  { value: 10, label: '10' },
+  { value: 20, label: '20' },
+  { value: 50, label: '50' },
+  { value: 100, label: '100' }
+])
 
 const statusKeyMap: Record<string, string> = {
   disabled: 'admin.ops.openaiAdaptiveLearning.status.disabled',
@@ -146,15 +199,25 @@ const settingsItems = computed(() => {
 })
 
 function buildParams() {
-  return {
+  const params: Record<string, any> = {
     group_id: typeof props.groupIdFilter === 'number' && props.groupIdFilter > 0 ? props.groupIdFilter : undefined,
-    limit: 50
+    status: statusFilter.value || undefined,
+    sort_by: sortBy.value,
+    sort_order: sortOrder.value
   }
+  if (viewMode.value === 'topn') {
+    params.top_n = topN.value
+  } else {
+    params.page = page.value
+    params.page_size = pageSize.value
+  }
+  return params
 }
 
 async function loadData() {
   if (!enabledForPlatform.value) {
     response.value = null
+    loading.value = false
     return
   }
   const seq = ++loadSeq
@@ -164,6 +227,10 @@ async function loadData() {
     const data = await opsAPI.getOpenAIAdaptiveLearning(buildParams())
     if (seq !== loadSeq) return
     response.value = data
+    if (viewMode.value === 'pagination' && page.value > totalPages.value) {
+      page.value = totalPages.value
+      response.value = await opsAPI.getOpenAIAdaptiveLearning(buildParams())
+    }
   } catch (err: any) {
     if (seq !== loadSeq) return
     console.error('[OpsOpenAIAdaptiveLearningCard] Failed to load data', err)
@@ -180,9 +247,30 @@ watch(
   () => ({
     platform: props.platformFilter,
     groupId: props.groupIdFilter,
-    refreshToken: props.refreshToken
+    refreshToken: props.refreshToken,
+    statusFilter: statusFilter.value,
+    viewMode: viewMode.value,
+    topN: topN.value,
+    page: page.value,
+    pageSize: pageSize.value,
+    sortBy: sortBy.value,
+    sortOrder: sortOrder.value
   }),
-  () => {
+  (next, prev) => {
+    const filtersChanged = !prev ||
+      next.platform !== prev.platform ||
+      next.groupId !== prev.groupId ||
+      next.statusFilter !== prev.statusFilter ||
+      next.viewMode !== prev.viewMode ||
+      next.pageSize !== prev.pageSize ||
+      next.sortBy !== prev.sortBy ||
+      next.sortOrder !== prev.sortOrder
+
+    if (next.viewMode === 'pagination' && filtersChanged && next.page !== 1) {
+      page.value = 1
+      return
+    }
+
     void loadData()
   },
   { immediate: true }
@@ -255,6 +343,34 @@ function loadBarClass(row: OpsOpenAIAdaptiveLearningAccount): string {
   if (row.load_percentage >= 70 || row.waiting_count > 0) return 'bg-amber-500'
   return 'bg-green-500'
 }
+
+function onPrevPage() {
+  if (viewMode.value !== 'pagination') return
+  if (page.value > 1) page.value -= 1
+}
+
+function onNextPage() {
+  if (viewMode.value !== 'pagination') return
+  if (page.value < totalPages.value) page.value += 1
+}
+
+function setSort(nextSortBy: OpsOpenAIAdaptiveLearningSortBy) {
+  if (sortBy.value === nextSortBy) {
+    sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc'
+    return
+  }
+  sortBy.value = nextSortBy
+  sortOrder.value = defaultSortOrder(nextSortBy)
+}
+
+function defaultSortOrder(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): OpsOpenAIAdaptiveLearningSortOrder {
+  return nextSortBy === 'account' ? 'asc' : 'desc'
+}
+
+function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
+  if (sortBy.value !== nextSortBy) return ''
+  return sortOrder.value === 'desc' ? '↓' : '↑'
+}
 </script>
 
 <template>
@@ -288,7 +404,38 @@ function loadBarClass(row: OpsOpenAIAdaptiveLearningAccount): string {
         </p>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <div class="w-36">
+          <Select v-model="statusFilter" :options="statusFilterOptions" />
+        </div>
+        <div class="w-36">
+          <Select v-model="viewMode" :options="viewModeOptions" />
+        </div>
+        <div v-if="viewMode === 'topn'" class="w-28">
+          <Select v-model="topN" :options="topNOptions" />
+        </div>
+        <template v-else>
+          <div class="w-24">
+            <Select v-model="pageSize" :options="pageSizeOptions" />
+          </div>
+          <button
+            class="btn btn-secondary btn-sm"
+            :disabled="loading || page <= 1"
+            @click="onPrevPage"
+          >
+            {{ t('admin.ops.openaiTokenStats.prevPage') }}
+          </button>
+          <button
+            class="btn btn-secondary btn-sm"
+            :disabled="loading || page >= totalPages"
+            @click="onNextPage"
+          >
+            {{ t('admin.ops.openaiTokenStats.nextPage') }}
+          </button>
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.ops.openaiTokenStats.pageInfo', { page, total: totalPages }) }}
+          </span>
+        </template>
         <RouterLink
           class="btn btn-secondary btn-sm"
           to="/admin/settings"
@@ -351,14 +498,54 @@ function loadBarClass(row: OpsOpenAIAdaptiveLearningAccount): string {
           <table class="min-w-full text-left text-xs">
             <thead class="sticky top-0 z-10 bg-white dark:bg-dark-800">
               <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.account') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.status') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.capacity') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.load') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.score') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.samples') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.error') }}</th>
-                <th class="px-3 py-2 font-semibold">{{ t('admin.ops.openaiAdaptiveLearning.table.lastEvent') }}</th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('account')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.account') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('account') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('status')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.status') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('status') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('capacity')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.capacity') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('capacity') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('load')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.load') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('load') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('score')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.score') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('score') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('samples')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.samples') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('samples') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('error')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.error') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('error') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('last_event')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.lastEvent') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('last_event') }}</span>
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
@@ -443,6 +630,9 @@ function loadBarClass(row: OpsOpenAIAdaptiveLearningAccount): string {
 
       <p class="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
         {{ t('admin.ops.openaiAdaptiveLearning.scoreNote') }}
+      </p>
+      <p class="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+        {{ t('admin.ops.openaiAdaptiveLearning.totalAccounts', { total }) }}
       </p>
     </template>
   </section>

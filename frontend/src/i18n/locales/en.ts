@@ -5052,6 +5052,7 @@ export default {
         recentFailureRate: 'recent fail',
         cooldownRemaining: 'cooldown {value}',
         consecutiveFailures: 'fail streak {count}',
+        totalAccounts: 'Total accounts: {total}',
         scoreNote: 'Current score is a 0-100 reference score for observing adaptive calculation in the current account pool; real scheduling still depends on model capability, sticky session, excluded accounts, and request context.',
         mode: {
           enforce: 'Enforce',
@@ -5067,6 +5068,9 @@ export default {
           learning: 'Learning',
           unlearned: 'Unlearned',
           healthy: 'Healthy'
+        },
+        statusFilter: {
+          all: 'All statuses'
         },
         summary: {
           tracked: 'Tracked',

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -27,14 +28,40 @@ type OpenAIAdaptiveSchedulerLearningSnapshot struct {
 	Mode            string    `json:"mode"`
 	RealtimeEnabled bool      `json:"realtime_enabled"`
 	GeneratedAt     time.Time `json:"generated_at"`
+	TimeRange       string    `json:"time_range,omitempty"`
+	StartTime       time.Time `json:"start_time,omitempty"`
+	EndTime         time.Time `json:"end_time,omitempty"`
 
-	TotalAccounts    int `json:"total_accounts"`
-	ReturnedAccounts int `json:"returned_accounts"`
-	Limit            int `json:"limit"`
+	TotalAccounts    int    `json:"total_accounts"`
+	Total            int    `json:"total"`
+	ReturnedAccounts int    `json:"returned_accounts"`
+	Limit            int    `json:"limit"`
+	Page             int    `json:"page,omitempty"`
+	PageSize         int    `json:"page_size,omitempty"`
+	TopN             int    `json:"top_n,omitempty"`
+	SortBy           string `json:"sort_by,omitempty"`
+	SortOrder        string `json:"sort_order,omitempty"`
 
 	Settings OpenAIAdaptiveSchedulerLearningSettingsSnapshot  `json:"settings"`
 	Summary  OpenAIAdaptiveSchedulerLearningSummary           `json:"summary"`
 	Accounts []OpenAIAdaptiveSchedulerAccountLearningSnapshot `json:"accounts"`
+}
+
+type OpenAIAdaptiveSchedulerLearningFilter struct {
+	GroupID   *int64
+	TimeRange string
+	StartTime time.Time
+	EndTime   time.Time
+	TopN      int
+	Page      int
+	PageSize  int
+	Status    string
+	SortBy    string
+	SortOrder string
+}
+
+func (f *OpenAIAdaptiveSchedulerLearningFilter) IsTopNMode() bool {
+	return f != nil && f.TopN > 0
 }
 
 type OpenAIAdaptiveSchedulerLearningSettingsSnapshot struct {
@@ -122,17 +149,18 @@ type OpenAIAdaptiveSchedulerAccountLearningSnapshot struct {
 
 func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
 	ctx context.Context,
-	groupIDFilter *int64,
-	limit int,
+	filter *OpenAIAdaptiveSchedulerLearningFilter,
 ) (*OpenAIAdaptiveSchedulerLearningSnapshot, error) {
 	if err := s.RequireMonitoringEnabled(ctx); err != nil {
 		return nil, err
 	}
-	if limit <= 0 {
-		limit = openAIAdaptiveLearningDefaultLimit
+	if filter == nil {
+		filter = &OpenAIAdaptiveSchedulerLearningFilter{}
 	}
-	if limit > openAIAdaptiveLearningMaxLimit {
-		limit = openAIAdaptiveLearningMaxLimit
+	normalizeOpenAIAdaptiveLearningFilter(filter)
+	limit := filter.TopN
+	if !filter.IsTopNMode() {
+		limit = filter.PageSize
 	}
 
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
@@ -143,11 +171,11 @@ func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
 	}
 	realtimeEnabled := s.IsRealtimeMonitoringEnabled(ctx)
 
-	accounts, err := s.listAllAccountsForOps(ctx, PlatformOpenAI, groupIDFilter)
+	accounts, err := s.listAllAccountsForOps(ctx, PlatformOpenAI, filter.GroupID)
 	if err != nil {
 		return nil, err
 	}
-	accounts = filterOpenAIAdaptiveLearningAccountsByGroup(accounts, groupIDFilter)
+	accounts = filterOpenAIAdaptiveLearningAccountsByGroup(accounts, filter.GroupID)
 	accounts = filterOpenAIAdaptiveLearningSchedulableAccounts(accounts)
 
 	now := time.Now()
@@ -187,12 +215,27 @@ func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
 		rows = append(rows, row)
 	}
 	applyOpenAIAdaptiveLearningScores(rows, accounts, states, loadMap, cfg)
-	sortOpenAIAdaptiveLearningRows(rows)
+	rows = filterOpenAIAdaptiveLearningRowsByStatus(rows, filter.Status)
+	rows = filterOpenAIAdaptiveLearningRowsByTime(rows, filter.StartTime, filter.EndTime)
+	sortOpenAIAdaptiveLearningRows(rows, filter.SortBy, filter.SortOrder)
 
 	summary := summarizeOpenAIAdaptiveLearningRows(rows)
 	total := len(rows)
-	if len(rows) > limit {
-		rows = rows[:limit]
+	if filter.IsTopNMode() {
+		if len(rows) > filter.TopN {
+			rows = rows[:filter.TopN]
+		}
+	} else {
+		start := (filter.Page - 1) * filter.PageSize
+		if start >= len(rows) {
+			rows = nil
+		} else {
+			end := start + filter.PageSize
+			if end > len(rows) {
+				end = len(rows)
+			}
+			rows = rows[start:end]
+		}
 	}
 
 	return &OpenAIAdaptiveSchedulerLearningSnapshot{
@@ -201,12 +244,45 @@ func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
 		RealtimeEnabled:  realtimeEnabled,
 		GeneratedAt:      now.UTC(),
 		TotalAccounts:    total,
+		Total:            total,
 		ReturnedAccounts: len(rows),
 		Limit:            limit,
+		TimeRange:        filter.TimeRange,
+		StartTime:        filter.StartTime.UTC(),
+		EndTime:          filter.EndTime.UTC(),
+		Page:             filter.Page,
+		PageSize:         filter.PageSize,
+		TopN:             filter.TopN,
+		SortBy:           filter.SortBy,
+		SortOrder:        filter.SortOrder,
 		Settings:         openAIAdaptiveLearningSettingsSnapshot(cfg),
 		Summary:          summary,
 		Accounts:         rows,
 	}, nil
+}
+
+func normalizeOpenAIAdaptiveLearningFilter(filter *OpenAIAdaptiveSchedulerLearningFilter) {
+	if filter == nil {
+		return
+	}
+	if filter.TopN > openAIAdaptiveLearningMaxLimit {
+		filter.TopN = openAIAdaptiveLearningMaxLimit
+	}
+	if filter.TopN < 0 {
+		filter.TopN = 0
+	}
+	if filter.Page <= 0 {
+		filter.Page = 1
+	}
+	if filter.PageSize <= 0 {
+		filter.PageSize = openAIAdaptiveLearningDefaultLimit
+	}
+	if filter.PageSize > openAIAdaptiveLearningMaxLimit {
+		filter.PageSize = openAIAdaptiveLearningMaxLimit
+	}
+	filter.SortBy = normalizeOpenAIAdaptiveLearningSortBy(filter.SortBy)
+	filter.SortOrder = normalizeOpenAIAdaptiveLearningSortOrder(filter.SortOrder)
+	filter.Status = normalizeOpenAIAdaptiveLearningStatusFilter(filter.Status)
 }
 
 func (s *OpenAIGatewayService) openAIAdaptiveSchedulerStateStoreForSnapshot() *openAIAdaptiveSchedulerStateStore {
@@ -441,27 +517,207 @@ func applyOpenAIAdaptiveLearningScores(
 	}
 }
 
-func sortOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLearningSnapshot) {
+func filterOpenAIAdaptiveLearningRowsByTime(
+	rows []OpenAIAdaptiveSchedulerAccountLearningSnapshot,
+	start time.Time,
+	end time.Time,
+) []OpenAIAdaptiveSchedulerAccountLearningSnapshot {
+	if len(rows) == 0 || start.IsZero() || end.IsZero() || !end.After(start) {
+		return rows
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		lastEvent := openAIAdaptiveLearningLastEventTime(row)
+		if lastEvent.IsZero() || (!lastEvent.Before(start) && lastEvent.Before(end.Add(time.Nanosecond))) {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func filterOpenAIAdaptiveLearningRowsByStatus(
+	rows []OpenAIAdaptiveSchedulerAccountLearningSnapshot,
+	status string,
+) []OpenAIAdaptiveSchedulerAccountLearningSnapshot {
+	status = normalizeOpenAIAdaptiveLearningStatusFilter(status)
+	if status == "" || len(rows) == 0 {
+		return rows
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		if row.SchedulerStatus == status {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func sortOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLearningSnapshot, sortBy string, sortOrder string) {
+	sortBy = normalizeOpenAIAdaptiveLearningSortBy(sortBy)
+	sortOrder = normalizeOpenAIAdaptiveLearningSortOrder(sortOrder)
+	if sortBy != "" {
+		sort.SliceStable(rows, func(i, j int) bool {
+			cmp := compareOpenAIAdaptiveLearningRows(rows[i], rows[j], sortBy)
+			if cmp == 0 {
+				return compareOpenAIAdaptiveLearningRows(rows[i], rows[j], "default") < 0
+			}
+			if sortOrder == "asc" {
+				return cmp < 0
+			}
+			return cmp > 0
+		})
+		return
+	}
 	sort.SliceStable(rows, func(i, j int) bool {
-		leftRank := openAIAdaptiveLearningStatusRank(rows[i].SchedulerStatus)
-		rightRank := openAIAdaptiveLearningStatusRank(rows[j].SchedulerStatus)
-		if leftRank != rightRank {
-			return leftRank < rightRank
-		}
-		if rows[i].LoadPercentage != rows[j].LoadPercentage {
-			return rows[i].LoadPercentage > rows[j].LoadPercentage
-		}
-		if rows[i].ErrorEMA != rows[j].ErrorEMA {
-			return rows[i].ErrorEMA > rows[j].ErrorEMA
-		}
-		if rows[i].SchedulerScore != rows[j].SchedulerScore {
-			return rows[i].SchedulerScore < rows[j].SchedulerScore
-		}
-		if rows[i].Priority != rows[j].Priority {
-			return rows[i].Priority < rows[j].Priority
-		}
-		return rows[i].AccountID < rows[j].AccountID
+		return compareOpenAIAdaptiveLearningRows(rows[i], rows[j], "default") < 0
 	})
+}
+
+func normalizeOpenAIAdaptiveLearningSortBy(value string) string {
+	switch strings.TrimSpace(value) {
+	case "account", "status", "capacity", "load", "score", "samples", "error", "last_event":
+		return strings.TrimSpace(value)
+	case "default", "":
+		return ""
+	default:
+		return ""
+	}
+}
+
+func normalizeOpenAIAdaptiveLearningStatusFilter(value string) string {
+	switch strings.TrimSpace(value) {
+	case OpenAIAdaptiveLearningStatusDisabled,
+		OpenAIAdaptiveLearningStatusUnavailable,
+		OpenAIAdaptiveLearningStatusCooldown,
+		OpenAIAdaptiveLearningStatusHalfOpen,
+		OpenAIAdaptiveLearningStatusHighError,
+		OpenAIAdaptiveLearningStatusSaturated,
+		OpenAIAdaptiveLearningStatusLearning,
+		OpenAIAdaptiveLearningStatusUnlearned,
+		OpenAIAdaptiveLearningStatusHealthy:
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
+}
+
+func normalizeOpenAIAdaptiveLearningSortOrder(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "asc") {
+		return "asc"
+	}
+	return "desc"
+}
+
+func compareOpenAIAdaptiveLearningRows(left, right OpenAIAdaptiveSchedulerAccountLearningSnapshot, sortBy string) int {
+	switch sortBy {
+	case "account":
+		if cmp := strings.Compare(strings.ToLower(left.AccountName), strings.ToLower(right.AccountName)); cmp != 0 {
+			return cmp
+		}
+	case "status":
+		if cmp := compareInt(openAIAdaptiveLearningStatusRank(left.SchedulerStatus), openAIAdaptiveLearningStatusRank(right.SchedulerStatus)); cmp != 0 {
+			return -cmp
+		}
+	case "capacity":
+		if cmp := compareInt(left.EffectiveCapacity, right.EffectiveCapacity); cmp != 0 {
+			return cmp
+		}
+	case "load":
+		if cmp := compareFloat64(left.LoadPercentage, right.LoadPercentage); cmp != 0 {
+			return cmp
+		}
+	case "score":
+		if cmp := compareFloat64(left.SchedulerScore, right.SchedulerScore); cmp != 0 {
+			return cmp
+		}
+	case "samples":
+		if cmp := compareInt64(left.TotalSamples, right.TotalSamples); cmp != 0 {
+			return cmp
+		}
+	case "error":
+		if cmp := compareFloat64(left.ErrorEMA, right.ErrorEMA); cmp != 0 {
+			return cmp
+		}
+	case "last_event":
+		if cmp := compareTime(openAIAdaptiveLearningLastEventTime(left), openAIAdaptiveLearningLastEventTime(right)); cmp != 0 {
+			return cmp
+		}
+	default:
+		leftRank := openAIAdaptiveLearningStatusRank(left.SchedulerStatus)
+		rightRank := openAIAdaptiveLearningStatusRank(right.SchedulerStatus)
+		if leftRank != rightRank {
+			return compareInt(leftRank, rightRank)
+		}
+		if left.LoadPercentage != right.LoadPercentage {
+			return compareFloat64(right.LoadPercentage, left.LoadPercentage)
+		}
+		if left.ErrorEMA != right.ErrorEMA {
+			return compareFloat64(right.ErrorEMA, left.ErrorEMA)
+		}
+		if left.SchedulerScore != right.SchedulerScore {
+			return compareFloat64(left.SchedulerScore, right.SchedulerScore)
+		}
+		if left.Priority != right.Priority {
+			return compareInt(left.Priority, right.Priority)
+		}
+	}
+	return compareInt64(left.AccountID, right.AccountID)
+}
+
+func openAIAdaptiveLearningLastEventTime(row OpenAIAdaptiveSchedulerAccountLearningSnapshot) time.Time {
+	var latest time.Time
+	for _, candidate := range []*time.Time{
+		row.LastSuccessAt,
+		row.LastFailureAt,
+		row.LastCapacityFailureAt,
+		row.CooldownUntil,
+		row.LearningWindowStartedAt,
+	} {
+		if candidate != nil && candidate.After(latest) {
+			latest = *candidate
+		}
+	}
+	return latest
+}
+
+func compareInt(left, right int) int {
+	if left < right {
+		return -1
+	}
+	if left > right {
+		return 1
+	}
+	return 0
+}
+
+func compareInt64(left, right int64) int {
+	if left < right {
+		return -1
+	}
+	if left > right {
+		return 1
+	}
+	return 0
+}
+
+func compareFloat64(left, right float64) int {
+	if left < right {
+		return -1
+	}
+	if left > right {
+		return 1
+	}
+	return 0
+}
+
+func compareTime(left, right time.Time) int {
+	if left.Before(right) {
+		return -1
+	}
+	if left.After(right) {
+		return 1
+	}
+	return 0
 }
 
 func openAIAdaptiveLearningStatusRank(status string) int {
