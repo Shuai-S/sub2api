@@ -37,9 +37,19 @@
               <span v-if="files.length > 1"> · {{ fileListTitle }}</span>
             </div>
           </div>
-          <button type="button" class="btn btn-secondary shrink-0" @click="openFilePicker">
-            {{ t('common.chooseFile') }}
-          </button>
+          <div class="flex shrink-0 gap-2">
+            <button
+              v-if="files.length > 0"
+              type="button"
+              class="btn btn-secondary"
+              @click="clearSelectedFiles"
+            >
+              {{ t('common.reset') }}
+            </button>
+            <button type="button" class="btn btn-secondary" @click="openFilePicker">
+              {{ t('common.chooseFile') }}
+            </button>
+          </div>
         </div>
         <input
           ref="fileInput"
@@ -151,13 +161,24 @@ watch(
 )
 
 const openFilePicker = () => {
-  fileInput.value?.click()
+  if (!fileInput.value) return
+  fileInput.value.multiple = true
+  fileInput.value.click()
 }
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   setSelectedFiles(target.files)
   target.value = ''
+}
+
+const clearSelectedFiles = () => {
+  if (importing.value) return
+  files.value = []
+  result.value = null
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
 }
 
 const handleClose = () => {
@@ -174,6 +195,9 @@ const isJsonFile = (sourceFile: File) => {
   return name.endsWith('.json') || sourceFile.type === 'application/json'
 }
 
+const getFileKey = (sourceFile: File) =>
+  `${sourceFile.name}\u0000${sourceFile.size}\u0000${sourceFile.lastModified}\u0000${sourceFile.type}`
+
 const setSelectedFiles = (sourceFiles: FileList | File[] | null | undefined) => {
   if (importing.value) return
   const incoming = Array.from(sourceFiles || [])
@@ -187,7 +211,16 @@ const setSelectedFiles = (sourceFiles: FileList | File[] | null | undefined) => 
       t('admin.accounts.dataImportIgnoredFiles', { count: incoming.length - picked.length })
     )
   }
-  files.value = picked
+  const selectedKeys = new Set(files.value.map(getFileKey))
+  const nextFiles = [...files.value]
+  for (const sourceFile of picked) {
+    const key = getFileKey(sourceFile)
+    if (!selectedKeys.has(key)) {
+      selectedKeys.add(key)
+      nextFiles.push(sourceFile)
+    }
+  }
+  files.value = nextFiles
   result.value = null
 }
 

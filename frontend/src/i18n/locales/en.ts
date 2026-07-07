@@ -3144,7 +3144,7 @@ export default {
       dataExportedSkippedShadows: 'Data exported. Skipped {count} spark shadow account(s): their scheduling config is not included in the backup; recreate and re-tune them after restore.',
       dataExportFailed: 'Failed to export data',
       dataImportTitle: 'Import Data',
-      dataImportHint: 'Upload the exported JSON file to import accounts and proxies.',
+      dataImportHint: 'Upload one or more exported JSON files to import accounts and proxies.',
       dataImportWarning: 'Import will create new accounts/proxies; groups must be bound manually. Ensure existing data does not conflict.',
       dataImportFile: 'Data file',
       dataImportButton: 'Start Import',

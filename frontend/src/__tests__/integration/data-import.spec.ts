@@ -175,6 +175,55 @@ describe('ImportDataModal', () => {
     expect(showSuccess).toHaveBeenCalledWith('admin.accounts.dataImportSuccess')
   })
 
+  it('appends JSON files selected in separate picker rounds before importing', async () => {
+    const { adminAPI } = await import('@/api/admin')
+    vi.mocked(adminAPI.accounts.importData).mockResolvedValue({
+      proxy_created: 0,
+      proxy_reused: 0,
+      proxy_failed: 0,
+      account_created: 2,
+      account_failed: 0
+    })
+
+    const wrapper = mountModal()
+    const input = wrapper.find('input[type="file"]')
+    expect(input.attributes('multiple')).toBeDefined()
+
+    setInputFiles(input.element, [
+      makeJsonFile(
+        'first.json',
+        JSON.stringify({
+          exported_at: '2026-07-05T00:00:00Z',
+          proxies: [],
+          accounts: [{ name: 'a' }]
+        })
+      )
+    ])
+    await input.trigger('change')
+
+    setInputFiles(input.element, [
+      makeJsonFile(
+        'second.json',
+        JSON.stringify({
+          exported_at: '2026-07-05T00:00:01Z',
+          proxies: [],
+          accounts: [{ name: 'b' }]
+        })
+      )
+    ])
+    await input.trigger('change')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(adminAPI.accounts.importData).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        accounts: [{ name: 'a' }, { name: 'b' }]
+      }),
+      skip_default_group_bind: true
+    })
+  })
+
   it('部分成功时关闭弹窗仍通知父组件刷新', async () => {
     const { adminAPI } = await import('@/api/admin')
     vi.mocked(adminAPI.accounts.importData).mockResolvedValue({
@@ -205,8 +254,10 @@ describe('ImportDataModal', () => {
     expect(showError).toHaveBeenCalledWith('admin.accounts.dataImportCompletedWithErrors')
     expect(wrapper.emitted('imported')).toBeUndefined()
 
-    // 第二个 btn-secondary 是 footer 的取消按钮(第一个是选择文件)
-    await wrapper.findAll('button.btn-secondary')[1]!.trigger('click')
+    const cancelButton = wrapper
+      .findAll('button.btn-secondary')
+      .find((button) => button.text() === 'common.cancel')
+    await cancelButton!.trigger('click')
 
     expect(wrapper.emitted('imported')).toHaveLength(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
