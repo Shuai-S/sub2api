@@ -173,6 +173,25 @@ func (c *schedulerTestGatewayCache) DeleteSessionAccountID(ctx context.Context, 
 	return nil
 }
 
+func (c *schedulerTestGatewayCache) DeleteSessionsByAccountID(ctx context.Context, accountID int64) (int64, error) {
+	if c.sessionBindings == nil {
+		return 0, nil
+	}
+	if c.deletedSessions == nil {
+		c.deletedSessions = make(map[string]int)
+	}
+	var deleted int64
+	for sessionHash, boundAccountID := range c.sessionBindings {
+		if boundAccountID != accountID {
+			continue
+		}
+		c.deletedSessions[sessionHash]++
+		delete(c.sessionBindings, sessionHash)
+		deleted++
+	}
+	return deleted, nil
+}
+
 func newSchedulerTestOpenAIWSV2Config() *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.Enabled = true

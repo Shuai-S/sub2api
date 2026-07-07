@@ -46,6 +46,9 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 	}
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
+		if reason := openAIAdaptiveFailureTextCooldownReason(upstreamFailoverErrorMessageForAdaptive(failoverErr)); reason != "" {
+			return reason
+		}
 		switch failoverErr.StatusCode {
 		case http.StatusTooManyRequests:
 			return "upstream_429"
@@ -79,13 +82,30 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 	if errors.Is(err, errOpenAIWSConnQueueFull) {
 		return "ws_connection_limit"
 	}
-	lower := strings.ToLower(strings.TrimSpace(err.Error()))
+	return openAIAdaptiveFailureTextCooldownReason(err.Error())
+}
+
+func upstreamFailoverErrorMessageForAdaptive(err *UpstreamFailoverError) string {
+	if err == nil {
+		return ""
+	}
+	msg := extractUpstreamErrorMessage(err.ResponseBody)
+	msg = sanitizeUpstreamErrorMessage(strings.TrimSpace(msg))
+	if msg == "" && len(err.ResponseBody) > 0 {
+		msg = strings.TrimSpace(string(err.ResponseBody))
+	}
+	return msg
+}
+
+func openAIAdaptiveFailureTextCooldownReason(message string) string {
+	lower := strings.ToLower(strings.TrimSpace(message))
 	if lower == "" ||
 		strings.Contains(lower, "client disconnected") ||
 		strings.Contains(lower, "request canceled") {
 		return ""
 	}
 	if strings.Contains(lower, "concurrency limit") ||
+		strings.Contains(lower, "timeout waiting for") && strings.Contains(lower, "concurrency slot") ||
 		strings.Contains(lower, "connection limit") ||
 		strings.Contains(lower, "queue full") ||
 		strings.Contains(lower, "too many concurrent") ||

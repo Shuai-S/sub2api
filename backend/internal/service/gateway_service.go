@@ -466,6 +466,12 @@ type GatewayCache interface {
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
 }
 
+// GatewayAccountStickyCleaner is an optional cache capability for best-effort
+// cleanup of all sticky sessions currently bound to an account.
+type GatewayAccountStickyCleaner interface {
+	DeleteSessionsByAccountID(ctx context.Context, accountID int64) (int64, error)
+}
+
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
 func derefGroupID(groupID *int64) int64 {
 	if groupID == nil {

@@ -1091,8 +1091,41 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 	}
 	if report.Cooldown {
 		s.state.applyCooldown(report.AccountID, cfg, report.CooldownReason, time.Now())
+		s.clearStickySessionsForCooldown(ctx, report.AccountID, report.CooldownReason)
 	}
 	s.logDiagnosticResult(ctx, cfg, report)
+}
+
+func (s *adaptiveOpenAIAccountScheduler) clearStickySessionsForCooldown(ctx context.Context, accountID int64, reason string) {
+	if s == nil || s.service == nil || accountID <= 0 || !openAIAdaptiveCooldownShouldClearSticky(reason) {
+		return
+	}
+	cleaner, ok := s.service.cache.(GatewayAccountStickyCleaner)
+	if !ok || cleaner == nil {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	deleted, err := cleaner.DeleteSessionsByAccountID(cleanupCtx, accountID)
+	if err != nil {
+		slog.Warn("openai_adaptive_scheduler_sticky_cleanup_failed",
+			"account_id", accountID,
+			"cooldown_reason", reason,
+			"error", err,
+		)
+		return
+	}
+	if deleted > 0 {
+		slog.Info("openai_adaptive_scheduler_sticky_cleanup",
+			"account_id", accountID,
+			"cooldown_reason", reason,
+			"deleted_sessions", deleted,
+		)
+	}
+}
+
+func openAIAdaptiveCooldownShouldClearSticky(reason string) bool {
+	return strings.TrimSpace(reason) == "concurrency_limit"
 }
 
 func (s *adaptiveOpenAIAccountScheduler) ReportSwitch() {

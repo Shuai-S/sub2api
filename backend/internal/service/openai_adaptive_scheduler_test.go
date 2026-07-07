@@ -49,6 +49,11 @@ func TestOpenAIAdaptiveFailureHealthSampleSkipsUserInputErrors(t *testing.T) {
 	require.Equal(t, "upstream_502", openAIAdaptiveFailureCooldownReason(&UpstreamFailoverError{StatusCode: http.StatusBadGateway}))
 	require.Equal(t, "upstream_503", openAIAdaptiveFailureCooldownReason(&UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable}))
 	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(errors.New("upstream websocket is busy, please retry later")))
+	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(errors.New("timeout waiting for account concurrency slot")))
+	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(&UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		ResponseBody: []byte(`{"error":{"message":"Concurrency limit exceeded for account, please retry later"}}`),
+	}))
 }
 
 func TestOpenAIAdaptiveSchedulerCooldownAppliedImmediately(t *testing.T) {
@@ -64,6 +69,48 @@ func TestOpenAIAdaptiveSchedulerCooldownAppliedImmediately(t *testing.T) {
 	require.True(t, state.CooldownUntil.After(now))
 	require.Equal(t, "active", openAIAdaptiveCooldownStatus(state, now))
 	require.Equal(t, "expired", openAIAdaptiveCooldownStatus(state, state.CooldownUntil.Add(time.Nanosecond)))
+}
+
+func TestOpenAIAdaptiveSchedulerConcurrencyCooldownClearsStickySessions(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerCooldownBaseSeconds = 30
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings:  cfg,
+		complete:  true,
+		expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{
+		"openai:sticky_a": 1001,
+		"openai:sticky_b": 1001,
+		"openai:sticky_c": 1002,
+	}}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service:  &OpenAIGatewayService{cache: cache},
+		baseline: &defaultOpenAIAccountScheduler{},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+
+	scheduler.ReportScheduleResultWithContext(context.Background(), OpenAIAccountScheduleReport{
+		AccountID:      1001,
+		Success:        false,
+		HealthSample:   true,
+		Cooldown:       true,
+		CooldownReason: "concurrency_limit",
+		TerminalReason: "account_health_failure",
+		Err:            errors.New("upstream response failed: Concurrency limit exceeded for account, please retry later"),
+	})
+
+	require.NotContains(t, cache.sessionBindings, "openai:sticky_a")
+	require.NotContains(t, cache.sessionBindings, "openai:sticky_b")
+	require.Equal(t, int64(1002), cache.sessionBindings["openai:sticky_c"])
+	require.Equal(t, 1, cache.deletedSessions["openai:sticky_a"])
+	require.Equal(t, 1, cache.deletedSessions["openai:sticky_b"])
+	require.Equal(t, "active", openAIAdaptiveCooldownStatus(scheduler.state.snapshot(1001, cfg), time.Now()))
 }
 
 func TestOpenAIAdaptiveSchedulerActiveCooldownDoesNotExcludeCandidates(t *testing.T) {

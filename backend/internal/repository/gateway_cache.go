@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -52,8 +53,53 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	return c.rdb.Del(ctx, key).Err()
 }
 
+// DeleteSessionsByAccountID deletes all sticky session keys whose value points to
+// accountID. It is best-effort and intended for rare account-level cooldowns.
+func (c *gatewayCache) DeleteSessionsByAccountID(ctx context.Context, accountID int64) (int64, error) {
+	if c == nil || c.rdb == nil || accountID <= 0 {
+		return 0, nil
+	}
+	target := strconv.FormatInt(accountID, 10)
+	var cursor uint64
+	var deleted int64
+	for {
+		keys, nextCursor, err := c.rdb.Scan(ctx, cursor, stickySessionPrefix+"*", 1000).Result()
+		if err != nil {
+			return deleted, err
+		}
+		cursor = nextCursor
+		if len(keys) > 0 {
+			values, err := c.rdb.MGet(ctx, keys...).Result()
+			if err != nil {
+				return deleted, err
+			}
+			deleteKeys := make([]string, 0, len(keys))
+			for i, value := range values {
+				if value == nil {
+					continue
+				}
+				if fmt.Sprint(value) == target {
+					deleteKeys = append(deleteKeys, keys[i])
+				}
+			}
+			if len(deleteKeys) > 0 {
+				n, err := c.rdb.Del(ctx, deleteKeys...).Result()
+				deleted += n
+				if err != nil {
+					return deleted, err
+				}
+			}
+		}
+		if cursor == 0 {
+			break
+		}
+	}
+	return deleted, nil
+}
+
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
+var _ service.GatewayAccountStickyCleaner = (*gatewayCache)(nil)
 
 const cyberSessionBlockPrefix = "cyber_session_block:"
 
