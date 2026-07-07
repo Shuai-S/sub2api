@@ -231,6 +231,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		"openai_adaptive_scheduler_min_recent_samples_for_shrink": 20,
 		"openai_adaptive_scheduler_learning_window_seconds":       1800,
 		"openai_adaptive_scheduler_weight_cost":                   0.35,
+		"openai_advanced_scheduler_subscription_priority_enabled": true,
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -256,6 +257,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "20", repo.values["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
 	require.Equal(t, "1800", repo.values["openai_adaptive_scheduler_learning_window_seconds"])
 	require.Equal(t, "0.35", repo.values["openai_adaptive_scheduler_weight_cost"])
+	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
 
 	var resp response.Response
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
@@ -274,6 +276,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, float64(20), data["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
 	require.Equal(t, float64(1800), data["openai_adaptive_scheduler_learning_window_seconds"])
 	require.Equal(t, 0.35, data["openai_adaptive_scheduler_weight_cost"])
+	require.Equal(t, true, data["openai_advanced_scheduler_subscription_priority_enabled"])
 }
 
 func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodSource(t *testing.T) {

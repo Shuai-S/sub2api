@@ -218,8 +218,30 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool
 
 	// OpenAI 账号调度
-	OpenAIAdvancedSchedulerEnabled bool
-	OpenAIAdaptiveScheduler        OpenAIAdaptiveSchedulerSettings
+	OpenAIAdvancedSchedulerEnabled                         bool
+	OpenAIAdaptiveScheduler                                OpenAIAdaptiveSchedulerSettings
+	OpenAIAdvancedSchedulerStickyWeightedEnabled           bool
+	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled     bool
+	OpenAIAdvancedSchedulerLBTopK                          string
+	OpenAIAdvancedSchedulerWeightPriority                  string
+	OpenAIAdvancedSchedulerWeightLoad                      string
+	OpenAIAdvancedSchedulerWeightQueue                     string
+	OpenAIAdvancedSchedulerWeightErrorRate                 string
+	OpenAIAdvancedSchedulerWeightTTFT                      string
+	OpenAIAdvancedSchedulerWeightReset                     string
+	OpenAIAdvancedSchedulerWeightQuotaHeadroom             string
+	OpenAIAdvancedSchedulerWeightPreviousResponse          string
+	OpenAIAdvancedSchedulerWeightSessionSticky             string
+	OpenAIAdvancedSchedulerEffectiveLBTopK                 string
+	OpenAIAdvancedSchedulerEffectiveWeightPriority         string
+	OpenAIAdvancedSchedulerEffectiveWeightLoad             string
+	OpenAIAdvancedSchedulerEffectiveWeightQueue            string
+	OpenAIAdvancedSchedulerEffectiveWeightErrorRate        string
+	OpenAIAdvancedSchedulerEffectiveWeightTTFT             string
+	OpenAIAdvancedSchedulerEffectiveWeightReset            string
+	OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom    string
+	OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse string
+	OpenAIAdvancedSchedulerEffectiveWeightSessionSticky    string
 
 	// 余额不足提醒
 	BalanceLowNotifyEnabled     bool
