@@ -197,7 +197,9 @@ func TestOpenAIAdaptiveSchedulerEnabledRefreshWinsAgainstStaleRead(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for enabled read result")
 	}
-	cached := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting)
+	cached, ok := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting)
+	require.True(t, ok)
+	require.NotNil(t, cached)
 	require.True(t, cached.settings.OpenAIAdaptiveSchedulerEnabled)
 }
 
@@ -239,7 +241,9 @@ func TestOpenAIAdaptiveSchedulerSettingsRefreshWinsAgainstStaleRead(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for adaptive settings result")
 	}
-	cached := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting)
+	cached, ok := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting)
+	require.True(t, ok)
+	require.NotNil(t, cached)
 	require.Equal(t, 17, cached.settings.OpenAIAdaptiveSchedulerTopK)
 }
 
@@ -281,7 +285,9 @@ func TestOpenAIAdvancedSchedulerRefreshWinsAgainstStaleRead(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for advanced settings result")
 	}
-	cached := openAIAdvancedSchedulerSettingCache.Load().(*cachedOpenAIAdvancedSchedulerSetting)
+	cached, ok := openAIAdvancedSchedulerSettingCache.Load().(*cachedOpenAIAdvancedSchedulerSetting)
+	require.True(t, ok)
+	require.NotNil(t, cached)
 	require.True(t, cached.enabled)
 	require.Equal(t, 19, cached.lbTopKOverride)
 }
