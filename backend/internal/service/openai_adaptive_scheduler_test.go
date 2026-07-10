@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,6 +55,38 @@ func TestOpenAIAdaptiveFailureHealthSampleSkipsUserInputErrors(t *testing.T) {
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: []byte(`{"error":{"message":"Concurrency limit exceeded for account, please retry later"}}`),
 	}))
+}
+
+func TestOpenAIAdaptiveFailureSkipsRequestPolicyRejections(t *testing.T) {
+	for _, message := range []string{
+		"upstream response failed: cyber_policy",
+		"Request blocked by content policy",
+		"Your request was rejected by the safety system",
+		"moderation_blocked: request rejected",
+	} {
+		require.False(t, openAIAdaptiveFailureHealthSample(errors.New(message)), message)
+	}
+	require.False(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		ResponseBody: []byte(`{"error":{"code":"safety_error","message":"request rejected by policy"}}`),
+	}))
+	require.True(t, openAIAdaptiveFailureHealthSample(errors.New("upstream response failed: server is overloaded")))
+}
+
+func TestOpenAIAdaptiveFailureCooldownDistinguishesUserAndAccountConcurrency(t *testing.T) {
+	userLimitErr := NewOpenAIWSClientCloseError(
+		coderws.StatusTryAgainLater,
+		"too many concurrent requests, please retry later",
+		nil,
+	)
+	accountLimitErr := NewOpenAIWSClientCloseError(
+		coderws.StatusTryAgainLater,
+		"account is busy, please retry later",
+		nil,
+	)
+
+	require.Empty(t, openAIAdaptiveFailureCooldownReason(userLimitErr))
+	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(accountLimitErr))
 }
 
 func TestOpenAIAdaptiveSchedulerCooldownAppliedImmediately(t *testing.T) {
@@ -253,6 +286,70 @@ func TestOpenAIAdaptiveSchedulerAccountTypePriorityOrdersSelectionGroups(t *test
 
 	cfg.OpenAIAdaptiveSchedulerAccountTypePriorityMode = openAIAdaptiveSchedulerAccountTypePriorityMixed
 	require.True(t, isOpenAIAdaptiveCandidateBetter(candidates[0], candidates[1], cfg))
+}
+
+func TestOpenAIAdaptiveSchedulerExplorationDoesNotDuplicateTopKCandidates(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerTopK = 3
+	cfg.OpenAIAdaptiveSchedulerExplorationRate = 1
+	cfg.OpenAIAdaptiveSchedulerThompsonEnabled = false
+	candidates := []openAIAdaptiveCandidateScore{
+		{account: &Account{ID: 1}, score: 0.9, explorationScore: 0.1},
+		{account: &Account{ID: 2}, score: 0.8, explorationScore: 0.3},
+		{account: &Account{ID: 3}, score: 0.7, explorationScore: 0.2},
+	}
+
+	order := buildOpenAIAdaptiveSelectionOrder(candidates, OpenAIAccountScheduleRequest{SessionHash: "stable-session"}, cfg)
+
+	require.Len(t, order, len(candidates))
+	seen := make(map[int64]struct{}, len(order))
+	for _, candidate := range order {
+		require.NotNil(t, candidate.account)
+		_, duplicated := seen[candidate.account.ID]
+		require.False(t, duplicated, "exploration order contains duplicate account %d", candidate.account.ID)
+		seen[candidate.account.ID] = struct{}{}
+	}
+}
+
+func TestOpenAIAdaptiveSchedulerThompsonExplorationUsesDeterministicBetaSamples(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerTopK = 2
+	cfg.OpenAIAdaptiveSchedulerExplorationRate = 1
+	cfg.OpenAIAdaptiveSchedulerThompsonEnabled = true
+	candidates := []openAIAdaptiveCandidateScore{
+		{
+			account:  &Account{ID: 1},
+			loadInfo: &AccountLoadInfo{},
+			score:    0.5,
+			state: openAIAdaptiveAccountState{
+				ThompsonAlpha: 1,
+				ThompsonBeta:  1,
+			},
+		},
+		{
+			account:  &Account{ID: 2},
+			loadInfo: &AccountLoadInfo{},
+			score:    0.5,
+			state: openAIAdaptiveAccountState{
+				ThompsonAlpha: 100,
+				ThompsonBeta:  100,
+			},
+		},
+	}
+	req := OpenAIAccountScheduleRequest{SessionHash: "thompson-session", RequestedModel: "gpt-5"}
+
+	first := buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+	second := buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+
+	require.Len(t, first, 2)
+	require.Len(t, second, 2)
+	for i := range first {
+		require.Equal(t, first[i].account.ID, second[i].account.ID)
+		require.Equal(t, first[i].explorationScore, second[i].explorationScore)
+		require.GreaterOrEqual(t, first[i].explorationScore, 0.0)
+		require.LessOrEqual(t, first[i].explorationScore, 1.0)
+	}
+	require.NotEqual(t, 0.5, first[0].explorationScore, "Thompson exploration must sample instead of using the posterior mean")
 }
 
 func TestEffectiveOpenAIAdaptiveCapacityCapsConfiguredConcurrency(t *testing.T) {

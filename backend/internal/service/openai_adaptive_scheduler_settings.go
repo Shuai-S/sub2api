@@ -69,6 +69,7 @@ const (
 const (
 	openAIAdaptiveSchedulerSettingCacheTTL  = 5 * time.Second
 	openAIAdaptiveSchedulerSettingDBTimeout = 2 * time.Second
+	openAIAdaptiveSchedulerSettingsCacheKey = "openai_adaptive_scheduler_settings"
 )
 
 type OpenAIAdaptiveSchedulerSettings struct {
@@ -121,6 +122,7 @@ type cachedOpenAIAdaptiveSchedulerSetting struct {
 
 var openAIAdaptiveSchedulerSettingCache atomic.Value // *cachedOpenAIAdaptiveSchedulerSetting
 var openAIAdaptiveSchedulerSettingSF singleflight.Group
+var openAIAdaptiveSchedulerSettingGeneration atomic.Uint64
 
 func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 	return OpenAIAdaptiveSchedulerSettings{
@@ -342,6 +344,7 @@ func (s *OpenAIGatewayService) isOpenAIAdaptiveSchedulerEnabled(ctx context.Cont
 	}
 
 	result, _, _ := openAIAdaptiveSchedulerSettingSF.Do(openAIAdaptiveSchedulerEnabledKey, func() (any, error) {
+		generation := openAIAdaptiveSchedulerSettingGeneration.Load()
 		if cached, ok := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
 				return cached.settings.OpenAIAdaptiveSchedulerEnabled, nil
@@ -357,14 +360,21 @@ func (s *OpenAIGatewayService) isOpenAIAdaptiveSchedulerEnabled(ctx context.Cont
 				settings.OpenAIAdaptiveSchedulerEnabled = strings.EqualFold(strings.TrimSpace(value), "true")
 			}
 		}
-		openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
-			settings:  settings,
-			complete:  false,
-			expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
-		})
+		if openAIAdaptiveSchedulerSettingGeneration.Load() == generation {
+			openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+				settings:  settings,
+				complete:  false,
+				expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
+			})
+		}
 		return settings.OpenAIAdaptiveSchedulerEnabled, nil
 	})
 
+	if cached, ok := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.settings.OpenAIAdaptiveSchedulerEnabled
+		}
+	}
 	enabled, _ := result.(bool)
 	return enabled
 }
@@ -376,7 +386,8 @@ func (s *OpenAIGatewayService) openAIAdaptiveSchedulerSettings(ctx context.Conte
 		}
 	}
 
-	result, _, _ := openAIAdaptiveSchedulerSettingSF.Do("openai_adaptive_scheduler_settings", func() (any, error) {
+	result, _, _ := openAIAdaptiveSchedulerSettingSF.Do(openAIAdaptiveSchedulerSettingsCacheKey, func() (any, error) {
+		generation := openAIAdaptiveSchedulerSettingGeneration.Load()
 		if cached, ok := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt && cached.complete {
 				return cached.settings, nil
@@ -393,21 +404,40 @@ func (s *OpenAIGatewayService) openAIAdaptiveSchedulerSettings(ctx context.Conte
 			}
 		}
 
-		openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
-			settings:  settings,
-			complete:  true,
-			expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
-		})
+		if openAIAdaptiveSchedulerSettingGeneration.Load() == generation {
+			openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+				settings:  settings,
+				complete:  true,
+				expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
+			})
+		}
 		return settings, nil
 	})
 
+	if cached, ok := openAIAdaptiveSchedulerSettingCache.Load().(*cachedOpenAIAdaptiveSchedulerSetting); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt && cached.complete {
+			return NormalizeOpenAIAdaptiveSchedulerSettings(cached.settings)
+		}
+	}
 	settings, _ := result.(OpenAIAdaptiveSchedulerSettings)
 	return NormalizeOpenAIAdaptiveSchedulerSettings(settings)
+}
+
+func refreshOpenAIAdaptiveSchedulerSettingCache(settings OpenAIAdaptiveSchedulerSettings) {
+	openAIAdaptiveSchedulerSettingGeneration.Add(1)
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings:  NormalizeOpenAIAdaptiveSchedulerSettings(settings),
+		complete:  true,
+		expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
+	})
+	openAIAdaptiveSchedulerSettingSF.Forget(openAIAdaptiveSchedulerEnabledKey)
+	openAIAdaptiveSchedulerSettingSF.Forget(openAIAdaptiveSchedulerSettingsCacheKey)
 }
 
 func resetOpenAIAdaptiveSchedulerSettingCacheForTest() {
 	openAIAdaptiveSchedulerSettingCache = atomic.Value{}
 	openAIAdaptiveSchedulerSettingSF = singleflight.Group{}
+	openAIAdaptiveSchedulerSettingGeneration = atomic.Uint64{}
 }
 
 func normalizeOpenAIAdaptiveSchedulerMode(raw string) string {

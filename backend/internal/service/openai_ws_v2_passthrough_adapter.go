@@ -313,6 +313,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	// goroutine）之间同步当前 turn 的 usage metadata。
 	usageMeta.initFromFirstFrame(firstClientMessage)
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
+	if hooks != nil && hooks.BeforeTurn != nil {
+		if err := hooks.BeforeTurn(1); err != nil {
+			return err
+		}
+	}
 
 	wsURL, err := s.buildOpenAIResponsesWSURL(account)
 	if err != nil {
@@ -394,6 +399,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	}
 
 	completedTurns := atomic.Int32{}
+	var pendingResponseFailedErr error
 	policyClientConn := &openAIWSPolicyEnforcingFrameConn{
 		inner: &openAIWSClientFrameConn{conn: clientConn},
 		// 注意线程安全：filter 仅在 runClientToUpstream 这一条
@@ -404,17 +410,24 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			if msgType != coderws.MessageText {
 				return payload, nil, nil
 			}
-			if strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" && hooks != nil && hooks.BeforeRequest != nil {
+			if strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" && hooks != nil {
 				turnNo := int(completedTurns.Load()) + 1
 				if turnNo < 2 {
 					turnNo = 2
 				}
-				requestModel := usageMeta.requestModelForFrame(payload)
-				if requestModel == "" {
-					requestModel = capturedSessionModel
+				if hooks.BeforeRequest != nil {
+					requestModel := usageMeta.requestModelForFrame(payload)
+					if requestModel == "" {
+						requestModel = capturedSessionModel
+					}
+					if err := hooks.BeforeRequest(turnNo, payload, requestModel); err != nil {
+						return payload, nil, err
+					}
 				}
-				if err := hooks.BeforeRequest(turnNo, payload, requestModel); err != nil {
-					return payload, nil, err
+				if hooks.BeforeTurn != nil {
+					if err := hooks.BeforeTurn(turnNo); err != nil {
+						return payload, nil, err
+					}
 				}
 			}
 			// 在评估策略前先刷新 capturedSessionModel：客户端可能通过
@@ -540,6 +553,22 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					Duration:        turn.Duration,
 					FirstTokenMs:    turn.FirstTokenMs,
 				}
+				var turnErr error
+				if turn.TerminalEventType == "response.failed" {
+					turnErr = pendingResponseFailedErr
+					pendingResponseFailedErr = nil
+					if turnErr == nil {
+						turnErr = errors.New("upstream response failed")
+					}
+					s.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(
+						ctx,
+						account.ID,
+						turnErr,
+						turnResult.FirstTokenMs,
+						turnResult.Duration.Milliseconds(),
+						true,
+					)
+				}
 				logOpenAIWSV2Passthrough(
 					"relay_turn_completed account_id=%d turn=%d request_id=%s terminal_event=%s duration_ms=%d first_token_ms=%d input_tokens=%d output_tokens=%d cache_read_tokens=%d",
 					account.ID,
@@ -553,14 +582,34 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					turnResult.Usage.CacheReadInputTokens,
 				)
 				if hooks != nil && hooks.AfterTurn != nil {
-					hooks.AfterTurn(turnNo, turnResult, nil)
+					hooks.AfterTurn(turnNo, turnResult, turnErr)
 				}
 			},
 			BeforeWriteClient: func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error {
-				if msgType != coderws.MessageText || wroteDownstream {
+				if msgType != coderws.MessageText {
 					return nil
 				}
-				if eventType, _, _ := parseOpenAIWSEventEnvelope(payload); eventType != "error" {
+				eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
+				if eventType == "response.failed" {
+					failedUsage := OpenAIUsage{}
+					parseOpenAIWSResponseUsageFromCompletedEvent(payload, &failedUsage)
+					failedErr := s.newOpenAIWSResponseFailedError(
+						c,
+						account,
+						true,
+						handshakeHeaders,
+						payload,
+						wroteDownstream,
+						failedUsage,
+					)
+					var failoverErr *UpstreamFailoverError
+					if errors.As(failedErr, &failoverErr) {
+						return failoverErr
+					}
+					pendingResponseFailedErr = failedErr
+					return nil
+				}
+				if eventType != "error" || wroteDownstream {
 					return nil
 				}
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(payload)

@@ -326,6 +326,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	var firstTokenMs *int
 	responseID := ""
 	var finalResponse []byte
+	var responseFailedErr error
 	wroteDownstream := false
 	needModelReplace := originalModel != mappedModel
 	var mappedModelBytes []byte
@@ -340,6 +341,23 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	flushedBufferedEventCount := 0
 	firstEventType := ""
 	lastEventType := ""
+	resultWithUsage := func() *OpenAIForwardResult {
+		return &OpenAIForwardResult{
+			RequestID:        responseID,
+			Usage:            *usage,
+			Model:            originalModel,
+			UpstreamModel:    mappedModel,
+			ImageCount:       imageCounter.Count(),
+			ImageOutputSizes: imageCounter.Sizes(),
+			ServiceTier:      extractOpenAIServiceTier(reqBody),
+			ReasoningEffort:  extractOpenAIReasoningEffort(reqBody, originalModel),
+			Stream:           reqStream,
+			OpenAIWSMode:     true,
+			ResponseHeaders:  lease.HandshakeHeaders(),
+			Duration:         time.Since(startTime),
+			FirstTokenMs:     firstTokenMs,
+		}
+	}
 
 	var flusher http.Flusher
 	if reqStream {
@@ -507,16 +525,20 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		imageCounter.AddSSEData(message)
 
 		if eventType == "response.failed" {
-			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
-				MarkOpsCyberPolicy(c, CyberPolicyMark{
-					Code:           code,
-					Message:        msg,
-					Body:           truncateString(string(message), 4096),
-					UpstreamStatus: http.StatusOK,
-					UpstreamInTok:  usage.InputTokens,
-					UpstreamOutTok: usage.OutputTokens,
-				})
+			failedErr := s.newOpenAIWSResponseFailedError(
+				c,
+				account,
+				false,
+				lease.HandshakeHeaders(),
+				message,
+				wroteDownstream || clientDisconnected,
+				*usage,
+			)
+			var failoverErr *UpstreamFailoverError
+			if errors.As(failedErr, &failoverErr) {
+				return resultWithUsage(), failoverErr
 			}
+			responseFailedErr = failedErr
 		}
 
 		if eventType == "error" {
@@ -653,6 +675,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	} else {
 		flushStreamWriter(true)
 	}
+	result := resultWithUsage()
+	if responseFailedErr != nil {
+		return result, responseFailedErr
+	}
 
 	if responseID != "" && stateStore != nil {
 		ttl := s.openAIWSResponseStickyTTL()
@@ -685,21 +711,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		clientDisconnected,
 	)
 
-	return &OpenAIForwardResult{
-		RequestID:        responseID,
-		Usage:            *usage,
-		Model:            originalModel,
-		UpstreamModel:    mappedModel,
-		ImageCount:       imageCounter.Count(),
-		ImageOutputSizes: imageCounter.Sizes(),
-		ServiceTier:      extractOpenAIServiceTier(reqBody),
-		ReasoningEffort:  extractOpenAIReasoningEffort(reqBody, originalModel),
-		Stream:           reqStream,
-		OpenAIWSMode:     true,
-		ResponseHeaders:  lease.HandshakeHeaders(),
-		Duration:         time.Since(startTime),
-		FirstTokenMs:     firstTokenMs,
-	}, nil
+	return result, nil
 }
 
 // ProxyResponsesWebSocketFromClient 处理客户端入站 WebSocket（OpenAI Responses WS Mode）并转发到上游。

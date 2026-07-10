@@ -61,6 +61,12 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 	var wsCloseErr *OpenAIWSClientCloseError
 	if errors.As(err, &wsCloseErr) {
 		if wsCloseErr.StatusCode() == coderws.StatusTryAgainLater {
+			if isOpenAIWSUserConcurrencyCloseReason(wsCloseErr.Reason()) {
+				return ""
+			}
+			if reason := openAIAdaptiveFailureTextCooldownReason(wsCloseErr.Reason()); reason != "" {
+				return reason
+			}
 			return "ws_close_try_again"
 		}
 		var dialErr *openAIWSDialError
@@ -83,6 +89,12 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 		return "ws_connection_limit"
 	}
 	return openAIAdaptiveFailureTextCooldownReason(err.Error())
+}
+
+func isOpenAIWSUserConcurrencyCloseReason(reason string) bool {
+	lower := strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(lower, "too many concurrent requests") ||
+		strings.Contains(lower, "user concurrency")
 }
 
 func upstreamFailoverErrorMessageForAdaptive(err *UpstreamFailoverError) string {
@@ -151,6 +163,9 @@ func shouldLearnOpenAIAdaptiveFailure(err error) bool {
 		strings.Contains(lower, "request canceled") {
 		return false
 	}
+	if isOpenAIAdaptiveRequestPolicyFailure(lower) {
+		return false
+	}
 
 	if strings.Contains(lower, "context window") ||
 		strings.Contains(lower, "context length") ||
@@ -207,7 +222,34 @@ func shouldIgnoreOpenAIAdaptiveFailoverError(err *UpstreamFailoverError) bool {
 		strings.Contains(lower, "unsupported") {
 		return true
 	}
+	if isOpenAIAdaptiveRequestPolicyFailure(lower) {
+		return true
+	}
 	return false
+}
+
+func isOpenAIAdaptiveRequestPolicyFailure(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	if lower == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"cyber_policy",
+		"content_policy",
+		"moderation_blocked",
+		"safety_error",
+		"safety violation",
+		"safety system",
+		"high-risk cyber",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return strings.Contains(lower, "content") && strings.Contains(lower, "policy") ||
+		strings.Contains(lower, "cyber") && strings.Contains(lower, "policy") ||
+		strings.Contains(lower, "moderation") && (strings.Contains(lower, "blocked") || strings.Contains(lower, "rejected")) ||
+		strings.Contains(lower, "policy") && (strings.Contains(lower, "blocked") || strings.Contains(lower, "rejected") || strings.Contains(lower, "violation"))
 }
 
 func (s *OpenAIGatewayService) ShouldIgnoreOpenAIAdaptiveFailoverError(err *UpstreamFailoverError) bool {

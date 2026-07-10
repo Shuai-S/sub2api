@@ -320,6 +320,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 			lastEventType = eventType
 		}
+		var responseFailedErr error
 		if isOpenAIWSTokenEvent(eventType) {
 			tokenEventCount++
 			if firstTokenMs == nil {
@@ -331,6 +332,21 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
 		}
 		imageCounter.AddSSEData(upstreamMessage)
+		if eventType == "response.failed" {
+			responseFailedErr = s.newOpenAIWSResponseFailedError(
+				c,
+				account,
+				true,
+				resp.Header,
+				upstreamMessage,
+				wroteDownstream || clientDisconnected,
+				usage,
+			)
+			var failoverErr *UpstreamFailoverError
+			if errors.As(responseFailedErr, &failoverErr) {
+				return resultWithUsage(), failoverErr
+			}
+		}
 
 		if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && strings.Contains(trimmedData, mappedModel) {
 			upstreamMessage = replaceOpenAIWSMessageModel(upstreamMessage, mappedModel, originalModel)
@@ -396,6 +412,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				firstTokenMsValue,
 				clientDisconnected,
 			)
+			if responseFailedErr != nil {
+				return resultWithUsage(), responseFailedErr
+			}
 			return resultWithUsage(), nil
 		}
 	}

@@ -541,8 +541,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		value:     codexUA,
 		expiresAt: time.Now().Add(openAICodexUserAgentCacheTTL).UnixNano(),
 	})
-	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
-	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
+	refreshOpenAIAdvancedSchedulerSettingCache(openAIAdvancedSchedulerRuntimeSettings{
 		enabled:                     settings.OpenAIAdvancedSchedulerEnabled,
 		stickyWeightedEnabled:       settings.OpenAIAdvancedSchedulerStickyWeightedEnabled,
 		subscriptionPriorityEnabled: settings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
@@ -558,14 +557,8 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 			SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse: settings.OpenAIAdvancedSchedulerWeightPreviousResponse,
 			SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky:    settings.OpenAIAdvancedSchedulerWeightSessionSticky,
 		}),
-		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
-	openAIAdaptiveSchedulerSettingSF.Forget("openai_adaptive_scheduler_settings")
-	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
-		settings:  NormalizeOpenAIAdaptiveSchedulerSettings(settings.OpenAIAdaptiveScheduler),
-		complete:  true,
-		expiresAt: time.Now().Add(openAIAdaptiveSchedulerSettingCacheTTL).UnixNano(),
-	})
+	refreshOpenAIAdaptiveSchedulerSettingCache(settings.OpenAIAdaptiveScheduler)
 	// Invalidate the quota auto-pause cache and let the next read trigger a fresh load.
 	// We can't know from here whether ops_advanced_settings was also touched, so be
 	// defensive: store an expired entry — GetOpenAIQuotaAutoPauseSettings will serve

@@ -684,9 +684,20 @@ func buildOpenAIAdaptiveSelectionOrder(
 
 	rng := newOpenAISelectionRNG(deriveOpenAISelectionSeed(req))
 	if cfg.OpenAIAdaptiveSchedulerExplorationRate > 0 && rng.nextFloat64() < cfg.OpenAIAdaptiveSchedulerExplorationRate {
-		explorePool := ranked[topK:]
+		explorePool := append([]openAIAdaptiveCandidateScore(nil), ranked[topK:]...)
+		fallbackTop := ranked[:topK]
 		if len(explorePool) == 0 {
-			explorePool = ranked
+			explorePool = append([]openAIAdaptiveCandidateScore(nil), ranked...)
+			fallbackTop = nil
+		}
+		if cfg.OpenAIAdaptiveSchedulerThompsonEnabled {
+			for i := range explorePool {
+				explorePool[i].explorationScore = sampleOpenAIAdaptiveBeta(
+					explorePool[i].state.ThompsonAlpha,
+					explorePool[i].state.ThompsonBeta,
+					&rng,
+				)
+			}
 		}
 		sort.SliceStable(explorePool, func(i, j int) bool {
 			if explorePool[i].explorationScore != explorePool[j].explorationScore {
@@ -694,10 +705,60 @@ func buildOpenAIAdaptiveSelectionOrder(
 			}
 			return isOpenAIAdaptiveCandidateBetter(explorePool[i], explorePool[j], cfg)
 		})
-		return append(explorePool, ranked[:topK]...)
+		order := make([]openAIAdaptiveCandidateScore, 0, len(ranked))
+		order = append(order, explorePool...)
+		return append(order, fallbackTop...)
 	}
 
 	return buildOpenAIAdaptiveSoftmaxOrder(ranked[:topK], ranked[topK:], req, cfg)
+}
+
+func sampleOpenAIAdaptiveBeta(alpha, beta float64, rng *openAISelectionRNG) float64 {
+	if rng == nil || alpha <= 0 || beta <= 0 || math.IsNaN(alpha) || math.IsNaN(beta) ||
+		math.IsInf(alpha, 0) || math.IsInf(beta, 0) {
+		return 0.5
+	}
+	x := sampleOpenAIAdaptiveGamma(alpha, rng)
+	y := sampleOpenAIAdaptiveGamma(beta, rng)
+	total := x + y
+	if total <= 0 || math.IsNaN(total) || math.IsInf(total, 0) {
+		return clamp01(alpha / (alpha + beta))
+	}
+	return clamp01(x / total)
+}
+
+func sampleOpenAIAdaptiveGamma(shape float64, rng *openAISelectionRNG) float64 {
+	if shape < 1 {
+		u := rng.nextFloat64()
+		for u <= 0 {
+			u = rng.nextFloat64()
+		}
+		return sampleOpenAIAdaptiveGamma(shape+1, rng) * math.Pow(u, 1/shape)
+	}
+
+	d := shape - 1.0/3.0
+	c := 1 / math.Sqrt(9*d)
+	for {
+		x := sampleOpenAIAdaptiveStandardNormal(rng)
+		v := 1 + c*x
+		if v <= 0 {
+			continue
+		}
+		v = v * v * v
+		u := rng.nextFloat64()
+		if u < 1-0.0331*x*x*x*x || math.Log(u) < 0.5*x*x+d*(1-v+math.Log(v)) {
+			return d * v
+		}
+	}
+}
+
+func sampleOpenAIAdaptiveStandardNormal(rng *openAISelectionRNG) float64 {
+	u1 := rng.nextFloat64()
+	for u1 <= 0 {
+		u1 = rng.nextFloat64()
+	}
+	u2 := rng.nextFloat64()
+	return math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)
 }
 
 func buildOpenAIAdaptiveSoftmaxOrder(
