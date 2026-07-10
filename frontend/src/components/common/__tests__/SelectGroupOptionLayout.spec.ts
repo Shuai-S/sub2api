@@ -1,20 +1,29 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick, ref } from 'vue'
 import UiSelect from '@/components/common/Select.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string) => key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('vue-i18n')>()
+  return {
+    ...actual,
+    useI18n: () => ({
+      t: (key: string) => key
+    })
+  }
+})
 
 const longDescription =
   '接近max的claude，龙虾能吃，可用opus 4.7 4.8 均为 claude-opus-4-6 模型\n' +
   '反重力官方未提供 4.7 4.8 模型'
 
 describe('Select group option layout', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('keeps teleported dropdown within the viewport instead of expanding to content width', async () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 480 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 720 })
