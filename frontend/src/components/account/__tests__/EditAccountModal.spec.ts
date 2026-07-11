@@ -304,6 +304,53 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
+  it.each([
+    { value: false, pressed: 'false' },
+    { value: undefined, pressed: 'true' },
+    { value: null, pressed: 'true' },
+    { value: 'false', pressed: 'true' }
+  ])('uses strict false semantics for upstream image streaming: $value', ({ value, pressed }) => {
+    const account = buildAccount()
+    if (value !== undefined) {
+      account.extra.openai_images_stream_supported = value
+    }
+
+    const wrapper = mountModal(account)
+
+    expect(wrapper.get('[data-testid="edit-openai-images-stream-supported-toggle"]').attributes('aria-pressed')).toBe(pressed)
+  })
+
+  it('updates upstream image streaming while preserving other extra fields', async () => {
+    const account = buildAccount()
+    account.extra = {
+      existing_setting: 'keep-me',
+      openai_images_stream_supported: true
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="edit-openai-images-stream-supported-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      existing_setting: 'keep-me',
+      openai_images_stream_supported: false
+    })
+  })
+
+  it('hides upstream image streaming for setup-token accounts', () => {
+    const account = buildAccount()
+    account.type = 'setup-token'
+
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-testid="edit-openai-images-stream-supported-toggle"]').exists()).toBe(false)
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

@@ -416,6 +416,10 @@ export default {
         wsModeConcurrencyHint:
           'When WS mode is enabled, account concurrency becomes the WS connection pool limit for this account.',
         wsModePassthroughHint: 'Passthrough mode does not use the WS connection pool.',
+        imagesStreamSupported: 'Upstream image streaming',
+        imagesStreamSupportedDesc:
+          'Enabled by default. Disable only when the upstream is known not to support streamed image responses; requests requiring an upstream image stream will not use this account.',
+        imagesStreamSupportedValue: 'Allow streamed image requests',
         oauthResponsesWebsocketsV2: 'OAuth WebSocket Mode',
         oauthResponsesWebsocketsV2Desc:
           'Only applies to OpenAI OAuth. This account can use OpenAI WebSocket Mode only when enabled.',

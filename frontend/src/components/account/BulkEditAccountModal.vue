@@ -946,6 +946,59 @@
         </div>
       </div>
 
+      <!-- OpenAI 上游图片流式响应能力 -->
+      <div v-if="allOpenAIImagesCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="min-w-0 flex-1 pr-4">
+            <label
+              id="bulk-edit-openai-images-stream-supported-label"
+              class="input-label mb-0"
+              for="bulk-edit-openai-images-stream-supported-enabled"
+            >
+              {{ t('admin.accounts.openai.imagesStreamSupported') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.imagesStreamSupportedDesc') }}
+            </p>
+          </div>
+          <input
+            v-model="enableOpenAIImagesStreamSupported"
+            id="bulk-edit-openai-images-stream-supported-enabled"
+            data-testid="bulk-edit-openai-images-stream-supported-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-openai-images-stream-supported"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          id="bulk-edit-openai-images-stream-supported"
+          class="flex items-center justify-between"
+          :class="!enableOpenAIImagesStreamSupported && 'pointer-events-none opacity-50'"
+        >
+          <span class="text-sm text-gray-700 dark:text-gray-300">
+            {{ t('admin.accounts.openai.imagesStreamSupportedValue') }}
+          </span>
+          <button
+            type="button"
+            data-testid="bulk-edit-openai-images-stream-supported-toggle"
+            :aria-pressed="openAIImagesStreamSupported"
+            aria-labelledby="bulk-edit-openai-images-stream-supported-label"
+            @click="openAIImagesStreamSupported = !openAIImagesStreamSupported"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openAIImagesStreamSupported ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openAIImagesStreamSupported ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- OpenAI Compact mode -->
       <div v-if="allOpenAIPassthroughCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -1332,6 +1385,15 @@ const allOpenAIPassthroughCapable = computed(() => {
   )
 })
 
+const allOpenAIImagesCapable = computed(() => {
+  return (
+    targetSelectedPlatforms.value.length === 1 &&
+    targetSelectedPlatforms.value[0] === 'openai' &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'apikey')
+  )
+})
+
 const allOpenAIOAuth = computed(() => {
   return (
     targetSelectedPlatforms.value.length === 1 &&
@@ -1405,6 +1467,7 @@ const enableRateMultiplier = ref(false)
 const enableStatus = ref(false)
 const enableGroups = ref(false)
 const enableOpenAIPassthrough = ref(false)
+const enableOpenAIImagesStreamSupported = ref(false)
 const enableOpenAIWSMode = ref(false)
 const enableOpenAIAPIKeyWSMode = ref(false)
 const enableCodexCLIOnly = ref(false)
@@ -1466,6 +1529,7 @@ const rateMultiplier = ref(1)
 const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const openaiPassthroughEnabled = ref(false)
+const openAIImagesStreamSupported = ref(true)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -1670,6 +1734,10 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
+  if (enableOpenAIImagesStreamSupported.value) {
+    ensureExtra().openai_images_stream_supported = openAIImagesStreamSupported.value
+  }
+
   if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
     // 统一使用 model_mapping 字段
     if (modelRestrictionMode.value === 'whitelist') {
@@ -1834,6 +1902,7 @@ const handleSubmit = async () => {
   const hasAnyFieldEnabled =
     enableBaseUrl.value ||
     enableOpenAIPassthrough.value ||
+    enableOpenAIImagesStreamSupported.value ||
     enableModelRestriction.value ||
     enableCustomErrorCodes.value ||
     enableInterceptWarmup.value ||
@@ -1963,6 +2032,7 @@ watch(
       enableStatus.value = false
       enableGroups.value = false
       enableOpenAIPassthrough.value = false
+      enableOpenAIImagesStreamSupported.value = false
       enableOpenAIWSMode.value = false
       enableOpenAIAPIKeyWSMode.value = false
       enableCodexCLIOnly.value = false
@@ -1974,6 +2044,7 @@ watch(
       // Reset all values
       baseUrl.value = ''
       openaiPassthroughEnabled.value = false
+      openAIImagesStreamSupported.value = true
       modelRestrictionMode.value = 'whitelist'
       allowedModels.value = []
       modelMappings.value = []

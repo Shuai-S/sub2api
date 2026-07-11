@@ -2727,6 +2727,38 @@
         </div>
       </div>
 
+      <!-- OpenAI 上游图片流式响应能力 -->
+      <div
+        v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.imagesStreamSupported') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.imagesStreamSupportedDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="create-openai-images-stream-supported-toggle"
+            :aria-pressed="openAIImagesStreamSupported"
+            @click="openAIImagesStreamSupported = !openAIImagesStreamSupported"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openAIImagesStreamSupported ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openAIImagesStreamSupported ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Anthropic API Key 自动透传开关 -->
       <div
         v-if="form.platform === 'anthropic' && accountCategory === 'apikey'"
@@ -3648,6 +3680,7 @@ const fillHeaderOverrideTemplate = () => {
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const openaiPassthroughEnabled = ref(false)
+const openAIImagesStreamSupported = ref(true)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
@@ -4502,6 +4535,7 @@ const resetForm = () => {
   interceptWarmupRequests.value = false
   autoPauseOnExpired.value = true
   openaiPassthroughEnabled.value = false
+  openAIImagesStreamSupported.value = true
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
@@ -4571,9 +4605,11 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   if (accountCategory.value === 'oauth-based') {
     extra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
     extra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
+    extra.openai_images_stream_supported = openAIImagesStreamSupported.value
   } else if (accountCategory.value === 'apikey') {
     extra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
     extra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
+    extra.openai_images_stream_supported = openAIImagesStreamSupported.value
   }
   // 清理兼容旧键，统一改用分类型开关。
   delete extra.responses_websockets_v2_enabled

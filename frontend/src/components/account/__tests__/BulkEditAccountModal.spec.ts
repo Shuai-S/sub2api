@@ -149,6 +149,57 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI OAuth 与 API Key 可批量关闭上游图片流式响应', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth', 'apikey']
+    })
+
+    await wrapper.get('[data-testid="bulk-edit-openai-images-stream-supported-enabled"]').setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-openai-images-stream-supported-toggle"]').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_images_stream_supported: false
+      }
+    })
+  })
+
+  it('未勾选时不把上游图片流式响应字段加入其他批量更新', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-openai-passthrough-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_passthrough: false,
+        openai_oauth_passthrough: false
+      }
+    })
+  })
+
+  it.each([
+    { types: ['setup-token'], platforms: ['openai'] },
+    { types: ['oauth'], platforms: ['anthropic'] },
+    { types: ['oauth'], platforms: ['openai', 'anthropic'] }
+  ])('对不兼容的账号选择隐藏上游图片流式响应设置: $types/$platforms', ({ types, platforms }) => {
+    const wrapper = mountModal({
+      selectedPlatforms: platforms,
+      selectedTypes: types
+    })
+
+    expect(wrapper.find('[data-testid="bulk-edit-openai-images-stream-supported-enabled"]').exists()).toBe(false)
+  })
+
   it('OpenAI OAuth 批量编辑应提交 OAuth 专属 WS mode 字段（含 http_bridge）', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
