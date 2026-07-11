@@ -57,6 +57,37 @@ func TestOpenAIAdaptiveFailureHealthSampleSkipsUserInputErrors(t *testing.T) {
 	}))
 }
 
+func TestOpenAIAdaptiveFailureHealthSampleOverride(t *testing.T) {
+	falseValue := false
+	trueValue := true
+
+	require.False(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		HealthSample: &falseValue,
+	}))
+	require.True(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode:   http.StatusBadRequest,
+		HealthSample: &trueValue,
+	}))
+	require.True(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode: http.StatusBadGateway,
+	}))
+}
+
+func TestOpenAIAdaptiveCapabilityMismatchCanFailOverWithoutHealthSample(t *testing.T) {
+	healthSample := false
+	err := &UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		ResponseBody: []byte(`{"error":{"code":"unsupported_stream","message":"stream unsupported"}}`),
+		FailureKind:  UpstreamFailureKindCapabilityMismatch,
+		HealthSample: &healthSample,
+	}
+
+	require.True(t, IsUpstreamCapabilityMismatch(err))
+	require.False(t, shouldIgnoreOpenAIAdaptiveFailoverError(err))
+	require.False(t, openAIAdaptiveFailureHealthSample(err))
+}
+
 func TestOpenAIAdaptiveFailureSkipsRequestPolicyRejections(t *testing.T) {
 	for _, message := range []string{
 		"upstream response failed: cyber_policy",

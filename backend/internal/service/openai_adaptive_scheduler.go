@@ -222,7 +222,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectLegacyLoadAware(
 			if selection == nil || selection.Account == nil {
 				return selection, decision, nil
 			}
-			if accountSupportsOpenAICapabilities(selection.Account, req.RequiredCapability, req.RequiredImageCapability) {
+			if s.service.accountSupportsOpenAIRequestCapabilities(selection.Account, req.RequiredCapability, req.RequiredImageCapability, req.RequireImageStream) {
 				decision.SelectedAccountID = selection.Account.ID
 				decision.SelectedAccountType = selection.Account.Type
 				return selection, decision, nil
@@ -250,7 +250,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectLegacyLoadAware(
 			return selection, decision, nil
 		}
 		if s.service.isOpenAIAccountTransportCompatible(selection.Account, req.RequiredTransport) &&
-			accountSupportsOpenAICapabilities(selection.Account, req.RequiredCapability, req.RequiredImageCapability) {
+			s.service.accountSupportsOpenAIRequestCapabilities(selection.Account, req.RequiredCapability, req.RequiredImageCapability, req.RequireImageStream) {
 			decision.SelectedAccountID = selection.Account.ID
 			decision.SelectedAccountType = selection.Account.Type
 			return selection, decision, nil
@@ -291,7 +291,8 @@ func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 	}
 	if selection != nil && selection.Account != nil {
 		if s.service.isOpenAIAccountRuntimeBlocked(selection.Account) ||
-			!s.baseline.isAccountTransportCompatible(selection.Account, req.RequiredTransport) {
+			!s.baseline.isAccountTransportCompatible(selection.Account, req.RequiredTransport) ||
+			!s.baseline.isAccountRequestCompatible(ctx, selection.Account, req) {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}

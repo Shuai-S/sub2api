@@ -564,6 +564,14 @@ type ForwardResult struct {
 	ImageSizeBreakdown map[string]int
 }
 
+// UpstreamFailureKind classifies failover errors whose handling differs from
+// ordinary upstream health failures.
+type UpstreamFailureKind string
+
+const (
+	UpstreamFailureKindCapabilityMismatch UpstreamFailureKind = "capability_mismatch"
+)
+
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
 type UpstreamFailoverError struct {
 	StatusCode             int
@@ -571,10 +579,19 @@ type UpstreamFailoverError struct {
 	ResponseHeaders        http.Header // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
 	ForceCacheBilling      bool        // Antigravity 粘性会话切换时设为 true
 	RetryableOnSameAccount bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
+	FailureKind            UpstreamFailureKind
+	HealthSample           *bool // nil preserves status/body-based adaptive health classification
 }
 
 func (e *UpstreamFailoverError) Error() string {
 	return fmt.Sprintf("upstream error: %d (failover)", e.StatusCode)
+}
+
+// IsUpstreamCapabilityMismatch reports whether err is a structured failover
+// caused by an account lacking a required upstream capability.
+func IsUpstreamCapabilityMismatch(err error) bool {
+	var failoverErr *UpstreamFailoverError
+	return errors.As(err, &failoverErr) && failoverErr.FailureKind == UpstreamFailureKindCapabilityMismatch
 }
 
 // sseStreamErrorEventError 表示上游 SSE 流体内出现 event:error 帧。

@@ -34,8 +34,13 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureTerminalWithCon
 func openAIAdaptiveFailureHealthSample(err error) bool {
 	healthSample := shouldLearnOpenAIAdaptiveFailure(err)
 	var failoverErr *UpstreamFailoverError
-	if errors.As(err, &failoverErr) && shouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
-		healthSample = false
+	if errors.As(err, &failoverErr) {
+		if failoverErr.HealthSample != nil {
+			return *failoverErr.HealthSample
+		}
+		if shouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+			healthSample = false
+		}
 	}
 	return healthSample
 }
@@ -199,6 +204,9 @@ func shouldLearnOpenAIAdaptiveFailure(err error) bool {
 func shouldIgnoreOpenAIAdaptiveFailoverError(err *UpstreamFailoverError) bool {
 	if err == nil {
 		return true
+	}
+	if IsUpstreamCapabilityMismatch(err) {
+		return false
 	}
 	msg := extractUpstreamErrorMessage(err.ResponseBody)
 	msg = sanitizeUpstreamErrorMessage(strings.TrimSpace(msg))

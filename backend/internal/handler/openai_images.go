@@ -152,6 +152,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			requestModel,
 			failedAccountIDs,
 			parsed.RequiredCapability,
+			parsed.Stream,
 		)
 		if err != nil {
 			reqLog.Warn("openai.images.account_select_failed",
@@ -230,8 +231,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
+		var partialForwardErr error
 		if err != nil {
 			if result != nil && result.ImageCount > 0 {
+				partialForwardErr = err
 				reqLog.Warn("openai.images.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
@@ -266,7 +269,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+					capabilityMismatch := service.IsUpstreamCapabilityMismatch(failoverErr)
+					if capabilityMismatch {
+						h.gatewayService.MarkOpenAIImageStreamUnsupported(account.ID)
+					}
+					if !capabilityMismatch && h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
 						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, parsed.Stream)
 						upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 						wroteFallback := false
@@ -354,24 +361,40 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				return
 			}
 		}
-		if result != nil {
-			// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
-			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
-				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
-			}
-			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
-		} else {
+		if result == nil || result.ImageCount <= 0 {
 			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
 				AccountID:      account.ID,
-				Success:        true,
+				Success:        false,
 				DurationMs:     forwardDurationMs,
 				Stream:         parsed.Stream,
 				HealthSample:   true,
-				TerminalReason: "success_no_result",
+				TerminalReason: "success_without_image_output",
 			})
+			reqLog.Error("openai.images.forward_returned_without_image_output", zap.Int64("account_id", account.ID))
+			h.ensureForwardErrorResponse(c, streamStarted)
+			return
+		}
+		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
+		if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
+			h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
+		}
+		if partialForwardErr != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+				AccountID:      account.ID,
+				Success:        false,
+				FirstTokenMs:   result.FirstTokenMs,
+				DurationMs:     forwardDurationMs,
+				Stream:         parsed.Stream,
+				HealthSample:   true,
+				TerminalReason: "partial_image_output_with_error",
+				Err:            partialForwardErr,
+			})
+		} else {
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
 		}
 
 		userAgent := c.GetHeader("User-Agent")
+
 		clientIP := ip.GetClientIP(c)
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		if parsed.Multipart {

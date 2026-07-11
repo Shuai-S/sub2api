@@ -948,6 +948,76 @@ func TestOpenAIImagesSSEClientErrorsAreNotRetryable(t *testing.T) {
 	}
 }
 
+func TestOpenAIImagesUnsupportedStreamCapabilityMismatch(t *testing.T) {
+	upstreamErr := openAIImagesUpstreamErrorFromSSEPayload([]byte(
+		`{"type":"response.failed","response":{"id":"resp_unsupported","error":{"type":"invalid_request_error","code":"unsupported_stream","message":"streaming is unsupported"}}}`,
+	))
+	require.NotNil(t, upstreamErr)
+	require.True(t, IsOpenAIImagesCapabilityMismatch(upstreamErr))
+	require.Equal(t, UpstreamFailureKindCapabilityMismatch, upstreamErr.FailureKind)
+
+	failoverErr := OpenAIImagesUpstreamErrorToFailover(upstreamErr)
+	require.NotNil(t, failoverErr)
+	require.True(t, IsUpstreamCapabilityMismatch(failoverErr))
+	require.NotNil(t, failoverErr.HealthSample)
+	require.False(t, *failoverErr.HealthSample)
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, "unsupported_stream", gjson.GetBytes(failoverErr.ResponseBody, "error.code").String())
+
+	httpErr := openAIImagesUpstreamErrorFromHTTP(
+		http.StatusBadRequest,
+		nil,
+		[]byte(`{"error":{"type":"invalid_request_error","code":"unsupported_stream","message":"streaming is unsupported"}}`),
+	)
+	require.True(t, IsOpenAIImagesCapabilityMismatch(httpErr))
+}
+
+func TestOpenAIImagesCapabilityMismatchRequiresExactCode(t *testing.T) {
+	for _, code := range []string{"unsupported_streaming", "prefix_unsupported_stream", "UNSUPPORTED_STREAM"} {
+		upstreamErr := openAIImagesUpstreamErrorFromSSEPayload([]byte(fmt.Sprintf(
+			`{"type":"error","error":{"type":"api_error","code":%q,"message":"server failed"}}`, code,
+		)))
+		require.NotNil(t, upstreamErr)
+		require.False(t, IsOpenAIImagesCapabilityMismatch(upstreamErr), code)
+	}
+}
+
+func TestOpenAIImagesUpstreamErrorToFailoverRetryPolicy(t *testing.T) {
+	tests := []struct {
+		name                   string
+		upstreamErr            *OpenAIImagesUpstreamError
+		wantRetryOnSameAccount bool
+	}{
+		{
+			name: "no image output retries same account",
+			upstreamErr: &OpenAIImagesUpstreamError{
+				StatusCode: http.StatusBadGateway,
+				Code:       "no_image_output",
+				Message:    "upstream did not return image output",
+			},
+			wantRetryOnSameAccount: true,
+		},
+		{
+			name: "ordinary 5xx remains health failure",
+			upstreamErr: &OpenAIImagesUpstreamError{
+				StatusCode: http.StatusServiceUnavailable,
+				Code:       "server_error",
+				Message:    "temporarily unavailable",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failoverErr := OpenAIImagesUpstreamErrorToFailover(tt.upstreamErr)
+			require.NotNil(t, failoverErr)
+			require.Equal(t, tt.wantRetryOnSameAccount, failoverErr.RetryableOnSameAccount)
+			require.Nil(t, failoverErr.HealthSample)
+			require.True(t, openAIAdaptiveFailureHealthSample(failoverErr))
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceForwardImages_APIKeyGenerationUsesConfiguredV1BaseURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
@@ -1149,6 +1219,136 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyStreamMultilineSSEDataBillsImag
 	require.Equal(t, 10, result.Usage.InputTokens)
 	require.Equal(t, 18, result.Usage.OutputTokens)
 	require.Equal(t, 8, result.Usage.ImageOutputTokens)
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyEmptyImageResponseFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat"}`)
+
+	for _, upstreamBody := range []string{"", `{}`, `{"data":[]}`, `not-json`} {
+		t.Run(upstreamBody, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+
+			svc := &OpenAIGatewayService{
+				cfg: &config.Config{},
+				httpUpstream: &httpUpstreamRecorder{resp: &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+				}},
+			}
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			account := &Account{ID: 81, Name: "empty-image", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test"}}
+
+			result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+			require.Zero(t, rec.Body.Len())
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeySSEErrorBeforeImageFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"event: error\n" +
+					`data: {"type":"error","error":{"type":"api_error","code":"server_error","message":"generation failed"}}` + "\n\n",
+			)),
+		}},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	account := &Account{ID: 82, Name: "sse-error", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test"}}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Zero(t, rec.Body.Len())
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyUnsupportedStreamFailsOverWithoutHealthSample(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				`data: {"type":"error","error":{"type":"invalid_request_error","code":"unsupported_stream","message":"stream is not supported"}}` + "\n\n",
+			)),
+		}},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	account := &Account{ID: 83, Name: "unsupported-stream", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test"}}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, IsUpstreamCapabilityMismatch(failoverErr))
+	require.NotNil(t, failoverErr.HealthSample)
+	require.False(t, *failoverErr.HealthSample)
+	require.Zero(t, rec.Body.Len())
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyHTTPUnsupportedStreamFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","stream":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","code":"unsupported_stream","message":"stream is not supported"}}`)),
+		}},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	account := &Account{ID: 84, Name: "http-unsupported-stream", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test"}}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, IsUpstreamCapabilityMismatch(failoverErr))
+	require.NotNil(t, failoverErr.HealthSample)
+	require.False(t, *failoverErr.HealthSample)
+	require.Zero(t, rec.Body.Len())
 }
 
 func TestExtractOpenAIImagesBillableCountFromJSONBytes_CompletedEvent(t *testing.T) {

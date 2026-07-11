@@ -89,6 +89,8 @@ const (
 
 const openAIEndpointCapabilitiesCredentialKey = "openai_capabilities"
 
+const openAIImagesStreamSupportedExtraKey = "openai_images_stream_supported"
+
 const (
 	OpenAIAuthModePersonalAccessToken = "personalAccessToken"
 	openAIAuthModeCredentialKey       = "auth_mode"
@@ -1435,6 +1437,21 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	default:
 		return true
 	}
+}
+
+// SupportsOpenAIImagesStream reports whether the account may use an upstream
+// image stream. Only an explicitly configured boolean false disables support;
+// missing, nil, and legacy values remain compatible.
+func (a *Account) SupportsOpenAIImagesStream() bool {
+	if a == nil {
+		return false
+	}
+	raw, found := a.Extra[openAIImagesStreamSupportedExtraKey]
+	if !found {
+		return true
+	}
+	supported, isBool := raw.(bool)
+	return !isBool || supported
 }
 
 func (a *Account) GetChatGPTUserID() string {

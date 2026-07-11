@@ -37,6 +37,7 @@ type OpenAIImagesUpstreamError struct {
 	Message           string
 	Param             string
 	UpstreamRequestID string
+	FailureKind       UpstreamFailureKind
 }
 
 func (e *OpenAIImagesUpstreamError) Error() string {
@@ -97,6 +98,43 @@ func (e *OpenAIImagesUpstreamError) clientMessage() string {
 // upstream server failure that may be retried on another account.
 func IsOpenAIImagesRetryableUpstreamError(err *OpenAIImagesUpstreamError) bool {
 	return err != nil && err.StatusCode >= http.StatusInternalServerError
+}
+
+// IsOpenAIImagesCapabilityMismatch reports whether an Images response error
+// precisely identifies an unsupported streaming capability.
+func IsOpenAIImagesCapabilityMismatch(err *OpenAIImagesUpstreamError) bool {
+	return err != nil && err.FailureKind == UpstreamFailureKindCapabilityMismatch
+}
+
+// OpenAIImagesUpstreamErrorToFailover converts response-level Images failures
+// that can be retried on another account into the common failover error.
+func OpenAIImagesUpstreamErrorToFailover(err *OpenAIImagesUpstreamError) *UpstreamFailoverError {
+	if err == nil || (!IsOpenAIImagesRetryableUpstreamError(err) && !IsOpenAIImagesCapabilityMismatch(err)) {
+		return nil
+	}
+	statusCode := err.StatusCode
+	if statusCode <= 0 {
+		statusCode = http.StatusBadGateway
+	}
+	failoverErr := &UpstreamFailoverError{
+		StatusCode:             statusCode,
+		ResponseBody:           openAIImagesUpstreamErrorResponseBody(err),
+		RetryableOnSameAccount: strings.TrimSpace(err.Code) == "no_image_output",
+		FailureKind:            err.FailureKind,
+	}
+	if IsOpenAIImagesCapabilityMismatch(err) {
+		healthSample := false
+		failoverErr.HealthSample = &healthSample
+		failoverErr.RetryableOnSameAccount = false
+	}
+	return failoverErr
+}
+
+func openAIImagesFailureKind(code string) UpstreamFailureKind {
+	if strings.TrimSpace(code) == "unsupported_stream" {
+		return UpstreamFailureKindCapabilityMismatch
+	}
+	return ""
 }
 
 func openAIImagesSSEErrorStatus(errType, code string) int {
@@ -755,6 +793,7 @@ func openAIImagesUpstreamErrorFromGJSON(errorObj gjson.Result, upstreamRequestID
 		Message:           sanitizeUpstreamErrorMessage(message),
 		Param:             param,
 		UpstreamRequestID: strings.TrimSpace(upstreamRequestID),
+		FailureKind:       openAIImagesFailureKind(code),
 	}
 }
 
@@ -805,6 +844,7 @@ func openAIImagesUpstreamErrorFromHTTP(statusCode int, header http.Header, body 
 		Message:           message,
 		Param:             param,
 		UpstreamRequestID: requestID,
+		FailureKind:       openAIImagesFailureKind(code),
 	}
 }
 
@@ -1146,12 +1186,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	streamPrefix string,
 	fallbackModel string,
 ) (OpenAIUsage, int, []string, *int, error) {
-	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Status(resp.StatusCode)
-
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return OpenAIUsage{}, 0, nil, nil, fmt.Errorf("streaming is not supported by response writer")
@@ -1177,6 +1211,22 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	var processDataErr error
 	processDataDone := false
 	writerSizeBeforeResponse := c.Writer.Size()
+	responseCommitted := false
+	commitResponse := func() {
+		if responseCommitted {
+			return
+		}
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Status(resp.StatusCode)
+		responseCommitted = true
+	}
+	writeStreamEvent := func(eventName string, payload []byte) bool {
+		commitResponse()
+		return s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, eventName, payload)
+	}
 
 	processData := func(dataBytes []byte) {
 		if processDataDone || processDataErr != nil {
@@ -1216,11 +1266,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				createdAt,
 				partialMeta,
 			)
-			s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, eventName, payload)
+			writeStreamEvent(eventName, payload)
 		case "response.output_item.done":
 			img, itemID, ok, extractErr := extractOpenAIImageFromResponsesOutputItemDone(dataBytes)
 			if extractErr != nil {
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
+				if responseCommitted {
+					writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
+				}
 				processDataErr = extractErr
 				processDataDone = true
 				return
@@ -1242,7 +1294,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		case "response.completed":
 			results, _, usageRaw, firstMeta, extractErr := extractOpenAIImagesFromResponsesCompleted(dataBytes)
 			if extractErr != nil {
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
+				if responseCommitted {
+					writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(extractErr.Error()))
+				}
 				processDataErr = extractErr
 				processDataDone = true
 				return
@@ -1259,11 +1313,18 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				appendOpenAIResponsesImageResultDedup(&finalResults, finalSeen, "", img)
 			}
 			if len(finalResults) == 0 {
-				outputErr := fmt.Errorf("upstream did not return image output")
+				outputErr := &OpenAIImagesUpstreamError{
+					StatusCode: http.StatusBadGateway,
+					ErrorType:  "upstream_error",
+					Code:       "no_image_output",
+					Message:    "Upstream did not return image output",
+				}
 				// 软失败：response.completed 事件里没有图片。记录上游诊断摘要到 ops，
 				// 与非流式路径保持一致，避免上游响应信息丢失。
-				setOpsUpstreamError(c, http.StatusBadGateway, "upstream did not return image output", summarizeOpenAIImagesNoOutputBody(dataBytes))
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(outputErr.Error()))
+				setOpsUpstreamError(c, http.StatusBadGateway, outputErr.Message, summarizeOpenAIImagesNoOutputBody(dataBytes))
+				if responseCommitted {
+					writeStreamEvent("error", buildOpenAIImagesStreamErrorBodyFromUpstream(outputErr))
+				}
 				processDataErr = outputErr
 				processDataDone = true
 				return
@@ -1276,16 +1337,16 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				}
 				payload := buildOpenAIImagesStreamCompletedPayload(eventName, img, format, createdAt, usageRaw)
 				emitted[key] = struct{}{}
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, eventName, payload)
+				writeStreamEvent(eventName, payload)
 			}
 			imageCount = len(emitted)
 			imageOutputSizes = openAIResponsesImageResultSizes(finalResults)
 			processDataDone = true
-		case "error", "response.failed":
+		case "error", "response.failed", "response.incomplete":
 			if upstreamErr := openAIImagesUpstreamErrorFromSSEPayload(dataBytes); upstreamErr != nil {
-				retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
-				if !clientDisconnected && (!retryable || c.Writer.Size() != writerSizeBeforeResponse) {
-					s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBodyFromUpstream(upstreamErr))
+				retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr) || IsOpenAIImagesCapabilityMismatch(upstreamErr)
+				if !clientDisconnected && (!retryable || responseCommitted || c.Writer.Size() != writerSizeBeforeResponse) {
+					writeStreamEvent("error", buildOpenAIImagesStreamErrorBodyFromUpstream(upstreamErr))
 				}
 				setOpsUpstreamError(c, upstreamErr.clientStatusCode(), upstreamErr.clientMessage(), "")
 				processDataErr = upstreamErr
@@ -1328,15 +1389,22 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				}
 				payload := buildOpenAIImagesStreamCompletedPayload(eventName, img, format, createdAt, nil)
 				emitted[key] = struct{}{}
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, eventName, payload)
+				writeStreamEvent(eventName, payload)
 			}
 			imageCount = len(emitted)
 			imageOutputSizes = openAIResponsesImageResultSizes(pendingResults)
 			return nil
 		}
 
-		streamErr := fmt.Errorf("stream disconnected before image generation completed")
-		s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(streamErr.Error()))
+		streamErr := &OpenAIImagesUpstreamError{
+			StatusCode: http.StatusBadGateway,
+			ErrorType:  "upstream_error",
+			Code:       "no_image_output",
+			Message:    "Stream disconnected before image generation completed",
+		}
+		if responseCommitted {
+			writeStreamEvent("error", buildOpenAIImagesStreamErrorBodyFromUpstream(streamErr))
+		}
 		return streamErr
 	}
 
@@ -1362,7 +1430,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				} else if done {
 					return usage, imageCount, imageOutputSizes, firstTokenMs, nil
 				}
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(err.Error()))
+				if responseCommitted {
+					writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(err.Error()))
+				}
 				return usage, imageCount, imageOutputSizes, firstTokenMs, err
 			}
 		}
@@ -1455,7 +1525,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				} else if done {
 					return usage, imageCount, imageOutputSizes, firstTokenMs, nil
 				}
-				s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(ev.err.Error()))
+				if responseCommitted {
+					writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(ev.err.Error()))
+				}
 				return usage, imageCount, imageOutputSizes, firstTokenMs, ev.err
 			}
 			done, processErr := processLine(ev.line)
@@ -1474,10 +1546,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				return usage, imageCount, imageOutputSizes, firstTokenMs, fmt.Errorf("image stream incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images responses stream data interval timeout: interval=%s", streamInterval)
-			s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBody(fmt.Sprintf("upstream image stream idle for %s", streamInterval)))
+			if responseCommitted {
+				writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(fmt.Sprintf("upstream image stream idle for %s", streamInterval)))
+			}
 			return usage, imageCount, imageOutputSizes, firstTokenMs, fmt.Errorf("image stream data interval timeout")
 		case <-keepaliveCh:
-			if clientDisconnected || time.Since(lastDownstreamWriteAt) < keepaliveInterval {
+			if !responseCommitted || clientDisconnected || time.Since(lastDownstreamWriteAt) < keepaliveInterval {
 				continue
 			}
 			if _, writeErr := io.WriteString(c.Writer, ":\n\n"); writeErr != nil {
@@ -1544,18 +1618,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		setOpsUpstreamError(c, 0, safeErr, "")
-		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-			Platform:           account.Platform,
-			AccountID:          account.ID,
-			AccountName:        account.Name,
-			UpstreamStatusCode: 0,
-			UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
-			Kind:               "request_error",
-			Message:            safeErr,
-		})
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		return nil, s.handleOpenAIUpstreamTransportError(upstreamCtx, c, account, err, false)
 	}
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
@@ -1563,6 +1626,21 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		if upstreamErr := openAIImagesUpstreamErrorFromHTTP(resp.StatusCode, resp.Header, respBody); IsOpenAIImagesCapabilityMismatch(upstreamErr) {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  resp.Header.Get("x-request-id"),
+				UpstreamURL:        safeUpstreamURL(upstreamReq.URL.String()),
+				Kind:               "capability_mismatch",
+				Message:            upstreamMsg,
+			})
+			failoverErr := OpenAIImagesUpstreamErrorToFailover(upstreamErr)
+			failoverErr.ResponseHeaders = resp.Header.Clone()
+			return nil, failoverErr
+		}
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
@@ -1637,9 +1715,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			)
 		}
 	}
-	if imageCount <= 0 {
-		imageCount = parsed.N
-	}
 	return &OpenAIForwardResult{
 		RequestID:        resp.Header.Get("x-request-id"),
 		Usage:            usage,
@@ -1671,7 +1746,8 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 		return err
 	}
 
-	retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
+	failoverErr := OpenAIImagesUpstreamErrorToFailover(upstreamErr)
+	retryable := failoverErr != nil
 	responseWritten := c != nil && c.Writer != nil && c.Writer.Size() != writerSizeBeforeResponse
 	kind := "http_error"
 	if retryable {
@@ -1705,11 +1781,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	}
 
 	responseBody := openAIImagesUpstreamErrorResponseBody(upstreamErr)
-	s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
-	return &UpstreamFailoverError{
-		StatusCode:             upstreamErr.StatusCode,
-		ResponseBody:           responseBody,
-		ResponseHeaders:        headers,
-		RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
+	if !IsOpenAIImagesCapabilityMismatch(upstreamErr) {
+		s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
 	}
+	failoverErr.ResponseHeaders = headers
+	if !IsOpenAIImagesCapabilityMismatch(upstreamErr) && strings.TrimSpace(upstreamErr.Code) != "no_image_output" {
+		failoverErr.RetryableOnSameAccount = account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode)
+	}
+	return failoverErr
 }
