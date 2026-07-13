@@ -13,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -229,6 +230,34 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)
 		}
+		if account.Platform == PlatformOpenAI && resp.StatusCode == http.StatusTooManyRequests {
+			failoverErr := s.failoverOpenAIUpstreamHTTPError(
+				ctx,
+				c,
+				account,
+				resp,
+				respBody,
+				upstreamMsg,
+				originalModel,
+			)
+			if failoverErr != nil {
+				failoverErr.ResponseHeaders = cloneHeader(resp.Header)
+				if turn == 1 {
+					// The handler still owns the first client message, so it can safely
+					// replay this turn on another account without exposing an error frame.
+					return nil, failoverErr
+				}
+
+				// The handler only retains the first message. Returning a failover here
+				// would replay turn one after a later-turn failure. The account has
+				// already been rate-limited above, so reconnecting will select another.
+				return nil, NewOpenAIWSClientCloseError(
+					coderws.StatusTryAgainLater,
+					"upstream rate limit exceeded, please reconnect",
+					fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg),
+				)
+			}
+		}
 		_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(resp.StatusCode, upstreamMsg))
 		return nil, fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg)
 	}
@@ -339,6 +368,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		}
 		imageCounter.AddSSEData(upstreamMessage)
 		if eventType == "response.failed" {
+			failedMessage := extractOpenAISSEErrorMessage(upstreamMessage)
+			failedStatus := openAIStreamFailedEventSemanticStatus(upstreamMessage, failedMessage)
+			openAIRateLimited := account.Platform == PlatformOpenAI && failedStatus == http.StatusTooManyRequests
+			if openAIRateLimited {
+				s.handleOpenAIAccountUpstreamError(ctx, account, failedStatus, resp.Header, upstreamMessage, originalModel)
+			}
 			responseFailedErr = s.newOpenAIWSResponseFailedError(
 				c,
 				account,
@@ -350,6 +385,16 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			)
 			var failoverErr *UpstreamFailoverError
 			if errors.As(responseFailedErr, &failoverErr) {
+				if openAIRateLimited {
+					failoverErr.StatusCode = failedStatus
+				}
+				if openAIRateLimited && turn > 1 {
+					return resultWithUsage(), NewOpenAIWSClientCloseError(
+						coderws.StatusTryAgainLater,
+						"upstream rate limit exceeded, please reconnect",
+						fmt.Errorf("upstream http bridge response failed: %s", failedMessage),
+					)
+				}
 				return resultWithUsage(), failoverErr
 			}
 		}
@@ -364,7 +409,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		}
 		replayCollector.AddEvent(eventType, upstreamMessage)
 
-		if !clientDisconnected {
+		holdRateLimitError := false
+		if eventType == "error" {
+			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
+			holdRateLimitError = account.Platform == PlatformOpenAI && !wroteDownstream && !clientDisconnected && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw)
+		}
+		if !clientDisconnected && !holdRateLimitError {
 			if err := writeClientMessage(upstreamMessage); err != nil {
 				if isOpenAIWSClientDisconnectError(err) {
 					clientDisconnected = true
@@ -390,10 +440,27 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
-			s.persistOpenAIWSRateLimitSignal(ctx, account, resp.Header, upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+			if isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) && account.Platform == PlatformOpenAI {
+				s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusTooManyRequests, resp.Header, upstreamMessage, originalModel)
+			}
 			errMessage := strings.TrimSpace(errMsgRaw)
 			if errMessage == "" {
 				errMessage = "upstream error event"
+			}
+			if holdRateLimitError {
+				failoverErr := &UpstreamFailoverError{
+					StatusCode:      http.StatusTooManyRequests,
+					ResponseBody:    append([]byte(nil), upstreamMessage...),
+					ResponseHeaders: cloneHeader(resp.Header),
+				}
+				if turn == 1 {
+					return resultWithUsage(), failoverErr
+				}
+				return resultWithUsage(), NewOpenAIWSClientCloseError(
+					coderws.StatusTryAgainLater,
+					"upstream rate limit exceeded, please reconnect",
+					fmt.Errorf("upstream http bridge error event: %s", errMessage),
+				)
 			}
 			return resultWithUsage(), errors.New(errMessage)
 		}

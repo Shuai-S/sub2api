@@ -51,6 +51,155 @@ func TestOpenAIWSHTTPBridgeDecisionKeepsSmallFramesOnWS(t *testing.T) {
 	require.True(t, svc.shouldBridgeOpenAIWSHTTP(&Account{Platform: PlatformGrok}, 1, "resp_existing"))
 }
 
+func TestOpenAIWSHTTPBridgeFirstTurn429TriggersAccountFailover(t *testing.T) {
+	resetAfter := "18000"
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header: http.Header{
+			"X-Codex-Primary-Used-Percent":        []string{"100"},
+			"X-Codex-Primary-Reset-After-Seconds": []string{resetAfter},
+			"X-Request-Id":                        []string{"rid_bridge_429"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"error":{"message":"The usage limit has been reached"}}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          71,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	writes := 0
+
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), nil, account, "token",
+		[]byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hi"}`),
+		64, "gpt-5.6-sol", "", "", "", "", 1,
+		func([]byte) error {
+			writes++
+			return nil
+		},
+	)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.JSONEq(t, `{"error":{"message":"The usage limit has been reached"}}`, string(failoverErr.ResponseBody))
+	require.Equal(t, "rid_bridge_429", failoverErr.ResponseHeaders.Get("x-request-id"))
+	require.Zero(t, writes, "a retryable first-turn 429 must not be exposed before account failover")
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIWSHTTPBridgeLaterTurn429RequiresReconnectWithoutReplayingFirstTurn(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{"X-Request-Id": []string{"rid_bridge_later_429"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"The usage limit has been reached"}}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:          72,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	writes := 0
+
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), nil, account, "token",
+		[]byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"continue"}`),
+		72, "gpt-5.6-sol", "", "", "", "", 2,
+		func([]byte) error {
+			writes++
+			return nil
+		},
+	)
+
+	require.Nil(t, result)
+	var closeErr *OpenAIWSClientCloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.StatusCode())
+	require.Contains(t, closeErr.Reason(), "reconnect")
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr), "later turns must not enter the handler path that replays turn one")
+	require.Zero(t, writes)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIWSHTTPBridgeRateLimitErrorEventTriggersFailoverBeforeClientWrite(t *testing.T) {
+	sseBody := strings.Join([]string{
+		`data: {"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"The usage limit has been reached"}}`,
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":                        []string{"text/event-stream"},
+			"X-Codex-Primary-Used-Percent":        []string{"100"},
+			"X-Codex-Primary-Reset-After-Seconds": []string{"18000"},
+		},
+		Body: io.NopCloser(strings.NewReader(sseBody)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+	account := &Account{ID: 73, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1, Status: StatusActive, Schedulable: true}
+	writes := 0
+
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), nil, account, "token",
+		[]byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hi"}`),
+		64, "gpt-5.6-sol", "", "", "", "", 1,
+		func([]byte) error {
+			writes++
+			return nil
+		},
+	)
+
+	require.NotNil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, writes)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIWSHTTPBridgeRateLimitResponseFailedTriggersFailoverAndBlocksAccount(t *testing.T) {
+	failedPayload := `{"type":"response.failed","response":{"id":"resp_limited","status":"failed","error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"The usage limit has been reached"}}}`
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":                        []string{"text/event-stream"},
+			"X-Codex-Primary-Used-Percent":        []string{"100"},
+			"X-Codex-Primary-Reset-After-Seconds": []string{"18000"},
+		},
+		Body: io.NopCloser(strings.NewReader("data: " + failedPayload + "\n\n")),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+	account := &Account{ID: 74, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1, Status: StatusActive, Schedulable: true}
+	writes := 0
+
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), nil, account, "token",
+		[]byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hi"}`),
+		64, "gpt-5.6-sol", "", "", "", "", 1,
+		func([]byte) error {
+			writes++
+			return nil
+		},
+	)
+
+	require.NotNil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.Zero(t, writes)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
 func TestOpenAIWSHTTPBridgeRelaysSSEFramesAsWebSocketMessages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
