@@ -256,6 +256,7 @@ func TestOpenAIGatewayService_WSHTTPBridgeResponseFailedReturnsError(t *testing.
 		"",
 		"",
 		"",
+		"",
 		1,
 		func(message []byte) error {
 			relayed = append(relayed, append([]byte(nil), message...))
