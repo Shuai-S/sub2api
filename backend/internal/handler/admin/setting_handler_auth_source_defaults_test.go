@@ -223,6 +223,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		"payment_visible_method_alipay_enabled":                   true,
 		"payment_visible_method_wxpay_enabled":                    false,
 		"openai_advanced_scheduler_enabled":                       true,
+		"openai_oauth_scheduling_rate_multiplier":                 0.05,
 		"openai_adaptive_scheduler_enabled":                       true,
 		"openai_adaptive_scheduler_mode":                          "enforce",
 		"openai_adaptive_scheduler_account_type_priority_mode":    "oauth_first",
@@ -249,6 +250,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values[service.SettingPaymentVisibleMethodAlipayEnabled])
 	require.Equal(t, "false", repo.values[service.SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.values["openai_advanced_scheduler_enabled"])
+	require.Equal(t, "0.05", repo.values[service.SettingKeyOpenAIOAuthSchedulingRateMultiplier])
 	require.Equal(t, "true", repo.values["openai_adaptive_scheduler_enabled"])
 	require.Equal(t, "enforce", repo.values["openai_adaptive_scheduler_mode"])
 	require.Equal(t, "oauth_first", repo.values["openai_adaptive_scheduler_account_type_priority_mode"])
@@ -268,6 +270,7 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["payment_visible_method_alipay_enabled"])
 	require.Equal(t, false, data["payment_visible_method_wxpay_enabled"])
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
+	require.Equal(t, 0.05, data["openai_oauth_scheduling_rate_multiplier"])
 	require.Equal(t, true, data["openai_adaptive_scheduler_enabled"])
 	require.Equal(t, "enforce", data["openai_adaptive_scheduler_mode"])
 	require.Equal(t, "oauth_first", data["openai_adaptive_scheduler_account_type_priority_mode"])

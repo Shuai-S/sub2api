@@ -110,6 +110,7 @@ func TestOpenAIGatewayService_ForwardWSV2ResponseFailedReturnsErrorWithUsage(t *
 		time.Now(),
 		1,
 		"",
+		nil,
 	)
 
 	require.Error(t, err)

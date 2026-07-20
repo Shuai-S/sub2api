@@ -6,7 +6,15 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
+
+func shouldReturnOpenAIWSResponseFailedFailover(payload []byte) bool {
+	// Generic server_error terminal events are already complete upstream
+	// responses. Keep their model cooldown, but let the handler classify the
+	// returned terminal result instead of replaying the request on another account.
+	return !strings.EqualFold(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()), "server_error")
+}
 
 func (s *OpenAIGatewayService) newOpenAIWSResponseFailedError(
 	c *gin.Context,

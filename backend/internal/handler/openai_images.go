@@ -86,8 +86,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
 	}
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && !decision.AllowNextStage {
+		h.openAISecurityAuditError(c, decision)
 		return
 	}
 	imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
@@ -145,6 +145,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	stopJSONKeepalive := func() {}
 	jsonKeepaliveStarted := false
 	defer func() { stopJSONKeepalive() }()
+	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 
 	for {
 		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
@@ -158,6 +159,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			parsed.Stream,
 		)
 		if err != nil {
+			if failoverClientGone(c) {
+				reqLog.Info("openai.images.account_select_aborted_client_disconnected", zap.Error(err))
+				return
+			}
 			reqLog.Warn("openai.images.account_select_failed",
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
@@ -313,6 +318,20 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
+					if failoverClientGone(c) {
+						reqLog.Info("openai.images.failover_aborted_client_disconnected",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+						)
+						return
+					}
+					if !failoverErr.ShouldRetryNextAccount() {
+						if failoverErr.ShouldReportAccountScheduleFailure() {
+							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, parsed.Stream)
+						}
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					if retryLimit, retryCount, ok := claimOpenAISameAccountRetry(account, failoverErr, sameAccountRetryCount); ok {
 						reqLog.Warn("openai.images.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
@@ -327,7 +346,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						}
 						continue
 					}
-					h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, parsed.Stream)
+					if failoverErr.ShouldReportAccountScheduleFailure() {
+						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, parsed.Stream)
+					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
@@ -336,7 +357,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						return
 					}
 					switchCount++
-					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount) {
+					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -397,7 +418,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				Err:            partialForwardErr,
 			})
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result)
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(requestModel))
 		}
 
 		userAgent := c.GetHeader("User-Agent")

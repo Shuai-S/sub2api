@@ -215,7 +215,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectLegacyLoadAware(
 	if req.RequiredTransport == OpenAIUpstreamTransportAny || req.RequiredTransport == OpenAIUpstreamTransportHTTPSSE {
 		effectiveExcludedIDs := cloneExcludedAccountIDs(req.ExcludedIDs)
 		for {
-			selection, err := s.service.selectAccountWithLoadAwareness(ctx, req.GroupID, req.Platform, req.SessionHash, req.RequestedModel, effectiveExcludedIDs, req.RequireCompact, req.RequiredCapability)
+			selection, err := s.service.selectAccountWithLoadAwareness(ctx, req.GroupID, req.Platform, req.SessionHash, req.RequestedModel, effectiveExcludedIDs, req.RequireCompact, req.RequiredCapability, req.UseUpstreamTokenCost)
 			if err != nil {
 				return nil, decision, err
 			}
@@ -242,7 +242,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectLegacyLoadAware(
 
 	effectiveExcludedIDs := cloneExcludedAccountIDs(req.ExcludedIDs)
 	for {
-		selection, err := s.service.selectAccountWithLoadAwareness(ctx, req.GroupID, req.Platform, req.SessionHash, req.RequestedModel, effectiveExcludedIDs, req.RequireCompact, req.RequiredCapability)
+		selection, err := s.service.selectAccountWithLoadAwareness(ctx, req.GroupID, req.Platform, req.SessionHash, req.RequestedModel, effectiveExcludedIDs, req.RequireCompact, req.RequiredCapability, req.UseUpstreamTokenCost)
 		if err != nil {
 			return nil, decision, err
 		}
@@ -347,7 +347,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
-	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
+	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.GroupID, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 	if account == nil || !openAIStickyAccountMatchesGroup(account, req.GroupID) ||
 		s.service.isOpenAIAccountRuntimeBlocked(account) ||
 		!s.baseline.isAccountTransportCompatible(account, req.RequiredTransport) ||
@@ -433,7 +433,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
-		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.Platform, req.RequestedModel, false, req.RequiredCapability)
+		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.GroupID, req.Platform, req.RequestedModel, false, req.RequiredCapability)
 		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
@@ -849,7 +849,7 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
-		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.Platform, req.RequestedModel, false, req.RequiredCapability)
+		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.GroupID, req.Platform, req.RequestedModel, false, req.RequiredCapability)
 		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
 			continue
 		}
