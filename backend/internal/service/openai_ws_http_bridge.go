@@ -447,7 +447,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				s.handleOpenAIAccountUpstreamError(ctx, account, accountStatus, resp.Header, upstreamMessage, canonicalModel)
 			}
 			if turn == 1 && !wroteDownstream && shouldFailover {
-				return resultWithUsage(), newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
+				return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
 			}
 			holdRateLimitError = account.Platform == PlatformOpenAI && turn > 1 && !wroteDownstream && !clientDisconnected && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw)
 			upstreamEventErr = errors.New(errMessage)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -118,7 +119,11 @@ func (s *SettingService) GetAnthropicAdaptiveSchedulerSettings(ctx context.Conte
 	if err != nil {
 		return defaults, err
 	}
-	return value.(AnthropicAdaptiveSchedulerSettings), nil
+	settings, ok := value.(AnthropicAdaptiveSchedulerSettings)
+	if !ok {
+		return defaults, fmt.Errorf("unexpected Anthropic adaptive scheduler settings type %T", value)
+	}
+	return settings, nil
 }
 
 func refreshAnthropicAdaptiveSchedulerSettingCache(settings AnthropicAdaptiveSchedulerSettings) {
@@ -129,10 +134,4 @@ func refreshAnthropicAdaptiveSchedulerSettingCache(settings AnthropicAdaptiveSch
 		settings:  settings,
 		expiresAt: time.Now().Add(anthropicAdaptiveSchedulerSettingCacheTTL).UnixNano(),
 	})
-}
-
-func resetAnthropicAdaptiveSchedulerSettingCacheForTest() {
-	anthropicAdaptiveSchedulerSettingGeneration.Add(1)
-	anthropicAdaptiveSchedulerSettingSF.Forget("settings")
-	anthropicAdaptiveSchedulerSettingCache = atomic.Value{}
 }

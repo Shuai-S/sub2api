@@ -145,17 +145,14 @@ func isAnthropicAdaptiveWindowRateLimit(headers http.Header) bool {
 }
 
 func isAnthropicAdaptiveConcurrencyFailure(failoverErr *UpstreamFailoverError, err error) bool {
-	var text strings.Builder
+	parts := make([]string, 0, 3)
 	if failoverErr != nil {
-		text.Write(failoverErr.ResponseBody)
-		text.WriteByte(' ')
-		text.WriteString(string(failoverErr.Reason))
+		parts = append(parts, string(failoverErr.ResponseBody), string(failoverErr.Reason))
 	}
 	if err != nil {
-		text.WriteByte(' ')
-		text.WriteString(err.Error())
+		parts = append(parts, err.Error())
 	}
-	message := strings.ToLower(text.String())
+	message := strings.ToLower(strings.Join(parts, " "))
 	for _, marker := range []string{
 		"concurrency limit exceeded",
 		"concurrency_limit",

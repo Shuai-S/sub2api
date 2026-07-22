@@ -170,7 +170,7 @@ func TestOpenAIWSHTTPBridgeRateLimitErrorEventTriggersFailoverBeforeClientWrite(
 		},
 	)
 
-	require.NotNil(t, result)
+	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
@@ -355,7 +355,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnSSEErrorFailoverSafety(t *testing.T) {
 
 			var failoverErr *UpstreamFailoverError
 			if turn == 1 {
-				require.NotNil(t, result)
+				require.Nil(t, result)
 				require.ErrorAs(t, err, &failoverErr)
 				require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 				require.Empty(t, writes)

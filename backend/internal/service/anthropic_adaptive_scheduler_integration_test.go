@@ -4,11 +4,18 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func resetAnthropicAdaptiveSchedulerSettingCacheForTest() {
+	anthropicAdaptiveSchedulerSettingGeneration.Add(1)
+	anthropicAdaptiveSchedulerSettingSF.Forget("settings")
+	anthropicAdaptiveSchedulerSettingCache = atomic.Value{}
+}
 
 func TestAnthropicAdaptiveEnforceBypassesBusyStickyAndPreservesBinding(t *testing.T) {
 	resetAnthropicAdaptiveSchedulerSettingCacheForTest()
