@@ -1157,6 +1157,15 @@ export default {
         previousResponseWeight: 'previous_response sticky',
         sessionStickyWeight: 'session_hash sticky'
       },
+      anthropicAdaptiveScheduler: {
+        title: 'Anthropic adaptive scheduler',
+        description: 'Disabled by default. Prefers sticky accounts, then selects by live reliability, capacity, and latency when sticky is unavailable.',
+        mode: 'Run mode',
+        modes: {
+          shadow: 'Shadow observe',
+          enforce: 'Enforce routing'
+        }
+      },
       openaiAdaptiveScheduler: {
         title: 'OpenAI adaptive scheduler',
         description: 'Disabled by default. Learns real account capacity from success rate, cost, dynamic capacity, and latency. Cost reuses account rate_multiplier.',

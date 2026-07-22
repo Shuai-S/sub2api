@@ -1151,6 +1151,15 @@ export default {
         previousResponseWeight: 'previous_response 粘性',
         sessionStickyWeight: 'session_hash 粘性'
       },
+      anthropicAdaptiveScheduler: {
+        title: 'Anthropic 自适应调度',
+        description: '默认关闭。优先命中粘性账号；粘性不可用时，按实时稳定性、容量和延迟选择账号。',
+        mode: '运行模式',
+        modes: {
+          shadow: 'Shadow 观察',
+          enforce: 'Enforce 执行'
+        }
+      },
       openaiAdaptiveScheduler: {
         title: 'OpenAI 自适应智能调度',
         description: '默认关闭。开启后基于成功率、成本、动态容量和延迟学习账号真实承载能力；成本复用账号 rate_multiplier。',

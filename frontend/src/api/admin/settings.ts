@@ -638,6 +638,8 @@ export interface SystemSettings {
   openai_advanced_scheduler_effective_weight_upstream_cost?: string;
   openai_advanced_scheduler_effective_weight_previous_response?: string;
   openai_advanced_scheduler_effective_weight_session_sticky?: string;
+  anthropic_adaptive_scheduler_enabled?: boolean;
+  anthropic_adaptive_scheduler_mode?: string;
   openai_adaptive_scheduler_enabled?: boolean;
   openai_adaptive_scheduler_diagnostic_log_enabled?: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate?: number;
@@ -947,6 +949,8 @@ export interface UpdateSettingsRequest {
   openai_advanced_scheduler_weight_upstream_cost?: string;
   openai_advanced_scheduler_weight_previous_response?: string;
   openai_advanced_scheduler_weight_session_sticky?: string;
+  anthropic_adaptive_scheduler_enabled?: boolean;
+  anthropic_adaptive_scheduler_mode?: string;
   openai_adaptive_scheduler_enabled?: boolean;
   openai_adaptive_scheduler_diagnostic_log_enabled?: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate?: number;

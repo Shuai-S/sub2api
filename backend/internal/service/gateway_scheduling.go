@@ -1,8 +1,7 @@
 package service
 
-// 本文件由 gateway_service.go 纯移动拆分而来：账号选择与负载感知调度、窗口费用
-// 与 RPM 预取、候选排序/过滤、混合平台调度与选择失败诊断。仅做代码搬迁，
-// 无任何行为变更。
+// This file contains account selection, load-aware scheduling, window-cost and
+// RPM prefetch, mixed-platform routing, and selection failure diagnostics.
 
 import (
 	"context"
@@ -210,6 +209,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	if len(accounts) == 0 {
 		return nil, ErrNoAvailableAccounts
 	}
+	anthropicAdaptiveMode := s.anthropicAdaptiveMode(ctx, platform, accounts)
+	preserveStickyBinding := false
 	ctx = s.withWindowCostPrefetch(ctx, accounts)
 	ctx = s.withRPMPrefetch(ctx, accounts)
 
@@ -332,7 +333,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						rpmPass := gatePass && s.isAccountSchedulableForRPM(ctx, stickyAccount, true)
 
 						if rpmPass { // 粘性会话窗口费用+RPM 检查
-							result, err := s.tryAcquireAccountSlot(ctx, stickyAccountID, stickyAccount.Concurrency)
+							stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, stickyAccount)
+							result, err := s.tryAcquireAccountSlot(ctx, stickyAccountID, stickyCapacity)
 							if err == nil && result.Acquired {
 								// 会话数量限制检查
 								if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
@@ -348,30 +350,39 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 									if s.debugModelRoutingEnabled() {
 										logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
 									}
+									s.markAnthropicAdaptiveStickyHit(anthropicAdaptiveMode)
 									return s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil)
 								}
 							}
 
 							if stickyCacheMissReason == "" {
-								waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
-								if waitingCount < cfg.StickySessionMaxWaiting {
-									// 会话数量限制检查（等待计划也需要占用会话配额）
-									if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
-										stickyCacheMissReason = "session_limit"
-										// 会话限制已满，继续到负载感知选择
-									} else {
-										// 必须走 newSelectionResult 以 hydrate 账号凭证：
-										// 调度快照中的账号是精简版（OAuth token 等被剥离），
-										// 直接返回会导致后续转发缺少凭证而鉴权失败。
-										return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
-											AccountID:      stickyAccountID,
-											MaxConcurrency: stickyAccount.Concurrency,
-											Timeout:        cfg.StickySessionWaitTimeout,
-											MaxWaiting:     cfg.StickySessionMaxWaiting,
-										})
-									}
+								if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+									preserveStickyBinding = true
+									stickyCacheMissReason = "adaptive_capacity_full"
 								} else {
-									stickyCacheMissReason = "wait_queue_full"
+									if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
+										s.logAnthropicAdaptiveStickyWouldBypass(stickyAccountID, "model_route")
+									}
+									waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
+									if waitingCount < cfg.StickySessionMaxWaiting {
+										// 会话数量限制检查（等待计划也需要占用会话配额）
+										if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
+											stickyCacheMissReason = "session_limit"
+											// 会话限制已满，继续到负载感知选择
+										} else {
+											// 必须走 newSelectionResult 以 hydrate 账号凭证：
+											// 调度快照中的账号是精简版（OAuth token 等被剥离），
+											// 直接返回会导致后续转发缺少凭证而鉴权失败。
+											return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
+												AccountID:      stickyAccountID,
+												MaxConcurrency: stickyCapacity,
+												Timeout:        cfg.StickySessionWaitTimeout,
+												MaxWaiting:     cfg.StickySessionMaxWaiting,
+											})
+										}
+									} else {
+										stickyCacheMissReason = "wait_queue_full"
+									}
 								}
 							}
 							// 粘性账号槽位满且等待队列已满，继续使用负载感知选择
@@ -422,42 +433,54 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			if len(routingAvailable) > 0 {
-				// 排序：优先级 > 负载率 > 最后使用时间
-				sort.SliceStable(routingAvailable, func(i, j int) bool {
-					a, b := routingAvailable[i], routingAvailable[j]
-					if a.account.Priority != b.account.Priority {
-						return a.account.Priority < b.account.Priority
-					}
-					if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
-						return a.loadInfo.LoadRate < b.loadInfo.LoadRate
-					}
-					switch {
-					case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
-						return true
-					case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
-						return false
-					case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
-						return false
-					default:
-						return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
-					}
-				})
-				shuffleWithinSortGroups(routingAvailable)
+				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, requestedModel, routingAvailable)
+				if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveRoutingOrder) > 0 {
+					routingAvailable = adaptiveRoutingOrder
+				} else {
+					// baseline 排序：优先级 > 负载率 > 最后使用时间
+					sort.SliceStable(routingAvailable, func(i, j int) bool {
+						a, b := routingAvailable[i], routingAvailable[j]
+						if a.account.Priority != b.account.Priority {
+							return a.account.Priority < b.account.Priority
+						}
+						if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
+							return a.loadInfo.LoadRate < b.loadInfo.LoadRate
+						}
+						switch {
+						case a.account.LastUsedAt == nil && b.account.LastUsedAt != nil:
+							return true
+						case a.account.LastUsedAt != nil && b.account.LastUsedAt == nil:
+							return false
+						case a.account.LastUsedAt == nil && b.account.LastUsedAt == nil:
+							return false
+						default:
+							return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
+						}
+					})
+					shuffleWithinSortGroups(routingAvailable)
+				}
 
 				// 4. 尝试获取槽位
 				for _, item := range routingAvailable {
-					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, item.account.Concurrency)
+					maxConcurrency := item.account.Concurrency
+					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+						maxConcurrency = adaptiveRoutingCapacities[item.account.ID]
+					}
+					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, maxConcurrency)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
 						if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
 							result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
 							continue
 						}
-						if sessionHash != "" && s.cache != nil {
+						if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
 							_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, item.account.ID, stickySessionTTL)
 						}
 						if s.debugModelRoutingEnabled() {
 							logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
+						}
+						if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
+							s.logAnthropicAdaptiveShadowDecision(adaptiveRoutingDecision, item.account.ID, "model_route", false)
 						}
 						return s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil)
 					}
@@ -472,12 +495,27 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					if s.debugModelRoutingEnabled() {
 						logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed wait: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 					}
-					return s.newSelectionResult(ctx, item.account, false, nil, &AccountWaitPlan{
+					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
+						s.logAnthropicAdaptiveShadowDecision(adaptiveRoutingDecision, item.account.ID, "model_route", false)
+					}
+					maxConcurrency := item.account.Concurrency
+					waitTimeout := cfg.StickySessionWaitTimeout
+					maxWaiting := cfg.StickySessionMaxWaiting
+					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+						maxConcurrency = adaptiveRoutingCapacities[item.account.ID]
+						waitTimeout = cfg.FallbackWaitTimeout
+						maxWaiting = cfg.FallbackMaxWaiting
+					}
+					selection, selectionErr := s.newSelectionResult(ctx, item.account, false, nil, &AccountWaitPlan{
 						AccountID:      item.account.ID,
-						MaxConcurrency: item.account.Concurrency,
-						Timeout:        cfg.StickySessionWaitTimeout,
-						MaxWaiting:     cfg.StickySessionMaxWaiting,
+						MaxConcurrency: maxConcurrency,
+						Timeout:        waitTimeout,
+						MaxWaiting:     maxWaiting,
 					})
+					if selection != nil {
+						selection.PreserveStickyBinding = preserveStickyBinding
+					}
+					return selection, selectionErr
 				}
 				// 所有路由账号会话限制都已满，继续到 Layer 2 回退
 			}
@@ -528,7 +566,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				)
 
 				if !clearSticky && platformOK && modelSupported && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
-					result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+					stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, account)
+					result, err := s.tryAcquireAccountSlot(ctx, accountID, stickyCapacity)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
 						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
@@ -547,32 +586,41 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							if s.cache != nil {
 								_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
 							}
+							s.markAnthropicAdaptiveStickyHit(anthropicAdaptiveMode)
 							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
 						}
 					} else {
+						if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+							preserveStickyBinding = true
+						}
 						slog.Debug("sticky.layer1_5_no_routing_slot_busy",
 							"account_id", accountID,
 							"session", shortSessionHash(sessionHash),
 						)
 					}
 
-					waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-					if waitingCount < cfg.StickySessionMaxWaiting {
-						// 会话数量限制检查（等待计划也需要占用会话配额）
-						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
-							// 会话限制已满，继续到 Layer 2
-						} else {
-							slog.Debug("sticky.layer1_5_no_routing_hit",
-								"account_id", accountID,
-								"session", shortSessionHash(sessionHash),
-								"result", "wait_plan",
-							)
-							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.Concurrency,
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
+					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
+						s.logAnthropicAdaptiveStickyWouldBypass(accountID, "load_balance")
+					}
+					if anthropicAdaptiveMode != AnthropicAdaptiveSchedulerModeEnforce {
+						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
+						if waitingCount < cfg.StickySessionMaxWaiting {
+							// 会话数量限制检查（等待计划也需要占用会话配额）
+							if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+								// 会话限制已满，继续到 Layer 2
+							} else {
+								slog.Debug("sticky.layer1_5_no_routing_hit",
+									"account_id", accountID,
+									"session", shortSessionHash(sessionHash),
+									"result", "wait_plan",
+								)
+								return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+									AccountID:      accountID,
+									MaxConcurrency: stickyCapacity,
+									Timeout:        cfg.StickySessionWaitTimeout,
+									MaxWaiting:     cfg.StickySessionMaxWaiting,
+								})
+							}
 						}
 					}
 				} else if !clearSticky {
@@ -660,6 +708,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
+	var adaptiveNormalDecision *AnthropicAdaptiveDecision
 	if err != nil {
 		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, candidates, groupID, sessionHash, preferOAuth); legacyErr != nil {
 			return nil, legacyErr
@@ -681,60 +730,123 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 		}
 
-		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
-		for len(available) > 0 {
-			// 1. 取优先级最小的集合
-			candidates := filterByMinPriority(available)
-			// 2. （可选）use-it-or-lose-it：优先选用会话窗口最早重置的账号
-			if cfg.PreferSoonestReset {
-				candidates = filterBySoonestReset(candidates)
-			}
-			// 3. 取负载率最低的集合
-			candidates = filterByMinLoadRate(candidates)
-			// 4. LRU 选择最久未用的账号
-			selected := selectByLRU(candidates, preferOAuth)
-			if selected == nil {
-				break
-			}
-
-			result, err := s.tryAcquireAccountSlot(ctx, selected.account.ID, selected.account.Concurrency)
-			if err == nil && result.Acquired {
-				// 会话数量限制检查
+		adaptiveOrder, adaptiveCapacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, requestedModel, available)
+		adaptiveNormalDecision = decision
+		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveOrder) > 0 {
+			for _, selected := range adaptiveOrder {
+				maxConcurrency := adaptiveCapacities[selected.account.ID]
+				result, acquireErr := s.tryAcquireAccountSlot(ctx, selected.account.ID, maxConcurrency)
+				if acquireErr != nil || !result.Acquired {
+					continue
+				}
 				if !s.checkAndRegisterSession(ctx, selected.account, sessionHash) {
-					result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
-				} else {
-					if sessionHash != "" && s.cache != nil {
-						_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.account.ID, stickySessionTTL)
-					}
-					return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+					result.ReleaseFunc()
+					continue
 				}
+				if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
+					_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.account.ID, stickySessionTTL)
+				}
+				return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
 			}
+		} else {
+			// baseline 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
+			for len(available) > 0 {
+				// 1. 取优先级最小的集合
+				priorityCandidates := filterByMinPriority(available)
+				// 2. （可选）use-it-or-lose-it：优先选用会话窗口最早重置的账号
+				if cfg.PreferSoonestReset {
+					priorityCandidates = filterBySoonestReset(priorityCandidates)
+				}
+				// 3. 取负载率最低的集合
+				priorityCandidates = filterByMinLoadRate(priorityCandidates)
+				// 4. LRU 选择最久未用的账号
+				selected := selectByLRU(priorityCandidates, preferOAuth)
+				if selected == nil {
+					break
+				}
 
-			// 移除已尝试的账号，重新进行分层过滤
-			selectedID := selected.account.ID
-			newAvailable := make([]accountWithLoad, 0, len(available)-1)
-			for _, acc := range available {
-				if acc.account.ID != selectedID {
-					newAvailable = append(newAvailable, acc)
+				result, err := s.tryAcquireAccountSlot(ctx, selected.account.ID, selected.account.Concurrency)
+				if err == nil && result.Acquired {
+					// 会话数量限制检查
+					if !s.checkAndRegisterSession(ctx, selected.account, sessionHash) {
+						result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
+					} else {
+						if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
+							_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.account.ID, stickySessionTTL)
+						}
+						if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
+							s.logAnthropicAdaptiveShadowDecision(adaptiveNormalDecision, selected.account.ID, "load_balance", false)
+						}
+						return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+					}
 				}
+
+				// 移除已尝试的账号，重新进行分层过滤
+				selectedID := selected.account.ID
+				newAvailable := make([]accountWithLoad, 0, len(available)-1)
+				for _, acc := range available {
+					if acc.account.ID != selectedID {
+						newAvailable = append(newAvailable, acc)
+					}
+				}
+				available = newAvailable
 			}
-			available = newAvailable
 		}
 	}
 
 	// ============ Layer 3: 兜底排队 ============
-	s.sortCandidatesForFallback(candidates, preferOAuth, cfg.FallbackSelectionMode)
-	for _, acc := range candidates {
+	fallbackCandidates := candidates
+	fallbackCapacities := make(map[int64]int)
+	var adaptiveFallbackDecision *AnthropicAdaptiveDecision
+	if err == nil && anthropicAdaptiveMode != "" {
+		fallbackWithLoad := make([]accountWithLoad, 0, len(candidates))
+		for _, acc := range candidates {
+			loadInfo := loadMap[acc.ID]
+			if loadInfo == nil {
+				loadInfo = &AccountLoadInfo{AccountID: acc.ID}
+			}
+			fallbackWithLoad = append(fallbackWithLoad, accountWithLoad{account: acc, loadInfo: loadInfo})
+		}
+		ordered, capacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, requestedModel, fallbackWithLoad)
+		adaptiveFallbackDecision = decision
+		fallbackCapacities = capacities
+		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(ordered) > 0 {
+			fallbackCandidates = make([]*Account, 0, len(ordered))
+			for _, item := range ordered {
+				fallbackCandidates = append(fallbackCandidates, item.account)
+			}
+		} else {
+			s.sortCandidatesForFallback(fallbackCandidates, preferOAuth, cfg.FallbackSelectionMode)
+		}
+	} else {
+		s.sortCandidatesForFallback(fallbackCandidates, preferOAuth, cfg.FallbackSelectionMode)
+	}
+	for _, acc := range fallbackCandidates {
 		// 会话数量限制检查（等待计划也需要占用会话配额）
 		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
 			continue // 会话限制已满，尝试下一个账号
 		}
-		return s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
+		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
+			decision := adaptiveNormalDecision
+			if decision == nil {
+				decision = adaptiveFallbackDecision
+			}
+			s.logAnthropicAdaptiveShadowDecision(decision, acc.ID, "load_balance", false)
+		}
+		maxConcurrency := acc.Concurrency
+		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+			maxConcurrency = fallbackCapacities[acc.ID]
+		}
+		selection, selectionErr := s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
 			AccountID:      acc.ID,
-			MaxConcurrency: acc.Concurrency,
+			MaxConcurrency: maxConcurrency,
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})
+		if selection != nil {
+			selection.PreserveStickyBinding = preserveStickyBinding
+		}
+		return selection, selectionErr
 	}
 	return nil, ErrNoAvailableAccounts
 }

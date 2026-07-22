@@ -6,6 +6,17 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
+func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveSchedulerSettings, enabled *bool, mode *string) service.AnthropicAdaptiveSchedulerSettings {
+	settings := previous
+	if enabled != nil {
+		settings.AnthropicAdaptiveSchedulerEnabled = *enabled
+	}
+	if mode != nil {
+		settings.AnthropicAdaptiveSchedulerMode = *mode
+	}
+	return service.NormalizeAnthropicAdaptiveSchedulerSettings(settings)
+}
+
 type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerEnabled                    *bool    `json:"openai_adaptive_scheduler_enabled"`
 	OpenAIAdaptiveSchedulerDiagnosticLogEnabled       *bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`

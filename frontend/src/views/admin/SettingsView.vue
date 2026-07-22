@@ -4217,6 +4217,60 @@
               </div>
 
               <div
+                class="space-y-4 border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-testid="anthropic-adaptive-scheduler-settings"
+              >
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.anthropicAdaptiveScheduler.title") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.anthropicAdaptiveScheduler.description") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.anthropic_adaptive_scheduler_enabled"
+                    data-testid="anthropic-adaptive-scheduler-toggle"
+                  />
+                </div>
+
+                <div
+                  class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                  :class="{
+                    'opacity-60': !form.anthropic_adaptive_scheduler_enabled,
+                  }"
+                >
+                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.anthropicAdaptiveScheduler.mode") }}
+                  </span>
+                  <div
+                    class="inline-flex w-full overflow-hidden rounded-md border border-gray-300 sm:w-auto dark:border-dark-600"
+                    role="group"
+                    :aria-label="t('admin.settings.anthropicAdaptiveScheduler.mode')"
+                  >
+                    <button
+                      v-for="mode in (['shadow', 'enforce'] as const)"
+                      :key="mode"
+                      type="button"
+                      class="min-w-0 flex-1 px-3 py-1.5 text-sm transition-colors sm:min-w-28"
+                      :class="
+                        form.anthropic_adaptive_scheduler_mode === mode
+                          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                          : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700'
+                      "
+                      :disabled="!form.anthropic_adaptive_scheduler_enabled"
+                      :aria-pressed="form.anthropic_adaptive_scheduler_mode === mode"
+                      :data-testid="`anthropic-adaptive-mode-${mode}`"
+                      @click="form.anthropic_adaptive_scheduler_mode = mode"
+                    >
+                      {{ t(`admin.settings.anthropicAdaptiveScheduler.modes.${mode}`) }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div
                 v-if="!form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
               >
@@ -8719,6 +8773,8 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_weight_upstream_cost: string;
   openai_advanced_scheduler_weight_previous_response: string;
   openai_advanced_scheduler_weight_session_sticky: string;
+  anthropic_adaptive_scheduler_enabled: boolean;
+  anthropic_adaptive_scheduler_mode: string;
   openai_adaptive_scheduler_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate: number;
@@ -9034,6 +9090,8 @@ const form = reactive<SettingsForm>({
   openai_advanced_scheduler_weight_upstream_cost: "",
   openai_advanced_scheduler_weight_previous_response: "",
   openai_advanced_scheduler_weight_session_sticky: "",
+  anthropic_adaptive_scheduler_enabled: false,
+  anthropic_adaptive_scheduler_mode: "shadow",
   openai_adaptive_scheduler_enabled: false,
   openai_adaptive_scheduler_diagnostic_log_enabled: false,
   openai_adaptive_scheduler_mode: "enforce",
@@ -10008,6 +10066,8 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.anthropic_adaptive_scheduler_mode =
+      form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow";
     applyOpenAIAdaptiveSchedulerRecommendedValues();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
@@ -10624,6 +10684,10 @@ async function saveSettings() {
         form.openai_advanced_scheduler_weight_previous_response.trim(),
       openai_advanced_scheduler_weight_session_sticky:
         form.openai_advanced_scheduler_weight_session_sticky.trim(),
+      anthropic_adaptive_scheduler_enabled:
+        form.anthropic_adaptive_scheduler_enabled,
+      anthropic_adaptive_scheduler_mode:
+        form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow",
       openai_adaptive_scheduler_enabled:
         form.openai_adaptive_scheduler_enabled,
       openai_adaptive_scheduler_diagnostic_log_enabled:

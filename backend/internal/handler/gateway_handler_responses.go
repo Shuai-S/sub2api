@@ -228,6 +228,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
+		h.gatewayService.ReportAnthropicAdaptiveResult(requestCtx, account, reqModel, result, err)
 
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError

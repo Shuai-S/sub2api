@@ -252,6 +252,8 @@ type UpdateSettingsRequest struct {
 	OpenAIOAuthSchedulingRateMultiplier  *float64 `json:"openai_oauth_scheduling_rate_multiplier"`
 	OpenAIAdvancedSchedulerEnabled       *bool    `json:"openai_advanced_scheduler_enabled"`
 	OpenAIAdaptiveSchedulerSettingsUpdateRequest
+	AnthropicAdaptiveSchedulerEnabled                  *bool   `json:"anthropic_adaptive_scheduler_enabled"`
+	AnthropicAdaptiveSchedulerMode                     *string `json:"anthropic_adaptive_scheduler_mode"`
 	OpenAIAdvancedSchedulerStickyWeightedEnabled       *bool   `json:"openai_advanced_scheduler_sticky_weighted_enabled"`
 	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled *bool   `json:"openai_advanced_scheduler_subscription_priority_enabled"`
 	OpenAIAdvancedSchedulerLBTopK                      *string `json:"openai_advanced_scheduler_lb_top_k"`
@@ -1527,7 +1529,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
-		OpenAIAdaptiveScheduler: mergeOpenAIAdaptiveSchedulerSettings(previousSettings.OpenAIAdaptiveScheduler, req.OpenAIAdaptiveSchedulerSettingsUpdateRequest),
+		OpenAIAdaptiveScheduler:    mergeOpenAIAdaptiveSchedulerSettings(previousSettings.OpenAIAdaptiveScheduler, req.OpenAIAdaptiveSchedulerSettingsUpdateRequest),
+		AnthropicAdaptiveScheduler: mergeAnthropicAdaptiveSchedulerSettings(previousSettings.AnthropicAdaptiveScheduler, req.AnthropicAdaptiveSchedulerEnabled, req.AnthropicAdaptiveSchedulerMode),
 		OpenAIAdvancedSchedulerStickyWeightedEnabled: func() bool {
 			if req.OpenAIAdvancedSchedulerStickyWeightedEnabled != nil {
 				return *req.OpenAIAdvancedSchedulerStickyWeightedEnabled
@@ -1936,6 +1939,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIOAuthSchedulingRateMultiplier:                    updatedSettings.OpenAIOAuthSchedulingRateMultiplier,
 		OpenAIAdvancedSchedulerEnabled:                         updatedSettings.OpenAIAdvancedSchedulerEnabled,
 		OpenAIAdaptiveSchedulerSettings:                        updatedSettings.OpenAIAdaptiveScheduler,
+		AnthropicAdaptiveSchedulerSettings:                     updatedSettings.AnthropicAdaptiveScheduler,
 		OpenAIAdvancedSchedulerStickyWeightedEnabled:           updatedSettings.OpenAIAdvancedSchedulerStickyWeightedEnabled,
 		OpenAIAdvancedSchedulerSubscriptionPriorityEnabled:     updatedSettings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
 		OpenAIAdvancedSchedulerLBTopK:                          updatedSettings.OpenAIAdvancedSchedulerLBTopK,

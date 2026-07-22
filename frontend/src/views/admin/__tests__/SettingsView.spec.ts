@@ -482,6 +482,8 @@ const baseSettingsResponse = {
   openai_advanced_scheduler_effective_weight_upstream_cost: "0",
   openai_advanced_scheduler_effective_weight_previous_response: "5",
   openai_advanced_scheduler_effective_weight_session_sticky: "3",
+  anthropic_adaptive_scheduler_enabled: false,
+  anthropic_adaptive_scheduler_mode: "shadow",
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
   balance_low_notify_recharge_url: "",
@@ -837,6 +839,35 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         enable_anthropic_cache_ttl_1h_injection: true,
+      }),
+    );
+  });
+
+  it("loads and saves Anthropic adaptive scheduler mode", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      anthropic_adaptive_scheduler_enabled: true,
+      anthropic_adaptive_scheduler_mode: "shadow",
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const toggle = wrapper.get(
+      '[data-testid="anthropic-adaptive-scheduler-toggle"]',
+    );
+    expect((toggle.element as HTMLInputElement).checked).toBe(true);
+    await wrapper
+      .get('[data-testid="anthropic-adaptive-mode-enforce"]')
+      .trigger("click");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anthropic_adaptive_scheduler_enabled: true,
+        anthropic_adaptive_scheduler_mode: "enforce",
       }),
     );
   });

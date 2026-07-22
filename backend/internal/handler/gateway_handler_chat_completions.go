@@ -254,6 +254,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
+		h.gatewayService.ReportAnthropicAdaptiveResult(c.Request.Context(), account, reqModel, result, err)
 
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
