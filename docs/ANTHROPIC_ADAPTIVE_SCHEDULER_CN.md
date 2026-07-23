@@ -190,6 +190,23 @@ adaptive shadow  = 当前选择生效 + Adaptive 旁路观察
 adaptive disabled = 当前选择
 ```
 
+## 运维学习面板
+
+运维监控页面提供独立的 **Anthropic 自适应调度学习** 面板，接口为：
+
+```text
+GET /api/v1/admin/ops/dashboard/anthropic-adaptive-learning
+```
+
+接口只读取进程内学习状态和实时并发，不调用 `BuildOrder`、`observeLoad` 或结果上报逻辑，
+因此刷新面板不会增加样本、升降容量或改变账号顺序。支持分组、状态、TopN/分页、排序和
+`model` 查询参数；`model` 仅用于选择 `sonnet`、`opus`、`haiku` 或 `other` 延迟分桶并重算
+当前参考分。
+
+面板展示估算/配置容量、并发与等待、R/C/L/E 分项、Success EMA、健康与容量两类近期样本、
+连续失败、冷却时间和模型族 TTFT/总延迟 EMA。Shadow 模式展示旁路学习结果但不代表调度已
+执行该顺序；只有 Enforce 模式才会实际应用自适应容量和候选顺序，且可用 Sticky 账号仍优先。
+
 ## 接口设计
 
 ```go
@@ -464,18 +481,42 @@ Adaptive 不再次写 `RateLimitResetAt` 或 `OverloadUntil`。
 
 ## 配置
 
-管理端只暴露两个配置：
+管理端暴露总开关、运行模式以及调度器的全部运行参数。所有参数保存后通过短 TTL 缓存热更新，
+不需要重启服务：
 
 | Key | 默认值 | 说明 |
 | --- | --- | --- |
 | `anthropic_adaptive_scheduler_enabled` | `false` | 总开关 |
 | `anthropic_adaptive_scheduler_mode` | `shadow` | `shadow` / `enforce` |
+| `anthropic_adaptive_scheduler_top_k` | `8` | 每个优先级层进入 Softmax 的候选数 |
+| `anthropic_adaptive_scheduler_softmax_temperature` | `0.35` | Top K 内选择温度 |
+| `anthropic_adaptive_scheduler_initial_reliability` | `0.5` | 新建内存状态的可靠性先验 |
+| `anthropic_adaptive_scheduler_consecutive_failure_penalty` | `0.25` | 连续失败可靠性惩罚 |
+| `anthropic_adaptive_scheduler_neutral_latency_score` | `0.5` | 无延迟样本时的中性分 |
+| `anthropic_adaptive_scheduler_success_ema_alpha` | `0.05` | 成功率 EMA Alpha |
+| `anthropic_adaptive_scheduler_latency_ema_alpha` | `0.05` | TTFT 和总延迟 EMA Alpha |
+| `anthropic_adaptive_scheduler_weight_reliability` | `0.50` | 可靠性权重 |
+| `anthropic_adaptive_scheduler_weight_capacity` | `0.30` | 容量权重 |
+| `anthropic_adaptive_scheduler_weight_latency` | `0.15` | 延迟权重 |
+| `anthropic_adaptive_scheduler_weight_exploration` | `0.05` | 探索权重 |
+| `anthropic_adaptive_scheduler_capacity_probe_load_threshold` | `0.80` | 允许容量增长的负载阈值 |
+| `anthropic_adaptive_scheduler_capacity_success_threshold` | `0.97` | 允许容量增长的成功率阈值 |
+| `anthropic_adaptive_scheduler_capacity_increase_step` | `1` | 单次容量增长步长 |
+| `anthropic_adaptive_scheduler_min_capacity` | `1` | 学习容量下限 |
+| `anthropic_adaptive_scheduler_capacity_failure_threshold` | `3` | 允许缩容的连续容量失败数 |
+| `anthropic_adaptive_scheduler_min_recent_samples_for_shrink` | `30` | 允许缩容的最少容量样本数 |
+| `anthropic_adaptive_scheduler_shrink_error_threshold` | `0.25` | 允许缩容的容量错误率阈值 |
+| `anthropic_adaptive_scheduler_shrink_factor_soft` | `0.85` | 普通缩容保留比例 |
+| `anthropic_adaptive_scheduler_shrink_factor_hard` | `0.60` | 持续失败缩容保留比例 |
+| `anthropic_adaptive_scheduler_hard_shrink_failure_multiplier` | `2` | 触发硬缩容的连续失败倍数 |
+| `anthropic_adaptive_scheduler_learning_window_seconds` | `1200` | 近期样本学习窗口 |
+| `anthropic_adaptive_scheduler_cooldown_seconds` | `60` | 缩容后禁止升容的时长 |
 
-TopK、Softmax 温度、EMA、容量增长和缩减参数第一版使用代码内默认值，不在设置页
-暴露。后续确有调参需求时再增加高级配置，避免复制 OpenAI 设置页的大量参数。
+权重作为总分的直接系数；四项权重全为 `0` 时恢复默认权重。数值在后端统一校验和归一化，
+其中硬缩容系数不会高于软缩容系数，学习容量也不会低于配置下限或高于账号并发上限。
 
 设置读取沿用 OpenAI 的短 TTL + singleflight + generation 模式，保证热路径不会每次访问
-数据库。切换开关或模式后最多在短缓存 TTL 内生效。
+数据库。更新任一调度参数后最多在短缓存 TTL 内生效。
 
 ## 代码组织
 

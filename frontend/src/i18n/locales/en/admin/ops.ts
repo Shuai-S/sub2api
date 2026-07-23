@@ -239,6 +239,74 @@ export default {
           lastEvent: 'Last Event'
         }
       },
+      anthropicAdaptiveLearning: {
+        title: 'Anthropic Adaptive Scheduling Learning',
+        description: 'Shows Anthropic account learning state, capacity estimates, and model-family latency in shadow or enforce mode.',
+        disabled: 'Disabled',
+        realtimeOff: 'Realtime concurrency off',
+        openSettings: 'Scheduler Settings',
+        openSettingsTitle: 'Open system settings to tune or disable Anthropic adaptive scheduling',
+        failedToLoad: 'Failed to load Anthropic adaptive scheduling learning state',
+        empty: 'No Anthropic accounts for the current filters',
+        queued: 'queued {count}',
+        successEma: 'success EMA',
+        failureStreaks: 'failure streak H {health} / C {capacity}',
+        capacityFailureRate: 'capacity fail',
+        cooldownRemaining: 'cooldown {value}',
+        totalAccounts: 'Total accounts: {total}',
+        scoreNote: 'Current score is a 0-100 reference score. R/C/L/E represent reliability, remaining capacity, selected model-family latency, and exploration. Real scheduling still prioritizes an available sticky account and depends on model capability, exclusions, and request context.',
+        mode: {
+          enforce: 'Enforce',
+          shadow: 'Shadow'
+        },
+        modelFamily: {
+          sonnet: 'Sonnet',
+          opus: 'Opus',
+          haiku: 'Haiku',
+          other: 'Other models',
+          tooltip: 'Select the Anthropic model family used for latency EMA and scheduling score calculation'
+        },
+        status: {
+          disabled: 'Disabled',
+          unavailable: 'Unavailable',
+          cooldown: 'Cooldown',
+          highError: 'High capacity error',
+          saturated: 'Saturated',
+          learning: 'Learning',
+          unlearned: 'Unlearned',
+          healthy: 'Healthy'
+        },
+        statusFilter: {
+          all: 'All statuses'
+        },
+        summary: {
+          tracked: 'Tracked',
+          healthy: 'Healthy',
+          risk: 'Risk',
+          unavailable: 'Unavailable'
+        },
+        settings: {
+          topK: 'TopK',
+          temperature: 'Softmax temp',
+          weights: 'R/C/L/E weights',
+          window: 'Window',
+          minSamples: 'Shrink samples',
+          capacityFailures: 'Capacity failures',
+          shrinkThreshold: 'Shrink threshold',
+          shrinkFactors: 'Soft/hard shrink'
+        },
+        table: {
+          account: 'Account',
+          status: 'Status',
+          capacity: 'Learned Capacity',
+          capacityHint: 'estimated/config',
+          load: 'Load',
+          score: 'Current Score',
+          samples: 'Samples',
+          latency: 'TTFT/Total',
+          lastEvent: 'Last Event'
+        }
+      },
       fullscreen: {
         enter: 'Enter Fullscreen'
       },

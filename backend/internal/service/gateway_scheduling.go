@@ -209,7 +209,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	if len(accounts) == 0 {
 		return nil, ErrNoAvailableAccounts
 	}
-	anthropicAdaptiveMode := s.anthropicAdaptiveMode(ctx, platform, accounts)
+	anthropicAdaptiveMode, anthropicAdaptiveSettings := s.anthropicAdaptiveMode(ctx, platform, accounts)
 	preserveStickyBinding := false
 	ctx = s.withWindowCostPrefetch(ctx, accounts)
 	ctx = s.withRPMPrefetch(ctx, accounts)
@@ -333,7 +333,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						rpmPass := gatePass && s.isAccountSchedulableForRPM(ctx, stickyAccount, true)
 
 						if rpmPass { // 粘性会话窗口费用+RPM 检查
-							stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, stickyAccount)
+							stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, anthropicAdaptiveSettings, stickyAccount)
 							result, err := s.tryAcquireAccountSlot(ctx, stickyAccountID, stickyCapacity)
 							if err == nil && result.Acquired {
 								// 会话数量限制检查
@@ -433,7 +433,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			if len(routingAvailable) > 0 {
-				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, requestedModel, routingAvailable)
+				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, routingAvailable)
 				if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveRoutingOrder) > 0 {
 					routingAvailable = adaptiveRoutingOrder
 				} else {
@@ -566,7 +566,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				)
 
 				if !clearSticky && platformOK && modelSupported && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
-					stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, account)
+					stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, anthropicAdaptiveSettings, account)
 					result, err := s.tryAcquireAccountSlot(ctx, accountID, stickyCapacity)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
@@ -730,7 +730,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 		}
 
-		adaptiveOrder, adaptiveCapacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, requestedModel, available)
+		adaptiveOrder, adaptiveCapacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, available)
 		adaptiveNormalDecision = decision
 		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveOrder) > 0 {
 			for _, selected := range adaptiveOrder {
@@ -807,7 +807,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 			fallbackWithLoad = append(fallbackWithLoad, accountWithLoad{account: acc, loadInfo: loadInfo})
 		}
-		ordered, capacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, requestedModel, fallbackWithLoad)
+		ordered, capacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, fallbackWithLoad)
 		adaptiveFallbackDecision = decision
 		fallbackCapacities = capacities
 		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(ordered) > 0 {

@@ -262,6 +262,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/dashboard/error-distribution", h.Admin.Ops.GetDashboardErrorDistribution)
 		ops.GET("/dashboard/openai-token-stats", h.Admin.Ops.GetDashboardOpenAITokenStats)
 		ops.GET("/dashboard/openai-adaptive-learning", h.Admin.Ops.GetDashboardOpenAIAdaptiveLearning)
+		ops.GET("/dashboard/anthropic-adaptive-learning", h.Admin.Ops.GetDashboardAnthropicAdaptiveLearning)
 	}
 }
 

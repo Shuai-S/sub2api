@@ -6,13 +6,110 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveSchedulerSettings, enabled *bool, mode *string) service.AnthropicAdaptiveSchedulerSettings {
+type AnthropicAdaptiveSchedulerSettingsUpdateRequest struct {
+	AnthropicAdaptiveSchedulerEnabled                     *bool    `json:"anthropic_adaptive_scheduler_enabled"`
+	AnthropicAdaptiveSchedulerMode                        *string  `json:"anthropic_adaptive_scheduler_mode"`
+	AnthropicAdaptiveSchedulerTopK                        *int     `json:"anthropic_adaptive_scheduler_top_k"`
+	AnthropicAdaptiveSchedulerSoftmaxTemperature          *float64 `json:"anthropic_adaptive_scheduler_softmax_temperature"`
+	AnthropicAdaptiveSchedulerWeightReliability           *float64 `json:"anthropic_adaptive_scheduler_weight_reliability"`
+	AnthropicAdaptiveSchedulerWeightCapacity              *float64 `json:"anthropic_adaptive_scheduler_weight_capacity"`
+	AnthropicAdaptiveSchedulerWeightLatency               *float64 `json:"anthropic_adaptive_scheduler_weight_latency"`
+	AnthropicAdaptiveSchedulerWeightExploration           *float64 `json:"anthropic_adaptive_scheduler_weight_exploration"`
+	AnthropicAdaptiveSchedulerInitialReliability          *float64 `json:"anthropic_adaptive_scheduler_initial_reliability"`
+	AnthropicAdaptiveSchedulerConsecutiveFailurePenalty   *float64 `json:"anthropic_adaptive_scheduler_consecutive_failure_penalty"`
+	AnthropicAdaptiveSchedulerNeutralLatencyScore         *float64 `json:"anthropic_adaptive_scheduler_neutral_latency_score"`
+	AnthropicAdaptiveSchedulerSuccessEMAAlpha             *float64 `json:"anthropic_adaptive_scheduler_success_ema_alpha"`
+	AnthropicAdaptiveSchedulerLatencyEMAAlpha             *float64 `json:"anthropic_adaptive_scheduler_latency_ema_alpha"`
+	AnthropicAdaptiveSchedulerCapacitySuccessThreshold    *float64 `json:"anthropic_adaptive_scheduler_capacity_success_threshold"`
+	AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold  *float64 `json:"anthropic_adaptive_scheduler_capacity_probe_load_threshold"`
+	AnthropicAdaptiveSchedulerCapacityFailureThreshold    *int     `json:"anthropic_adaptive_scheduler_capacity_failure_threshold"`
+	AnthropicAdaptiveSchedulerMinRecentSamplesForShrink   *int     `json:"anthropic_adaptive_scheduler_min_recent_samples_for_shrink"`
+	AnthropicAdaptiveSchedulerShrinkErrorThreshold        *float64 `json:"anthropic_adaptive_scheduler_shrink_error_threshold"`
+	AnthropicAdaptiveSchedulerLearningWindowSeconds       *int     `json:"anthropic_adaptive_scheduler_learning_window_seconds"`
+	AnthropicAdaptiveSchedulerCooldownSeconds             *int     `json:"anthropic_adaptive_scheduler_cooldown_seconds"`
+	AnthropicAdaptiveSchedulerShrinkFactorSoft            *float64 `json:"anthropic_adaptive_scheduler_shrink_factor_soft"`
+	AnthropicAdaptiveSchedulerShrinkFactorHard            *float64 `json:"anthropic_adaptive_scheduler_shrink_factor_hard"`
+	AnthropicAdaptiveSchedulerCapacityIncreaseStep        *int     `json:"anthropic_adaptive_scheduler_capacity_increase_step"`
+	AnthropicAdaptiveSchedulerMinCapacity                 *int     `json:"anthropic_adaptive_scheduler_min_capacity"`
+	AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier *int     `json:"anthropic_adaptive_scheduler_hard_shrink_failure_multiplier"`
+}
+
+func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveSchedulerSettings, req AnthropicAdaptiveSchedulerSettingsUpdateRequest) service.AnthropicAdaptiveSchedulerSettings {
 	settings := previous
-	if enabled != nil {
-		settings.AnthropicAdaptiveSchedulerEnabled = *enabled
+	if req.AnthropicAdaptiveSchedulerEnabled != nil {
+		settings.AnthropicAdaptiveSchedulerEnabled = *req.AnthropicAdaptiveSchedulerEnabled
 	}
-	if mode != nil {
-		settings.AnthropicAdaptiveSchedulerMode = *mode
+	if req.AnthropicAdaptiveSchedulerMode != nil {
+		settings.AnthropicAdaptiveSchedulerMode = strings.TrimSpace(*req.AnthropicAdaptiveSchedulerMode)
+	}
+	if req.AnthropicAdaptiveSchedulerTopK != nil {
+		settings.AnthropicAdaptiveSchedulerTopK = *req.AnthropicAdaptiveSchedulerTopK
+	}
+	if req.AnthropicAdaptiveSchedulerSoftmaxTemperature != nil {
+		settings.AnthropicAdaptiveSchedulerSoftmaxTemperature = *req.AnthropicAdaptiveSchedulerSoftmaxTemperature
+	}
+	if req.AnthropicAdaptiveSchedulerWeightReliability != nil {
+		settings.AnthropicAdaptiveSchedulerWeightReliability = *req.AnthropicAdaptiveSchedulerWeightReliability
+	}
+	if req.AnthropicAdaptiveSchedulerWeightCapacity != nil {
+		settings.AnthropicAdaptiveSchedulerWeightCapacity = *req.AnthropicAdaptiveSchedulerWeightCapacity
+	}
+	if req.AnthropicAdaptiveSchedulerWeightLatency != nil {
+		settings.AnthropicAdaptiveSchedulerWeightLatency = *req.AnthropicAdaptiveSchedulerWeightLatency
+	}
+	if req.AnthropicAdaptiveSchedulerWeightExploration != nil {
+		settings.AnthropicAdaptiveSchedulerWeightExploration = *req.AnthropicAdaptiveSchedulerWeightExploration
+	}
+	if req.AnthropicAdaptiveSchedulerInitialReliability != nil {
+		settings.AnthropicAdaptiveSchedulerInitialReliability = *req.AnthropicAdaptiveSchedulerInitialReliability
+	}
+	if req.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty != nil {
+		settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty = *req.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty
+	}
+	if req.AnthropicAdaptiveSchedulerNeutralLatencyScore != nil {
+		settings.AnthropicAdaptiveSchedulerNeutralLatencyScore = *req.AnthropicAdaptiveSchedulerNeutralLatencyScore
+	}
+	if req.AnthropicAdaptiveSchedulerSuccessEMAAlpha != nil {
+		settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha = *req.AnthropicAdaptiveSchedulerSuccessEMAAlpha
+	}
+	if req.AnthropicAdaptiveSchedulerLatencyEMAAlpha != nil {
+		settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha = *req.AnthropicAdaptiveSchedulerLatencyEMAAlpha
+	}
+	if req.AnthropicAdaptiveSchedulerCapacitySuccessThreshold != nil {
+		settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold = *req.AnthropicAdaptiveSchedulerCapacitySuccessThreshold
+	}
+	if req.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold != nil {
+		settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold = *req.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold
+	}
+	if req.AnthropicAdaptiveSchedulerCapacityFailureThreshold != nil {
+		settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold = *req.AnthropicAdaptiveSchedulerCapacityFailureThreshold
+	}
+	if req.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink != nil {
+		settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink = *req.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink
+	}
+	if req.AnthropicAdaptiveSchedulerShrinkErrorThreshold != nil {
+		settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold = *req.AnthropicAdaptiveSchedulerShrinkErrorThreshold
+	}
+	if req.AnthropicAdaptiveSchedulerLearningWindowSeconds != nil {
+		settings.AnthropicAdaptiveSchedulerLearningWindowSeconds = *req.AnthropicAdaptiveSchedulerLearningWindowSeconds
+	}
+	if req.AnthropicAdaptiveSchedulerCooldownSeconds != nil {
+		settings.AnthropicAdaptiveSchedulerCooldownSeconds = *req.AnthropicAdaptiveSchedulerCooldownSeconds
+	}
+	if req.AnthropicAdaptiveSchedulerShrinkFactorSoft != nil {
+		settings.AnthropicAdaptiveSchedulerShrinkFactorSoft = *req.AnthropicAdaptiveSchedulerShrinkFactorSoft
+	}
+	if req.AnthropicAdaptiveSchedulerShrinkFactorHard != nil {
+		settings.AnthropicAdaptiveSchedulerShrinkFactorHard = *req.AnthropicAdaptiveSchedulerShrinkFactorHard
+	}
+	if req.AnthropicAdaptiveSchedulerCapacityIncreaseStep != nil {
+		settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep = *req.AnthropicAdaptiveSchedulerCapacityIncreaseStep
+	}
+	if req.AnthropicAdaptiveSchedulerMinCapacity != nil {
+		settings.AnthropicAdaptiveSchedulerMinCapacity = *req.AnthropicAdaptiveSchedulerMinCapacity
+	}
+	if req.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier != nil {
+		settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier = *req.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier
 	}
 	return service.NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 }

@@ -20,16 +20,50 @@ func TestAnthropicAdaptiveSchedulerDefaultsDisabled(t *testing.T) {
 
 func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 	settings := parseAnthropicAdaptiveSchedulerSettings(map[string]string{
-		SettingKeyAnthropicAdaptiveSchedulerEnabled: "true",
-		SettingKeyAnthropicAdaptiveSchedulerMode:    "ENFORCE",
+		SettingKeyAnthropicAdaptiveSchedulerEnabled:                     "true",
+		SettingKeyAnthropicAdaptiveSchedulerMode:                        "ENFORCE",
+		SettingKeyAnthropicAdaptiveSchedulerTopK:                        "4",
+		SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature:          "0.2",
+		SettingKeyAnthropicAdaptiveSchedulerCapacityIncreaseStep:        "2",
+		SettingKeyAnthropicAdaptiveSchedulerMinRecentSamplesForShrink:   "12",
+		SettingKeyAnthropicAdaptiveSchedulerWeightReliability:           "0.7",
+		SettingKeyAnthropicAdaptiveSchedulerWeightCapacity:              "0.2",
+		SettingKeyAnthropicAdaptiveSchedulerWeightLatency:               "0.1",
+		SettingKeyAnthropicAdaptiveSchedulerWeightExploration:           "0",
+		SettingKeyAnthropicAdaptiveSchedulerHardShrinkFailureMultiplier: "3",
 	})
 
 	require.True(t, settings.AnthropicAdaptiveSchedulerEnabled)
 	require.Equal(t, AnthropicAdaptiveSchedulerModeEnforce, settings.AnthropicAdaptiveSchedulerMode)
-	require.Equal(t, map[string]string{
-		SettingKeyAnthropicAdaptiveSchedulerEnabled: "true",
-		SettingKeyAnthropicAdaptiveSchedulerMode:    "enforce",
-	}, anthropicAdaptiveSchedulerSettingsToMap(settings))
+	require.Equal(t, 4, settings.AnthropicAdaptiveSchedulerTopK)
+	require.Equal(t, 0.2, settings.AnthropicAdaptiveSchedulerSoftmaxTemperature)
+	require.Equal(t, 2, settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep)
+	require.Equal(t, 12, settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink)
+	require.Equal(t, 3, settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier)
+	serialized := anthropicAdaptiveSchedulerSettingsToMap(settings)
+	require.Len(t, serialized, 25)
+	require.Equal(t, "true", serialized[SettingKeyAnthropicAdaptiveSchedulerEnabled])
+	require.Equal(t, "enforce", serialized[SettingKeyAnthropicAdaptiveSchedulerMode])
+	require.Equal(t, "4", serialized[SettingKeyAnthropicAdaptiveSchedulerTopK])
+	require.Equal(t, "0.2", serialized[SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature])
+}
+
+func TestNormalizeAnthropicAdaptiveSettingsRejectsInvalidValues(t *testing.T) {
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	settings.AnthropicAdaptiveSchedulerTopK = 0
+	settings.AnthropicAdaptiveSchedulerShrinkFactorSoft = 0.4
+	settings.AnthropicAdaptiveSchedulerShrinkFactorHard = 0.8
+	settings.AnthropicAdaptiveSchedulerWeightReliability = 0
+	settings.AnthropicAdaptiveSchedulerWeightCapacity = 0
+	settings.AnthropicAdaptiveSchedulerWeightLatency = 0
+	settings.AnthropicAdaptiveSchedulerWeightExploration = 0
+
+	settings = NormalizeAnthropicAdaptiveSchedulerSettings(settings)
+
+	require.Equal(t, 8, settings.AnthropicAdaptiveSchedulerTopK)
+	require.Equal(t, 0.4, settings.AnthropicAdaptiveSchedulerShrinkFactorHard)
+	require.Equal(t, 0.5, settings.AnthropicAdaptiveSchedulerWeightReliability)
+	require.Equal(t, 0.3, settings.AnthropicAdaptiveSchedulerWeightCapacity)
 }
 
 func TestAnthropicAdaptiveOrderPreservesPriorityLayers(t *testing.T) {
@@ -40,7 +74,7 @@ func TestAnthropicAdaptiveOrderPreservesPriorityLayers(t *testing.T) {
 		{Account: &Account{ID: 4, Priority: 1}, LoadInfo: &AccountLoadInfo{}, Score: 0.2},
 	}
 
-	order := buildAnthropicAdaptiveOrder(candidates)
+	order := buildAnthropicAdaptiveOrder(candidates, DefaultAnthropicAdaptiveSchedulerSettings())
 
 	require.Len(t, order, len(candidates))
 	require.Equal(t, 1, order[0].Account.Priority)
@@ -59,7 +93,7 @@ func TestAnthropicAdaptiveSoftmaxOrderIsCompleteAndUnique(t *testing.T) {
 		})
 	}
 
-	order := buildAnthropicAdaptiveOrder(candidates)
+	order := buildAnthropicAdaptiveOrder(candidates, DefaultAnthropicAdaptiveSchedulerSettings())
 
 	require.Len(t, order, len(candidates))
 	seen := make(map[int64]struct{}, len(order))
@@ -71,6 +105,67 @@ func TestAnthropicAdaptiveSoftmaxOrderIsCompleteAndUnique(t *testing.T) {
 	}
 }
 
+func TestAnthropicAdaptiveBuildOrderUsesConfiguredTopKAndScores(t *testing.T) {
+	scheduler := newAnthropicAdaptiveScheduler()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	settings.AnthropicAdaptiveSchedulerTopK = 1
+	settings.AnthropicAdaptiveSchedulerWeightReliability = 1
+	settings.AnthropicAdaptiveSchedulerWeightCapacity = 0
+	settings.AnthropicAdaptiveSchedulerWeightLatency = 0
+	settings.AnthropicAdaptiveSchedulerWeightExploration = 0
+
+	scheduler.state.mu.Lock()
+	first := scheduler.state.ensureLocked(&Account{ID: 1, Concurrency: 5}, time.Now(), settings)
+	first.SuccessEMA = 0.2
+	second := scheduler.state.ensureLocked(&Account{ID: 2, Concurrency: 5}, time.Now(), settings)
+	second.SuccessEMA = 0.9
+	scheduler.state.mu.Unlock()
+
+	decision := scheduler.BuildOrder(AnthropicAdaptiveScheduleRequest{
+		RequestedModel: "claude-sonnet-4-6",
+		Candidates: []accountWithLoad{
+			{account: &Account{ID: 1, Priority: 1, Concurrency: 5}, loadInfo: &AccountLoadInfo{AccountID: 1}},
+			{account: &Account{ID: 2, Priority: 1, Concurrency: 5}, loadInfo: &AccountLoadInfo{AccountID: 2}},
+		},
+		Settings: &settings,
+	})
+
+	require.Equal(t, 1, decision.TopK)
+	require.Equal(t, int64(2), decision.SelectedAccountID)
+	require.Greater(t, decision.Order[0].ReliabilityScore, decision.Order[1].ReliabilityScore)
+}
+
+func TestAnthropicAdaptiveCapacityLearningUsesConfiguredGrowthAndShrink(t *testing.T) {
+	store := newAnthropicAdaptiveStateStore()
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	now := time.Now()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep = 3
+	settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold = 0.9
+	settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold = 1
+	settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink = 1
+	settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold = 0
+	settings.AnthropicAdaptiveSchedulerShrinkFactorSoft = 0.5
+	settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier = 10
+
+	store.mu.Lock()
+	state := store.ensureLocked(account, now, settings)
+	state.EstimatedCapacity = 2
+	state.SuccessEMA = 0.99
+	state.ConsecutiveSuccess = 2
+	store.mu.Unlock()
+
+	stateAfterGrowth := store.observeLoad(account, &AccountLoadInfo{CurrentConcurrency: 2}, now, settings)
+	require.Equal(t, 5, stateAfterGrowth.EstimatedCapacity)
+
+	_, decreased := store.report(AnthropicAdaptiveScheduleReport{
+		Account:        account,
+		CapacitySample: true,
+	}, now, settings)
+	require.True(t, decreased)
+	require.Equal(t, 2, store.effectiveCapacity(account, settings))
+}
+
 func TestAnthropicAdaptiveShadowOnlyObservesOrder(t *testing.T) {
 	svc := &GatewayService{anthropicAdaptiveScheduler: newAnthropicAdaptiveScheduler()}
 	input := []accountWithLoad{
@@ -78,7 +173,8 @@ func TestAnthropicAdaptiveShadowOnlyObservesOrder(t *testing.T) {
 		{account: &Account{ID: 2, Priority: 1, Concurrency: 5}, loadInfo: &AccountLoadInfo{AccountID: 2}},
 	}
 
-	actual, capacities, decision := svc.anthropicAdaptiveOrder(AnthropicAdaptiveSchedulerModeShadow, "claude-sonnet-4-6", input)
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	actual, capacities, decision := svc.anthropicAdaptiveOrder(AnthropicAdaptiveSchedulerModeShadow, settings, "claude-sonnet-4-6", input)
 
 	require.Equal(t, []int64{1, 2}, adaptiveAccountIDs(actual))
 	require.NotNil(t, capacities)
@@ -92,16 +188,17 @@ func TestAnthropicAdaptiveCapacityKeepsUnlimitedConcurrency(t *testing.T) {
 	unlimited := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 0}
 	limited := &Account{ID: 2, Platform: PlatformAnthropic, Concurrency: 10}
 	now := time.Now()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
 
 	scheduler.state.mu.Lock()
-	state := scheduler.state.ensureLocked(limited, now)
+	state := scheduler.state.ensureLocked(limited, now, settings)
 	state.EstimatedCapacity = 4
 	scheduler.state.mu.Unlock()
 
-	require.Zero(t, scheduler.state.effectiveCapacity(unlimited))
-	require.Zero(t, svc.anthropicAdaptiveCapacity(AnthropicAdaptiveSchedulerModeEnforce, unlimited))
-	require.Equal(t, limited.Concurrency, svc.anthropicAdaptiveCapacity(AnthropicAdaptiveSchedulerModeShadow, limited))
-	require.Equal(t, 4, svc.anthropicAdaptiveCapacity(AnthropicAdaptiveSchedulerModeEnforce, limited))
+	require.Zero(t, scheduler.state.effectiveCapacity(unlimited, settings))
+	require.Zero(t, svc.anthropicAdaptiveCapacity(AnthropicAdaptiveSchedulerModeEnforce, settings, unlimited))
+	require.Equal(t, limited.Concurrency, svc.anthropicAdaptiveCapacity(AnthropicAdaptiveSchedulerModeShadow, settings, limited))
+	require.Equal(t, 4, svc.anthropicAdaptiveCapacity(AnthropicAdaptiveSchedulerModeEnforce, settings, limited))
 }
 
 func TestClassifyAnthropicAdaptiveResultOnlyMarksExplicitConcurrencyForCapacity(t *testing.T) {
@@ -189,9 +286,10 @@ func TestAnthropicAdaptiveCapacityShrinksOnExplicitConcurrencyEvidence(t *testin
 	store := newAnthropicAdaptiveStateStore()
 	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
 	now := time.Now()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
 
 	store.mu.Lock()
-	state := store.ensureLocked(account, now)
+	state := store.ensureLocked(account, now, settings)
 	state.EstimatedCapacity = 10
 	state.RecentWindowStartedAt = now
 	state.RecentCapacitySamples = 29
@@ -204,10 +302,10 @@ func TestAnthropicAdaptiveCapacityShrinksOnExplicitConcurrencyEvidence(t *testin
 		HealthSample:   true,
 		CapacitySample: true,
 		TerminalReason: "concurrency_limit",
-	}, now)
+	}, now, settings)
 
 	require.True(t, decreased)
-	require.Equal(t, 8, store.effectiveCapacity(account))
+	require.Equal(t, 8, store.effectiveCapacity(account, settings))
 }
 
 func adaptiveAccountIDs(candidates []accountWithLoad) []int64 {

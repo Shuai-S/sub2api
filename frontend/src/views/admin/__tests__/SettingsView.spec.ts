@@ -848,6 +848,8 @@ describe("admin SettingsView payment visible method controls", () => {
       ...baseSettingsResponse,
       anthropic_adaptive_scheduler_enabled: true,
       anthropic_adaptive_scheduler_mode: "shadow",
+      anthropic_adaptive_scheduler_top_k: 4,
+      anthropic_adaptive_scheduler_softmax_temperature: 0.2,
     });
 
     const wrapper = mountView();
@@ -858,6 +860,16 @@ describe("admin SettingsView payment visible method controls", () => {
       '[data-testid="anthropic-adaptive-scheduler-toggle"]',
     );
     expect((toggle.element as HTMLInputElement).checked).toBe(true);
+    const topKInput = wrapper.get(
+      '[data-testid="anthropic-adaptive-scheduler-top-k"]',
+    );
+    expect((topKInput.element as HTMLInputElement).value).toBe("4");
+    expect(
+      wrapper
+        .get('[data-testid="anthropic-adaptive-scheduler-parameters"]')
+        .findAll("svg.cursor-help"),
+    ).toHaveLength(23);
+    await topKInput.setValue("6");
     await wrapper
       .get('[data-testid="anthropic-adaptive-mode-enforce"]')
       .trigger("click");
@@ -868,6 +880,10 @@ describe("admin SettingsView payment visible method controls", () => {
       expect.objectContaining({
         anthropic_adaptive_scheduler_enabled: true,
         anthropic_adaptive_scheduler_mode: "enforce",
+        anthropic_adaptive_scheduler_top_k: 6,
+        anthropic_adaptive_scheduler_softmax_temperature: 0.2,
+        anthropic_adaptive_scheduler_capacity_increase_step: 1,
+        anthropic_adaptive_scheduler_weight_reliability: 0.5,
       }),
     );
   });

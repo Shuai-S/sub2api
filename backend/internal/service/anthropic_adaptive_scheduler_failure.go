@@ -19,7 +19,7 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 	if !report.HealthSample && !report.CapacitySample && !report.Success {
 		return
 	}
-	_, decreased := s.anthropicAdaptiveScheduler.state.report(report, s.anthropicAdaptiveScheduler.now())
+	_, decreased := s.anthropicAdaptiveScheduler.state.report(report, s.anthropicAdaptiveScheduler.now(), settings)
 	if decreased {
 		s.anthropicAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}

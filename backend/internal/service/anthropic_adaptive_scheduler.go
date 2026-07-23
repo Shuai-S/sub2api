@@ -45,43 +45,45 @@ func (s *anthropicAdaptiveScheduler) SnapshotMetrics() AnthropicAdaptiveMetricsS
 	}
 }
 
-func (s *GatewayService) anthropicAdaptiveMode(ctx context.Context, platform string, accounts []Account) string {
+func (s *GatewayService) anthropicAdaptiveMode(ctx context.Context, platform string, accounts []Account) (string, AnthropicAdaptiveSchedulerSettings) {
+	defaults := DefaultAnthropicAdaptiveSchedulerSettings()
 	if s == nil || s.anthropicAdaptiveScheduler == nil || s.settingService == nil || platform != PlatformAnthropic || len(accounts) == 0 {
-		return ""
+		return "", defaults
 	}
 	for i := range accounts {
 		if accounts[i].Platform != PlatformAnthropic {
-			return ""
+			return "", defaults
 		}
 	}
 	settings, err := s.settingService.GetAnthropicAdaptiveSchedulerSettings(ctx)
 	if err != nil {
 		slog.Warn("anthropic_adaptive_settings_read_failed", "error", err)
-		return ""
+		return "", defaults
 	}
 	if !settings.AnthropicAdaptiveSchedulerEnabled {
-		return ""
+		return "", settings
 	}
-	return normalizeAnthropicAdaptiveSchedulerMode(settings.AnthropicAdaptiveSchedulerMode)
+	return normalizeAnthropicAdaptiveSchedulerMode(settings.AnthropicAdaptiveSchedulerMode), settings
 }
 
-func (s *GatewayService) anthropicAdaptiveCapacity(mode string, account *Account) int {
+func (s *GatewayService) anthropicAdaptiveCapacity(mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) int {
 	if mode != AnthropicAdaptiveSchedulerModeEnforce || s == nil || s.anthropicAdaptiveScheduler == nil || account == nil || account.Platform != PlatformAnthropic {
 		if account == nil {
 			return 0
 		}
 		return account.Concurrency
 	}
-	return s.anthropicAdaptiveScheduler.state.effectiveCapacity(account)
+	return s.anthropicAdaptiveScheduler.state.effectiveCapacity(account, settings)
 }
 
-func (s *GatewayService) anthropicAdaptiveOrder(mode, requestedModel string, candidates []accountWithLoad) ([]accountWithLoad, map[int64]int, *AnthropicAdaptiveDecision) {
+func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicAdaptiveSchedulerSettings, requestedModel string, candidates []accountWithLoad) ([]accountWithLoad, map[int64]int, *AnthropicAdaptiveDecision) {
 	if mode == "" || s == nil || s.anthropicAdaptiveScheduler == nil || len(candidates) == 0 {
 		return candidates, nil, nil
 	}
 	decision := s.anthropicAdaptiveScheduler.BuildOrder(AnthropicAdaptiveScheduleRequest{
 		RequestedModel: requestedModel,
 		Candidates:     candidates,
+		Settings:       &settings,
 	})
 	if len(decision.Order) == 0 {
 		s.anthropicAdaptiveScheduler.fallbackTotal.Add(1)

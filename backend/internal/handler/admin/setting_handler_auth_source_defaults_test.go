@@ -232,6 +232,11 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 		"openai_adaptive_scheduler_min_recent_samples_for_shrink": 20,
 		"openai_adaptive_scheduler_learning_window_seconds":       1800,
 		"openai_adaptive_scheduler_weight_cost":                   0.35,
+		"anthropic_adaptive_scheduler_enabled":                    true,
+		"anthropic_adaptive_scheduler_mode":                       "enforce",
+		"anthropic_adaptive_scheduler_top_k":                      5,
+		"anthropic_adaptive_scheduler_capacity_increase_step":     2,
+		"anthropic_adaptive_scheduler_weight_reliability":         0.65,
 		"openai_advanced_scheduler_subscription_priority_enabled": true,
 	}
 	rawBody, err := json.Marshal(body)
@@ -259,6 +264,11 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "20", repo.values["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
 	require.Equal(t, "1800", repo.values["openai_adaptive_scheduler_learning_window_seconds"])
 	require.Equal(t, "0.35", repo.values["openai_adaptive_scheduler_weight_cost"])
+	require.Equal(t, "true", repo.values[service.SettingKeyAnthropicAdaptiveSchedulerEnabled])
+	require.Equal(t, "enforce", repo.values[service.SettingKeyAnthropicAdaptiveSchedulerMode])
+	require.Equal(t, "5", repo.values[service.SettingKeyAnthropicAdaptiveSchedulerTopK])
+	require.Equal(t, "2", repo.values[service.SettingKeyAnthropicAdaptiveSchedulerCapacityIncreaseStep])
+	require.Equal(t, "0.65", repo.values[service.SettingKeyAnthropicAdaptiveSchedulerWeightReliability])
 	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
 
 	var resp response.Response
@@ -279,6 +289,11 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, float64(20), data["openai_adaptive_scheduler_min_recent_samples_for_shrink"])
 	require.Equal(t, float64(1800), data["openai_adaptive_scheduler_learning_window_seconds"])
 	require.Equal(t, 0.35, data["openai_adaptive_scheduler_weight_cost"])
+	require.Equal(t, true, data["anthropic_adaptive_scheduler_enabled"])
+	require.Equal(t, "enforce", data["anthropic_adaptive_scheduler_mode"])
+	require.Equal(t, float64(5), data["anthropic_adaptive_scheduler_top_k"])
+	require.Equal(t, float64(2), data["anthropic_adaptive_scheduler_capacity_increase_step"])
+	require.Equal(t, 0.65, data["anthropic_adaptive_scheduler_weight_reliability"])
 	require.Equal(t, true, data["openai_advanced_scheduler_subscription_priority_enabled"])
 }
 

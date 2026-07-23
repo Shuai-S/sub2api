@@ -6,15 +6,6 @@ import (
 	"sort"
 )
 
-const (
-	anthropicAdaptiveTopK               = 8
-	anthropicAdaptiveSoftmaxTemperature = 0.35
-	anthropicAdaptiveWeightReliability  = 0.50
-	anthropicAdaptiveWeightCapacity     = 0.30
-	anthropicAdaptiveWeightLatency      = 0.15
-	anthropicAdaptiveWeightExploration  = 0.05
-)
-
 type AnthropicAdaptiveCandidate struct {
 	Account           *Account
 	LoadInfo          *AccountLoadInfo
@@ -38,6 +29,7 @@ type AnthropicAdaptiveDecision struct {
 type AnthropicAdaptiveScheduleRequest struct {
 	RequestedModel string
 	Candidates     []accountWithLoad
+	Settings       *AnthropicAdaptiveSchedulerSettings
 }
 
 func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleRequest) AnthropicAdaptiveDecision {
@@ -45,6 +37,10 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 	if s == nil || s.state == nil || len(req.Candidates) == 0 {
 		decision.FallbackReason = "no_candidates"
 		return decision
+	}
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	if req.Settings != nil {
+		settings = NormalizeAnthropicAdaptiveSchedulerSettings(*req.Settings)
 	}
 	now := s.now()
 	candidates := make([]AnthropicAdaptiveCandidate, 0, len(req.Candidates))
@@ -56,11 +52,11 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 		if load == nil {
 			load = &AccountLoadInfo{AccountID: item.account.ID}
 		}
-		state := s.state.observeLoad(item.account, load, now)
+		state := s.state.observeLoad(item.account, load, now, settings)
 		candidates = append(candidates, AnthropicAdaptiveCandidate{
 			Account:           item.account,
 			LoadInfo:          load,
-			EffectiveCapacity: s.state.effectiveCapacity(item.account),
+			EffectiveCapacity: s.state.effectiveCapacity(item.account, settings),
 			state:             state,
 		})
 	}
@@ -68,17 +64,17 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 		decision.FallbackReason = "no_candidates"
 		return decision
 	}
-	applyAnthropicAdaptiveScores(candidates, req.RequestedModel)
-	decision.Order = buildAnthropicAdaptiveOrder(candidates)
+	applyAnthropicAdaptiveScores(candidates, req.RequestedModel, settings)
+	decision.Order = buildAnthropicAdaptiveOrder(candidates, settings)
 	decision.CandidateCount = len(candidates)
-	decision.TopK = min(anthropicAdaptiveTopK, len(candidates))
+	decision.TopK = min(settings.AnthropicAdaptiveSchedulerTopK, len(candidates))
 	if len(decision.Order) > 0 {
 		decision.SelectedAccountID = decision.Order[0].Account.ID
 	}
 	return decision
 }
 
-func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, requestedModel string) {
+func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, requestedModel string, settings AnthropicAdaptiveSchedulerSettings) {
 	family := anthropicAdaptiveModelFamily(requestedModel)
 	minLatency, maxLatency := math.Inf(1), math.Inf(-1)
 	hasLatency := false
@@ -101,7 +97,7 @@ func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, reque
 		candidate := &candidates[i]
 		candidate.ReliabilityScore = clamp01(candidate.state.SuccessEMA)
 		if candidate.state.ConsecutiveFailure > 0 {
-			candidate.ReliabilityScore /= 1 + 0.25*float64(candidate.state.ConsecutiveFailure)
+			candidate.ReliabilityScore /= 1 + settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty*float64(candidate.state.ConsecutiveFailure)
 		}
 		if candidate.EffectiveCapacity <= 0 {
 			candidate.CapacityScore = 1
@@ -109,19 +105,19 @@ func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, reque
 			remaining := candidate.EffectiveCapacity - candidate.LoadInfo.CurrentConcurrency
 			candidate.CapacityScore = clamp01(float64(remaining) / float64(candidate.EffectiveCapacity))
 		}
-		candidate.LatencyScore = 0.5
+		candidate.LatencyScore = settings.AnthropicAdaptiveSchedulerNeutralLatencyScore
 		if hasLatency && latencies[i] > 0 {
-			candidate.LatencyScore = 1 - normalizeAdaptiveValue(latencies[i], minLatency, maxLatency, 0.5)
+			candidate.LatencyScore = 1 - normalizeAdaptiveValue(latencies[i], minLatency, maxLatency, 1-settings.AnthropicAdaptiveSchedulerNeutralLatencyScore)
 		}
 		candidate.ExplorationScore = 1 / math.Sqrt(float64(candidate.state.TotalSamples+1))
-		candidate.Score = anthropicAdaptiveWeightReliability*candidate.ReliabilityScore +
-			anthropicAdaptiveWeightCapacity*candidate.CapacityScore +
-			anthropicAdaptiveWeightLatency*candidate.LatencyScore +
-			anthropicAdaptiveWeightExploration*candidate.ExplorationScore
+		candidate.Score = settings.AnthropicAdaptiveSchedulerWeightReliability*candidate.ReliabilityScore +
+			settings.AnthropicAdaptiveSchedulerWeightCapacity*candidate.CapacityScore +
+			settings.AnthropicAdaptiveSchedulerWeightLatency*candidate.LatencyScore +
+			settings.AnthropicAdaptiveSchedulerWeightExploration*candidate.ExplorationScore
 	}
 }
 
-func buildAnthropicAdaptiveOrder(candidates []AnthropicAdaptiveCandidate) []AnthropicAdaptiveCandidate {
+func buildAnthropicAdaptiveOrder(candidates []AnthropicAdaptiveCandidate, settings AnthropicAdaptiveSchedulerSettings) []AnthropicAdaptiveCandidate {
 	priorities := make([]int, 0)
 	byPriority := make(map[int][]AnthropicAdaptiveCandidate)
 	for _, candidate := range candidates {
@@ -144,14 +140,14 @@ func buildAnthropicAdaptiveOrder(candidates []AnthropicAdaptiveCandidate) []Anth
 			}
 			return ranked[i].Account.ID < ranked[j].Account.ID
 		})
-		topK := min(anthropicAdaptiveTopK, len(ranked))
-		order = appendAnthropicAdaptiveSoftmaxOrder(order, ranked[:topK])
+		topK := min(settings.AnthropicAdaptiveSchedulerTopK, len(ranked))
+		order = appendAnthropicAdaptiveSoftmaxOrder(order, ranked[:topK], settings.AnthropicAdaptiveSchedulerSoftmaxTemperature)
 		order = append(order, ranked[topK:]...)
 	}
 	return order
 }
 
-func appendAnthropicAdaptiveSoftmaxOrder(order, candidates []AnthropicAdaptiveCandidate) []AnthropicAdaptiveCandidate {
+func appendAnthropicAdaptiveSoftmaxOrder(order, candidates []AnthropicAdaptiveCandidate, temperature float64) []AnthropicAdaptiveCandidate {
 	pool := append([]AnthropicAdaptiveCandidate(nil), candidates...)
 	for len(pool) > 0 {
 		maxScore := pool[0].Score
@@ -161,7 +157,7 @@ func appendAnthropicAdaptiveSoftmaxOrder(order, candidates []AnthropicAdaptiveCa
 		weights := make([]float64, len(pool))
 		total := 0.0
 		for i, candidate := range pool {
-			weight := math.Exp((candidate.Score - maxScore) / anthropicAdaptiveSoftmaxTemperature)
+			weight := math.Exp((candidate.Score - maxScore) / temperature)
 			if math.IsNaN(weight) || math.IsInf(weight, 0) || weight <= 0 {
 				weight = 1
 			}

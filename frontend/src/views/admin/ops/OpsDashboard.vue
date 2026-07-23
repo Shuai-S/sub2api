@@ -102,6 +102,15 @@
         />
       </div>
 
+      <!-- Row: Anthropic Adaptive Scheduler Learning -->
+      <div v-if="opsEnabled && showAnthropicAdaptiveLearning && !(loading && !hasLoadedOnce)" class="grid grid-cols-1 gap-6">
+        <OpsAnthropicAdaptiveLearningCard
+          :platform-filter="platform"
+          :group-id-filter="groupId"
+          :refresh-token="dashboardRefreshToken"
+        />
+      </div>
+
       <!-- Alert Events -->
       <OpsAlertEventsCard v-if="opsEnabled && showAlertEvents && !(loading && !hasLoadedOnce)" />
 
@@ -175,6 +184,7 @@ import OpsSwitchRateTrendChart from './components/OpsSwitchRateTrendChart.vue'
 import OpsAlertEventsCard from './components/OpsAlertEventsCard.vue'
 import OpsOpenAITokenStatsCard from './components/OpsOpenAITokenStatsCard.vue'
 import OpsOpenAIAdaptiveLearningCard from './components/OpsOpenAIAdaptiveLearningCard.vue'
+import OpsAnthropicAdaptiveLearningCard from './components/OpsAnthropicAdaptiveLearningCard.vue'
 import OpsSystemLogTable from './components/OpsSystemLogTable.vue'
 import OpsRequestDetailsModal, { type OpsRequestDetailsPreset } from './components/OpsRequestDetailsModal.vue'
 import OpsSettingsDialog from './components/OpsSettingsDialog.vue'
@@ -188,6 +198,7 @@ const { t } = useI18n()
 
 const opsEnabled = computed(() => adminSettingsStore.opsMonitoringEnabled)
 const showOpenAIAdaptiveLearning = computed(() => !platform.value || platform.value.toLowerCase() === 'openai')
+const showAnthropicAdaptiveLearning = computed(() => !platform.value || platform.value.toLowerCase() === 'anthropic')
 
 type TimeRange = '5m' | '30m' | '1h' | '6h' | '24h' | 'custom'
 const allowedTimeRanges = new Set<TimeRange>(['5m', '30m', '1h', '6h', '24h', 'custom'])

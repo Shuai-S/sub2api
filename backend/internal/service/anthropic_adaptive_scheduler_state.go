@@ -7,20 +7,6 @@ import (
 	"time"
 )
 
-const (
-	anthropicAdaptiveSuccessEMAAlpha          = 0.05
-	anthropicAdaptiveLatencyEMAAlpha          = 0.05
-	anthropicAdaptiveCapacitySuccessThreshold = 0.97
-	anthropicAdaptiveCapacityProbeThreshold   = 0.80
-	anthropicAdaptiveCapacityFailureThreshold = 3
-	anthropicAdaptiveMinCapacitySamples       = 30
-	anthropicAdaptiveCapacityErrorThreshold   = 0.25
-	anthropicAdaptiveLearningWindow           = 20 * time.Minute
-	anthropicAdaptiveCooldown                 = 60 * time.Second
-	anthropicAdaptiveSoftShrinkFactor         = 0.85
-	anthropicAdaptiveHardShrinkFactor         = 0.60
-)
-
 type anthropicAdaptiveLatencyState struct {
 	TTFTEMA    float64
 	LatencyEMA float64
@@ -56,7 +42,7 @@ func newAnthropicAdaptiveStateStore() *anthropicAdaptiveStateStore {
 	return &anthropicAdaptiveStateStore{accounts: make(map[int64]*anthropicAdaptiveAccountState)}
 }
 
-func defaultAnthropicAdaptiveAccountState(account *Account, now time.Time) anthropicAdaptiveAccountState {
+func defaultAnthropicAdaptiveAccountState(account *Account, now time.Time, settings AnthropicAdaptiveSchedulerSettings) anthropicAdaptiveAccountState {
 	capacity := 0
 	accountID := int64(0)
 	if account != nil {
@@ -68,7 +54,7 @@ func defaultAnthropicAdaptiveAccountState(account *Account, now time.Time) anthr
 	return anthropicAdaptiveAccountState{
 		AccountID:             accountID,
 		EstimatedCapacity:     capacity,
-		SuccessEMA:            0.5,
+		SuccessEMA:            settings.AnthropicAdaptiveSchedulerInitialReliability,
 		LatencyByModelFamily:  make(map[string]anthropicAdaptiveLatencyState, 4),
 		RecentWindowStartedAt: now,
 	}
@@ -86,7 +72,7 @@ func cloneAnthropicAdaptiveAccountState(state *anthropicAdaptiveAccountState) an
 	return clone
 }
 
-func (s *anthropicAdaptiveStateStore) snapshot(account *Account) anthropicAdaptiveAccountState {
+func (s *anthropicAdaptiveStateStore) snapshot(account *Account, settings AnthropicAdaptiveSchedulerSettings) anthropicAdaptiveAccountState {
 	if account == nil {
 		return anthropicAdaptiveAccountState{}
 	}
@@ -95,7 +81,7 @@ func (s *anthropicAdaptiveStateStore) snapshot(account *Account) anthropicAdapti
 	snapshot := cloneAnthropicAdaptiveAccountState(state)
 	s.mu.RUnlock()
 	if state == nil {
-		return defaultAnthropicAdaptiveAccountState(account, time.Now())
+		return defaultAnthropicAdaptiveAccountState(account, time.Now(), settings)
 	}
 	if account.Concurrency <= 0 {
 		snapshot.EstimatedCapacity = 0
@@ -105,11 +91,11 @@ func (s *anthropicAdaptiveStateStore) snapshot(account *Account) anthropicAdapti
 	return snapshot
 }
 
-func (s *anthropicAdaptiveStateStore) effectiveCapacity(account *Account) int {
+func (s *anthropicAdaptiveStateStore) effectiveCapacity(account *Account, settings AnthropicAdaptiveSchedulerSettings) int {
 	if account == nil || account.Concurrency <= 0 {
 		return 0
 	}
-	state := s.snapshot(account)
+	state := s.snapshot(account, settings)
 	capacity := state.EstimatedCapacity
 	if capacity <= 0 || capacity > account.Concurrency {
 		capacity = account.Concurrency
@@ -117,14 +103,14 @@ func (s *anthropicAdaptiveStateStore) effectiveCapacity(account *Account) int {
 	return capacity
 }
 
-func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *AccountLoadInfo, now time.Time) anthropicAdaptiveAccountState {
+func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *AccountLoadInfo, now time.Time, settings AnthropicAdaptiveSchedulerSettings) anthropicAdaptiveAccountState {
 	if account == nil {
 		return anthropicAdaptiveAccountState{}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state := s.ensureLocked(account, now)
-	s.resetWindowLocked(state, now)
+	state := s.ensureLocked(account, now, settings)
+	s.resetWindowLocked(state, now, settings)
 	if account.Concurrency <= 0 || state.EstimatedCapacity >= account.Concurrency || state.CooldownUntil.After(now) {
 		return cloneAnthropicAdaptiveAccountState(state)
 	}
@@ -132,11 +118,11 @@ func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *Accoun
 	if load != nil {
 		loadHigh = load.WaitingCount > 0
 		if state.EstimatedCapacity > 0 {
-			loadHigh = loadHigh || float64(load.CurrentConcurrency)/float64(state.EstimatedCapacity) >= anthropicAdaptiveCapacityProbeThreshold
+			loadHigh = loadHigh || float64(load.CurrentConcurrency)/float64(state.EstimatedCapacity) >= settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold
 		}
 	}
-	if loadHigh && state.SuccessEMA >= anthropicAdaptiveCapacitySuccessThreshold && state.ConsecutiveSuccess >= max(1, state.EstimatedCapacity) {
-		state.EstimatedCapacity++
+	if loadHigh && state.SuccessEMA >= settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold && state.ConsecutiveSuccess >= max(1, state.EstimatedCapacity) {
+		state.EstimatedCapacity += settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep
 		if state.EstimatedCapacity > account.Concurrency {
 			state.EstimatedCapacity = account.Concurrency
 		}
@@ -156,25 +142,25 @@ type AnthropicAdaptiveScheduleReport struct {
 	TerminalReason string
 }
 
-func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleReport, now time.Time) (capacityIncreased bool, capacityDecreased bool) {
+func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleReport, now time.Time, settings AnthropicAdaptiveSchedulerSettings) (capacityIncreased bool, capacityDecreased bool) {
 	if report.Account == nil {
 		return false, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	state := s.ensureLocked(report.Account, now)
-	s.resetWindowLocked(state, now)
+	state := s.ensureLocked(report.Account, now, settings)
+	s.resetWindowLocked(state, now, settings)
 
 	if report.HealthSample {
 		state.TotalSamples++
 		state.RecentHealthSamples++
 		if report.Success {
-			state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 1, anthropicAdaptiveSuccessEMAAlpha)
+			state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 1, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
 			state.ConsecutiveSuccess++
 			state.ConsecutiveFailure = 0
 			state.LastSuccessAt = now
 		} else {
-			state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 0, anthropicAdaptiveSuccessEMAAlpha)
+			state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 0, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
 			state.ConsecutiveSuccess = 0
 			state.ConsecutiveFailure++
 			state.RecentHealthFailures++
@@ -183,7 +169,7 @@ func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleRep
 	}
 
 	if report.Success {
-		s.observeLatencyLocked(state, report)
+		s.observeLatencyLocked(state, report, settings)
 	}
 
 	if report.CapacitySample && report.Account.Concurrency > 0 {
@@ -194,18 +180,19 @@ func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleRep
 			state.RecentCapacityFailures++
 			state.ConsecutiveCapacityFailure++
 			state.LastCapacityFailureAt = now
-			if s.shouldShrinkLocked(state, now) {
-				factor := anthropicAdaptiveSoftShrinkFactor
-				if state.ConsecutiveCapacityFailure >= anthropicAdaptiveCapacityFailureThreshold*2 {
-					factor = anthropicAdaptiveHardShrinkFactor
+			if s.shouldShrinkLocked(state, now, settings) {
+				factor := settings.AnthropicAdaptiveSchedulerShrinkFactorSoft
+				if state.ConsecutiveCapacityFailure >= settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold*settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier {
+					factor = settings.AnthropicAdaptiveSchedulerShrinkFactorHard
 				}
 				next := int(math.Floor(float64(state.EstimatedCapacity) * factor))
-				if next < 1 {
-					next = 1
+				minCapacity := min(settings.AnthropicAdaptiveSchedulerMinCapacity, report.Account.Concurrency)
+				if next < minCapacity {
+					next = minCapacity
 				}
 				if next < state.EstimatedCapacity {
 					state.EstimatedCapacity = next
-					state.CooldownUntil = now.Add(anthropicAdaptiveCooldown)
+					state.CooldownUntil = now.Add(time.Duration(settings.AnthropicAdaptiveSchedulerCooldownSeconds) * time.Second)
 					capacityDecreased = true
 				}
 			}
@@ -214,10 +201,10 @@ func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleRep
 	return false, capacityDecreased
 }
 
-func (s *anthropicAdaptiveStateStore) ensureLocked(account *Account, now time.Time) *anthropicAdaptiveAccountState {
+func (s *anthropicAdaptiveStateStore) ensureLocked(account *Account, now time.Time, settings AnthropicAdaptiveSchedulerSettings) *anthropicAdaptiveAccountState {
 	state := s.accounts[account.ID]
 	if state == nil {
-		initial := defaultAnthropicAdaptiveAccountState(account, now)
+		initial := defaultAnthropicAdaptiveAccountState(account, now, settings)
 		state = &initial
 		s.accounts[account.ID] = state
 	}
@@ -225,12 +212,15 @@ func (s *anthropicAdaptiveStateStore) ensureLocked(account *Account, now time.Ti
 		state.EstimatedCapacity = 0
 	} else if state.EstimatedCapacity <= 0 || state.EstimatedCapacity > account.Concurrency {
 		state.EstimatedCapacity = account.Concurrency
+	} else if minCapacity := min(settings.AnthropicAdaptiveSchedulerMinCapacity, account.Concurrency); state.EstimatedCapacity < minCapacity {
+		state.EstimatedCapacity = minCapacity
 	}
 	return state
 }
 
-func (s *anthropicAdaptiveStateStore) resetWindowLocked(state *anthropicAdaptiveAccountState, now time.Time) {
-	if state.RecentWindowStartedAt.IsZero() || now.Sub(state.RecentWindowStartedAt) >= anthropicAdaptiveLearningWindow {
+func (s *anthropicAdaptiveStateStore) resetWindowLocked(state *anthropicAdaptiveAccountState, now time.Time, settings AnthropicAdaptiveSchedulerSettings) {
+	learningWindow := time.Duration(settings.AnthropicAdaptiveSchedulerLearningWindowSeconds) * time.Second
+	if state.RecentWindowStartedAt.IsZero() || now.Sub(state.RecentWindowStartedAt) >= learningWindow {
 		state.RecentWindowStartedAt = now
 		state.RecentHealthSamples = 0
 		state.RecentHealthFailures = 0
@@ -239,21 +229,21 @@ func (s *anthropicAdaptiveStateStore) resetWindowLocked(state *anthropicAdaptive
 	}
 }
 
-func (s *anthropicAdaptiveStateStore) shouldShrinkLocked(state *anthropicAdaptiveAccountState, now time.Time) bool {
-	if state.EstimatedCapacity <= 1 || state.CooldownUntil.After(now) || state.ConsecutiveCapacityFailure < anthropicAdaptiveCapacityFailureThreshold || state.RecentCapacitySamples < anthropicAdaptiveMinCapacitySamples {
+func (s *anthropicAdaptiveStateStore) shouldShrinkLocked(state *anthropicAdaptiveAccountState, now time.Time, settings AnthropicAdaptiveSchedulerSettings) bool {
+	if state.EstimatedCapacity <= settings.AnthropicAdaptiveSchedulerMinCapacity || state.CooldownUntil.After(now) || state.ConsecutiveCapacityFailure < settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold || state.RecentCapacitySamples < settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink {
 		return false
 	}
-	return float64(state.RecentCapacityFailures)/float64(state.RecentCapacitySamples) >= anthropicAdaptiveCapacityErrorThreshold
+	return float64(state.RecentCapacityFailures)/float64(state.RecentCapacitySamples) >= settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold
 }
 
-func (s *anthropicAdaptiveStateStore) observeLatencyLocked(state *anthropicAdaptiveAccountState, report AnthropicAdaptiveScheduleReport) {
+func (s *anthropicAdaptiveStateStore) observeLatencyLocked(state *anthropicAdaptiveAccountState, report AnthropicAdaptiveScheduleReport, settings AnthropicAdaptiveSchedulerSettings) {
 	family := anthropicAdaptiveModelFamily(report.RequestedModel)
 	latency := state.LatencyByModelFamily[family]
 	if report.FirstTokenMs != nil && *report.FirstTokenMs >= 0 {
-		latency.TTFTEMA = updateAnthropicAdaptiveEMA(latency.TTFTEMA, float64(*report.FirstTokenMs), anthropicAdaptiveLatencyEMAAlpha)
+		latency.TTFTEMA = updateAnthropicAdaptiveEMA(latency.TTFTEMA, float64(*report.FirstTokenMs), settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha)
 	}
 	if report.DurationMs >= 0 {
-		latency.LatencyEMA = updateAnthropicAdaptiveEMA(latency.LatencyEMA, float64(report.DurationMs), anthropicAdaptiveLatencyEMAAlpha)
+		latency.LatencyEMA = updateAnthropicAdaptiveEMA(latency.LatencyEMA, float64(report.DurationMs), settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha)
 	}
 	latency.Samples++
 	state.LatencyByModelFamily[family] = latency

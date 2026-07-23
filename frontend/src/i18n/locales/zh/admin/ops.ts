@@ -235,6 +235,74 @@ export default {
           lastEvent: '最近事件'
         }
       },
+      anthropicAdaptiveLearning: {
+        title: 'Anthropic 自适应调度学习',
+        description: '展示观察/执行模式下的 Anthropic 账号学习状态、容量估算和模型族延迟。',
+        disabled: '已关闭',
+        realtimeOff: '实时并发关闭',
+        openSettings: '调度设置',
+        openSettingsTitle: '打开系统设置，调整或关闭 Anthropic 自适应调度',
+        failedToLoad: '加载 Anthropic 自适应调度学习状态失败',
+        empty: '当前筛选条件下暂无 Anthropic 账号',
+        queued: '排队 {count}',
+        successEma: '成功 EMA',
+        failureStreaks: '连续失败 H {health} / C {capacity}',
+        capacityFailureRate: '容量失败率',
+        cooldownRemaining: '冷却剩余 {value}',
+        totalAccounts: '账号总数：{total}',
+        scoreNote: '当前分值为 0-100 的参考分，R/C/L/E 分别表示可靠性、剩余容量、所选模型族延迟和探索分；真实调度仍优先命中可用粘性账号，并受模型能力、排除账号和请求上下文影响。',
+        mode: {
+          enforce: '执行模式',
+          shadow: '观察模式'
+        },
+        modelFamily: {
+          sonnet: 'Sonnet',
+          opus: 'Opus',
+          haiku: 'Haiku',
+          other: '其他模型',
+          tooltip: '选择用于延迟 EMA 和调度分值计算的 Anthropic 模型族'
+        },
+        status: {
+          disabled: '已关闭',
+          unavailable: '不可调度',
+          cooldown: '冷却中',
+          highError: '容量错误偏高',
+          saturated: '容量打满',
+          learning: '学习中',
+          unlearned: '未学习',
+          healthy: '健康'
+        },
+        statusFilter: {
+          all: '全部状态'
+        },
+        summary: {
+          tracked: '已学习账号',
+          healthy: '健康',
+          risk: '风险',
+          unavailable: '不可调度'
+        },
+        settings: {
+          topK: 'TopK',
+          temperature: 'Softmax 温度',
+          weights: 'R/C/L/E 权重',
+          window: '学习窗口',
+          minSamples: '缩容样本',
+          capacityFailures: '容量失败阈值',
+          shrinkThreshold: '缩容错误阈值',
+          shrinkFactors: '软/硬缩容'
+        },
+        table: {
+          account: '账号',
+          status: '状态',
+          capacity: '学习容量',
+          capacityHint: '估算/配置',
+          load: '负载',
+          score: '当前分值',
+          samples: '样本',
+          latency: '首包/总延迟',
+          lastEvent: '最近事件'
+        }
+      },
       customTimeRange: {
         startTime: '开始时间',
         endTime: '结束时间'

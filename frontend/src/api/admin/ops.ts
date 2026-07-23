@@ -384,6 +384,164 @@ export interface OpsOpenAIAdaptiveLearningParams {
   sort_order?: OpsOpenAIAdaptiveLearningSortOrder
 }
 
+export type OpsAnthropicAdaptiveLearningStatus =
+  | 'disabled'
+  | 'unavailable'
+  | 'cooldown'
+  | 'high_error'
+  | 'saturated'
+  | 'learning'
+  | 'unlearned'
+  | 'healthy'
+
+export interface OpsAnthropicAdaptiveLearningSettingsSnapshot {
+  top_k: number
+  softmax_temperature: number
+  weight_reliability: number
+  weight_capacity: number
+  weight_latency: number
+  weight_exploration: number
+  initial_reliability: number
+  consecutive_failure_penalty: number
+  neutral_latency_score: number
+  success_ema_alpha: number
+  latency_ema_alpha: number
+  capacity_success_threshold: number
+  capacity_probe_load_threshold: number
+  capacity_failure_threshold: number
+  min_recent_samples_for_shrink: number
+  shrink_error_threshold: number
+  learning_window_seconds: number
+  cooldown_seconds: number
+  shrink_factor_soft: number
+  shrink_factor_hard: number
+  capacity_increase_step: number
+  min_capacity: number
+  hard_shrink_failure_multiplier: number
+}
+
+export interface OpsAnthropicAdaptiveLearningSummary {
+  tracked_accounts: number
+  disabled_accounts: number
+  unlearned_accounts: number
+  learning_accounts: number
+  healthy_accounts: number
+  high_error_accounts: number
+  cooldown_accounts: number
+  saturated_accounts: number
+  unavailable_accounts: number
+}
+
+export interface OpsAnthropicAdaptiveLatencyLearningSnapshot {
+  model_family: string
+  ttft_ema: number
+  latency_ema: number
+  samples: number
+}
+
+export interface OpsAnthropicAdaptiveLearningAccount {
+  account_id: number
+  account_name: string
+  platform: string
+  type: string
+  account_status: string
+  schedulable: boolean
+  priority: number
+
+  configured_concurrency: number
+  estimated_capacity: number
+  effective_capacity: number
+
+  current_concurrency: number
+  waiting_count: number
+  load_percentage: number
+
+  scheduler_status: OpsAnthropicAdaptiveLearningStatus | string
+  status_reason?: string
+  learned: boolean
+
+  scheduler_score: number
+  reliability_score: number
+  capacity_score: number
+  latency_score: number
+  exploration_score: number
+
+  success_ema: number
+  model_family: string
+  ttft_ema: number
+  latency_ema: number
+  latency_samples: number
+  latency_by_model_family: OpsAnthropicAdaptiveLatencyLearningSnapshot[]
+
+  total_samples: number
+  recent_health_samples: number
+  recent_health_failures: number
+  recent_health_failure_rate: number
+  recent_capacity_samples: number
+  recent_capacity_failures: number
+  recent_capacity_failure_rate: number
+  consecutive_success: number
+  consecutive_failure: number
+  consecutive_capacity_failure: number
+
+  learning_window_started_at?: string
+  last_success_at?: string
+  last_failure_at?: string
+  last_capacity_failure_at?: string
+  cooldown_until?: string
+  cooldown_remaining_sec: number
+}
+
+export type OpsAnthropicAdaptiveLearningSortBy =
+  | 'account'
+  | 'status'
+  | 'capacity'
+  | 'load'
+  | 'score'
+  | 'samples'
+  | 'error'
+  | 'latency'
+  | 'last_event'
+
+export type OpsAnthropicAdaptiveLearningSortOrder = 'asc' | 'desc'
+
+export interface OpsAnthropicAdaptiveLearningResponse {
+  enabled: boolean
+  mode: string
+  realtime_enabled: boolean
+  generated_at: string
+  requested_model?: string
+  model_family: string
+  time_range?: OpsOpenAITokenStatsTimeRange
+  start_time?: string
+  end_time?: string
+  total_accounts: number
+  total?: number
+  returned_accounts: number
+  limit: number
+  page?: number
+  page_size?: number
+  top_n?: number
+  sort_by?: OpsAnthropicAdaptiveLearningSortBy
+  sort_order?: OpsAnthropicAdaptiveLearningSortOrder
+  settings: OpsAnthropicAdaptiveLearningSettingsSnapshot
+  summary: OpsAnthropicAdaptiveLearningSummary
+  accounts: OpsAnthropicAdaptiveLearningAccount[]
+}
+
+export interface OpsAnthropicAdaptiveLearningParams {
+  time_range?: OpsOpenAITokenStatsTimeRange
+  group_id?: number | null
+  model?: string
+  status?: OpsAnthropicAdaptiveLearningStatus | string
+  page?: number
+  page_size?: number
+  top_n?: number
+  limit?: number
+  sort_by?: OpsAnthropicAdaptiveLearningSortBy
+  sort_order?: OpsAnthropicAdaptiveLearningSortOrder
+}
+
 export interface OpsSystemMetricsSnapshot {
   id: number
   created_at: string
@@ -1230,6 +1388,17 @@ export async function getOpenAIAdaptiveLearning(
   return data
 }
 
+export async function getAnthropicAdaptiveLearning(
+  params: OpsAnthropicAdaptiveLearningParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsAnthropicAdaptiveLearningResponse> {
+  const { data } = await apiClient.get<OpsAnthropicAdaptiveLearningResponse>('/admin/ops/dashboard/anthropic-adaptive-learning', {
+    params,
+    signal: options.signal
+  })
+  return data
+}
+
 export type OpsErrorListView = 'errors' | 'excluded' | 'all'
 
 export type OpsErrorListQueryParams = {
@@ -1465,6 +1634,7 @@ export const opsAPI = {
   getErrorDistribution,
   getOpenAITokenStats,
   getOpenAIAdaptiveLearning,
+  getAnthropicAdaptiveLearning,
   getConcurrencyStats,
   getUserConcurrencyStats,
   getAccountAvailabilityStats,

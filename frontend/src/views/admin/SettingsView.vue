@@ -4241,8 +4241,11 @@
                     'opacity-60': !form.anthropic_adaptive_scheduler_enabled,
                   }"
                 >
-                  <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {{ t("admin.settings.anthropicAdaptiveScheduler.mode") }}
+                  <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>{{ t("admin.settings.anthropicAdaptiveScheduler.mode") }}</span>
+                    <SchedulerParamHelp
+                      :content="t('admin.settings.anthropicAdaptiveScheduler.tooltips.mode')"
+                    />
                   </span>
                   <div
                     class="inline-flex w-full overflow-hidden rounded-md border border-gray-300 sm:w-auto dark:border-dark-600"
@@ -4267,6 +4270,63 @@
                       {{ t(`admin.settings.anthropicAdaptiveScheduler.modes.${mode}`) }}
                     </button>
                   </div>
+                </div>
+
+                <div
+                  class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700"
+                  :class="{
+                    'opacity-60': !form.anthropic_adaptive_scheduler_enabled,
+                  }"
+                  data-testid="anthropic-adaptive-scheduler-parameters"
+                >
+                  <section
+                    v-for="section in anthropicAdaptiveSchedulerSections"
+                    :key="section.key"
+                    class="space-y-3"
+                  >
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      {{
+                        t(
+                          `admin.settings.anthropicAdaptiveScheduler.sections.${section.key}`,
+                        )
+                      }}
+                    </h3>
+                    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div v-for="field in section.fields" :key="field.key">
+                        <label
+                          class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300"
+                          :for="field.key"
+                        >
+                          <span>
+                            {{
+                              t(
+                                `admin.settings.anthropicAdaptiveScheduler.parameters.${field.label}`,
+                              )
+                            }}
+                          </span>
+                          <SchedulerParamHelp
+                            :content="
+                              t(
+                                `admin.settings.anthropicAdaptiveScheduler.tooltips.${field.label}`,
+                              )
+                            "
+                          />
+                        </label>
+                        <input
+                          :id="field.key"
+                          v-model.number="form[field.key]"
+                          class="input"
+                          type="number"
+                          :min="field.min"
+                          :max="field.max"
+                          :step="field.step"
+                          :placeholder="anthropicAdaptiveSchedulerPlaceholder(field.key)"
+                          :disabled="!form.anthropic_adaptive_scheduler_enabled"
+                          :data-testid="field.key.replace(/_/g, '-')"
+                        />
+                      </div>
+                    </div>
+                  </section>
                 </div>
               </div>
 
@@ -8775,6 +8835,29 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_weight_session_sticky: string;
   anthropic_adaptive_scheduler_enabled: boolean;
   anthropic_adaptive_scheduler_mode: string;
+  anthropic_adaptive_scheduler_top_k: number;
+  anthropic_adaptive_scheduler_softmax_temperature: number;
+  anthropic_adaptive_scheduler_weight_reliability: number;
+  anthropic_adaptive_scheduler_weight_capacity: number;
+  anthropic_adaptive_scheduler_weight_latency: number;
+  anthropic_adaptive_scheduler_weight_exploration: number;
+  anthropic_adaptive_scheduler_initial_reliability: number;
+  anthropic_adaptive_scheduler_consecutive_failure_penalty: number;
+  anthropic_adaptive_scheduler_neutral_latency_score: number;
+  anthropic_adaptive_scheduler_success_ema_alpha: number;
+  anthropic_adaptive_scheduler_latency_ema_alpha: number;
+  anthropic_adaptive_scheduler_capacity_success_threshold: number;
+  anthropic_adaptive_scheduler_capacity_probe_load_threshold: number;
+  anthropic_adaptive_scheduler_capacity_failure_threshold: number;
+  anthropic_adaptive_scheduler_min_recent_samples_for_shrink: number;
+  anthropic_adaptive_scheduler_shrink_error_threshold: number;
+  anthropic_adaptive_scheduler_learning_window_seconds: number;
+  anthropic_adaptive_scheduler_cooldown_seconds: number;
+  anthropic_adaptive_scheduler_shrink_factor_soft: number;
+  anthropic_adaptive_scheduler_shrink_factor_hard: number;
+  anthropic_adaptive_scheduler_capacity_increase_step: number;
+  anthropic_adaptive_scheduler_min_capacity: number;
+  anthropic_adaptive_scheduler_hard_shrink_failure_multiplier: number;
   openai_adaptive_scheduler_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate: number;
@@ -8817,6 +8900,135 @@ type SettingsForm = Omit<
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
+
+const anthropicAdaptiveSchedulerRecommendedValues = {
+  anthropic_adaptive_scheduler_top_k: 8,
+  anthropic_adaptive_scheduler_softmax_temperature: 0.35,
+  anthropic_adaptive_scheduler_weight_reliability: 0.5,
+  anthropic_adaptive_scheduler_weight_capacity: 0.3,
+  anthropic_adaptive_scheduler_weight_latency: 0.15,
+  anthropic_adaptive_scheduler_weight_exploration: 0.05,
+  anthropic_adaptive_scheduler_initial_reliability: 0.5,
+  anthropic_adaptive_scheduler_consecutive_failure_penalty: 0.25,
+  anthropic_adaptive_scheduler_neutral_latency_score: 0.5,
+  anthropic_adaptive_scheduler_success_ema_alpha: 0.05,
+  anthropic_adaptive_scheduler_latency_ema_alpha: 0.05,
+  anthropic_adaptive_scheduler_capacity_success_threshold: 0.97,
+  anthropic_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
+  anthropic_adaptive_scheduler_capacity_failure_threshold: 3,
+  anthropic_adaptive_scheduler_min_recent_samples_for_shrink: 30,
+  anthropic_adaptive_scheduler_shrink_error_threshold: 0.25,
+  anthropic_adaptive_scheduler_learning_window_seconds: 1200,
+  anthropic_adaptive_scheduler_cooldown_seconds: 60,
+  anthropic_adaptive_scheduler_shrink_factor_soft: 0.85,
+  anthropic_adaptive_scheduler_shrink_factor_hard: 0.6,
+  anthropic_adaptive_scheduler_capacity_increase_step: 1,
+  anthropic_adaptive_scheduler_min_capacity: 1,
+  anthropic_adaptive_scheduler_hard_shrink_failure_multiplier: 2,
+} satisfies Partial<SettingsForm>;
+
+type AnthropicAdaptiveSchedulerNumberKey =
+  keyof typeof anthropicAdaptiveSchedulerRecommendedValues;
+
+const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
+  key: "selection" | "capacity" | "learningAndWeights";
+  fields: ReadonlyArray<{
+    key: AnthropicAdaptiveSchedulerNumberKey;
+    label:
+      | "topK"
+      | "softmaxTemperature"
+      | "initialReliability"
+      | "consecutiveFailurePenalty"
+      | "neutralLatencyScore"
+      | "capacityProbeLoadThreshold"
+      | "capacitySuccessThreshold"
+      | "capacityIncreaseStep"
+      | "minCapacity"
+      | "capacityFailureThreshold"
+      | "minRecentSamplesForShrink"
+      | "shrinkErrorThreshold"
+      | "shrinkFactorSoft"
+      | "shrinkFactorHard"
+      | "hardShrinkFailureMultiplier"
+      | "learningWindowSeconds"
+      | "cooldownSeconds"
+      | "successEmaAlpha"
+      | "latencyEmaAlpha"
+      | "weightReliability"
+      | "weightCapacity"
+      | "weightLatency"
+      | "weightExploration";
+    min: number;
+    max?: number;
+    step: number;
+  }>;
+}> = [
+  {
+    key: "selection",
+    fields: [
+      { key: "anthropic_adaptive_scheduler_top_k", label: "topK", min: 1, max: 100, step: 1 },
+      { key: "anthropic_adaptive_scheduler_softmax_temperature", label: "softmaxTemperature", min: 0.01, max: 10, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_initial_reliability", label: "initialReliability", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_consecutive_failure_penalty", label: "consecutiveFailurePenalty", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_neutral_latency_score", label: "neutralLatencyScore", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    key: "capacity",
+    fields: [
+      { key: "anthropic_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityProbeLoadThreshold", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_capacity_success_threshold", label: "capacitySuccessThreshold", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_capacity_increase_step", label: "capacityIncreaseStep", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_min_capacity", label: "minCapacity", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_capacity_failure_threshold", label: "capacityFailureThreshold", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_min_recent_samples_for_shrink", label: "minRecentSamplesForShrink", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_shrink_error_threshold", label: "shrinkErrorThreshold", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_shrink_factor_soft", label: "shrinkFactorSoft", min: 0.01, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_shrink_factor_hard", label: "shrinkFactorHard", min: 0.01, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_hard_shrink_failure_multiplier", label: "hardShrinkFailureMultiplier", min: 1, max: 100, step: 1 },
+      { key: "anthropic_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
+    ],
+  },
+  {
+    key: "learningAndWeights",
+    fields: [
+      { key: "anthropic_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_latency_ema_alpha", label: "latencyEmaAlpha", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_reliability", label: "weightReliability", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_latency", label: "weightLatency", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_exploration", label: "weightExploration", min: 0, step: 0.01 },
+    ],
+  },
+];
+
+function anthropicAdaptiveSchedulerPlaceholder(
+  key: AnthropicAdaptiveSchedulerNumberKey,
+): string {
+  return String(anthropicAdaptiveSchedulerRecommendedValues[key]);
+}
+
+function anthropicAdaptiveSchedulerNumber(
+  key: AnthropicAdaptiveSchedulerNumberKey,
+): number {
+  const raw = (form as unknown as Record<
+    AnthropicAdaptiveSchedulerNumberKey,
+    unknown
+  >)[key];
+  if (
+    raw === "" ||
+    (typeof raw === "string" && raw.trim() === "") ||
+    raw === null ||
+    raw === undefined
+  ) {
+    return anthropicAdaptiveSchedulerRecommendedValues[key];
+  }
+  const numericValue = Number(raw);
+  return Number.isFinite(numericValue)
+    ? numericValue
+    : anthropicAdaptiveSchedulerRecommendedValues[key];
+}
 
 const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
@@ -9092,6 +9304,7 @@ const form = reactive<SettingsForm>({
   openai_advanced_scheduler_weight_session_sticky: "",
   anthropic_adaptive_scheduler_enabled: false,
   anthropic_adaptive_scheduler_mode: "shadow",
+  ...anthropicAdaptiveSchedulerRecommendedValues,
   openai_adaptive_scheduler_enabled: false,
   openai_adaptive_scheduler_diagnostic_log_enabled: false,
   openai_adaptive_scheduler_mode: "enforce",
@@ -9143,6 +9356,34 @@ function applyOpenAIAdaptiveSchedulerRecommendedValues(): void {
   const entries = Object.entries(
     openAIAdaptiveSchedulerRecommendedValues,
   ) as Array<[OpenAIAdaptiveSchedulerRecommendedKey, number]>;
+
+  for (const [key, recommendedValue] of entries) {
+    const currentValue = formRecord[key];
+    if (
+      currentValue === "" ||
+      (typeof currentValue === "string" && currentValue.trim() === "") ||
+      currentValue === null ||
+      currentValue === undefined
+    ) {
+      formRecord[key] = recommendedValue;
+      continue;
+    }
+
+    const numericValue = Number(currentValue);
+    formRecord[key] = Number.isFinite(numericValue)
+      ? numericValue
+      : recommendedValue;
+  }
+}
+
+function applyAnthropicAdaptiveSchedulerRecommendedValues(): void {
+  const formRecord = form as unknown as Record<
+    AnthropicAdaptiveSchedulerNumberKey,
+    unknown
+  >;
+  const entries = Object.entries(
+    anthropicAdaptiveSchedulerRecommendedValues,
+  ) as Array<[AnthropicAdaptiveSchedulerNumberKey, number]>;
 
   for (const [key, recommendedValue] of entries) {
     const currentValue = formRecord[key];
@@ -10068,6 +10309,7 @@ async function loadSettings() {
     }
     form.anthropic_adaptive_scheduler_mode =
       form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow";
+    applyAnthropicAdaptiveSchedulerRecommendedValues();
     applyOpenAIAdaptiveSchedulerRecommendedValues();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
@@ -10688,6 +10930,52 @@ async function saveSettings() {
         form.anthropic_adaptive_scheduler_enabled,
       anthropic_adaptive_scheduler_mode:
         form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow",
+      anthropic_adaptive_scheduler_top_k:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_top_k"),
+      anthropic_adaptive_scheduler_softmax_temperature:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_softmax_temperature"),
+      anthropic_adaptive_scheduler_weight_reliability:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_reliability"),
+      anthropic_adaptive_scheduler_weight_capacity:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_capacity"),
+      anthropic_adaptive_scheduler_weight_latency:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_latency"),
+      anthropic_adaptive_scheduler_weight_exploration:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_exploration"),
+      anthropic_adaptive_scheduler_initial_reliability:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_initial_reliability"),
+      anthropic_adaptive_scheduler_consecutive_failure_penalty:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_consecutive_failure_penalty"),
+      anthropic_adaptive_scheduler_neutral_latency_score:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_neutral_latency_score"),
+      anthropic_adaptive_scheduler_success_ema_alpha:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_success_ema_alpha"),
+      anthropic_adaptive_scheduler_latency_ema_alpha:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_latency_ema_alpha"),
+      anthropic_adaptive_scheduler_capacity_success_threshold:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_success_threshold"),
+      anthropic_adaptive_scheduler_capacity_probe_load_threshold:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_probe_load_threshold"),
+      anthropic_adaptive_scheduler_capacity_failure_threshold:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_failure_threshold"),
+      anthropic_adaptive_scheduler_min_recent_samples_for_shrink:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_min_recent_samples_for_shrink"),
+      anthropic_adaptive_scheduler_shrink_error_threshold:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_error_threshold"),
+      anthropic_adaptive_scheduler_learning_window_seconds:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_learning_window_seconds"),
+      anthropic_adaptive_scheduler_cooldown_seconds:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_cooldown_seconds"),
+      anthropic_adaptive_scheduler_shrink_factor_soft:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_factor_soft"),
+      anthropic_adaptive_scheduler_shrink_factor_hard:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_factor_hard"),
+      anthropic_adaptive_scheduler_capacity_increase_step:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_increase_step"),
+      anthropic_adaptive_scheduler_min_capacity:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_min_capacity"),
+      anthropic_adaptive_scheduler_hard_shrink_failure_multiplier:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_hard_shrink_failure_multiplier"),
       openai_adaptive_scheduler_enabled:
         form.openai_adaptive_scheduler_enabled,
       openai_adaptive_scheduler_diagnostic_log_enabled:
