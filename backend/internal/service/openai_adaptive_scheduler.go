@@ -451,7 +451,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 		return selection, candidateCount, topK, loadSkew, diagnosticCandidates, selectErr
 	}
 
-	return nil, candidateCount, topK, loadSkew, diagnosticCandidates, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked)
+	return nil, candidateCount, topK, loadSkew, diagnosticCandidates, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, "")
 }
 
 func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrder(
@@ -474,7 +474,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 		return nil, 0, 0, 0, nil, nil, nil, err
 	}
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false)
+		return nil, 0, 0, 0, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false, "")
 	}
 
 	var schedGroup *Group
@@ -519,7 +519,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 		})
 	}
 	if len(filtered) == 0 {
-		return nil, 0, 0, 0, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false)
+		return nil, 0, 0, 0, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false, "")
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -533,7 +533,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 		return nil, 0, 0, 0, nil, nil, nil, ErrNoAvailableCompactAccounts
 	}
 	if len(candidates) == 0 {
-		return nil, 0, 0, loadSkew, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false)
+		return nil, 0, 0, loadSkew, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false, "")
 	}
 	topK := cfg.OpenAIAdaptiveSchedulerTopK
 	if topK > len(candidates) {
