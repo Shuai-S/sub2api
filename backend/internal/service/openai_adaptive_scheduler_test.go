@@ -11,6 +11,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type openAIAdaptiveRuntimeBlockingConcurrencyCache struct {
+	ConcurrencyCache
+	onAcquire func()
+}
+
+func (c *openAIAdaptiveRuntimeBlockingConcurrencyCache) AcquireAccountSlot(context.Context, int64, int, string) (bool, error) {
+	if c.onAcquire != nil {
+		c.onAcquire()
+	}
+	return false, nil
+}
+
+func (c *openAIAdaptiveRuntimeBlockingConcurrencyCache) GetAccountsLoadBatch(_ context.Context, accounts []AccountWithConcurrency) (map[int64]*AccountLoadInfo, error) {
+	loads := make(map[int64]*AccountLoadInfo, len(accounts))
+	for _, account := range accounts {
+		loads[account.ID] = &AccountLoadInfo{AccountID: account.ID}
+	}
+	return loads, nil
+}
+
 func TestOpenAIAdaptiveSchedulerCostScoreUsesRateMultiplier(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 	lowCost := 0.5
@@ -226,6 +246,176 @@ func TestOpenAIAdaptiveSchedulerActiveCooldownDoesNotExcludeCandidates(t *testin
 	require.Len(t, order, 1)
 	require.Equal(t, account.ID, order[0].account.ID)
 	require.Equal(t, "active", openAIAdaptiveCooldownStatus(order[0].state, time.Now()))
+}
+
+func TestOpenAIAdaptiveSchedulerNoAvailableErrorReportsEmptyPool(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11003)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{
+			accountRepo: schedulerTestOpenAIAccountRepo{},
+		},
+		baseline: &defaultOpenAIAccountScheduler{},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.baseline.service = scheduler.service
+
+	order, candidateCount, topK, err := scheduler.buildAdaptiveSelectionOrder(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, cfg)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.EqualError(t, err, "no available OpenAI accounts supporting model: gpt-5.1 (pool=0)")
+	require.Empty(t, order)
+	require.Zero(t, candidateCount)
+	require.Zero(t, topK)
+}
+
+func TestOpenAIAdaptiveSchedulerNoAvailableErrorAggregatesFilterReasons(t *testing.T) {
+	ctx := withOpenAIQuotaAutoPauseSettings(context.Background(), OpsOpenAIAccountQuotaAutoPauseSettings{DefaultThreshold7d: 0.9})
+	groupID := int64(11004)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	quotaPaused := Account{
+		ID:          22004,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Extra: map[string]any{
+			"codex_7d_used_percent":  95.0,
+			"codex_7d_reset_at":      time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+			"codex_usage_updated_at": time.Now().Add(-time.Minute).Format(time.RFC3339),
+		},
+	}
+	modelUnsupported := Account{
+		ID:          22005,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-4o": "gpt-4o"},
+		},
+	}
+	excluded := Account{
+		ID:          22006,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{
+			accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{quotaPaused, modelUnsupported, excluded}},
+		},
+		baseline: &defaultOpenAIAccountScheduler{},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.baseline.service = scheduler.service
+
+	order, candidateCount, topK, err := scheduler.buildAdaptiveSelectionOrder(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.4-mini",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+		ExcludedIDs:       map[int64]struct{}{excluded.ID: {}},
+	}, cfg)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.EqualError(t, err, "no available OpenAI accounts supporting model: gpt-5.4-mini (pool=3, filtered: excluded=1 model_not_supported=1 quota_auto_pause_7d=1)")
+	require.Empty(t, order)
+	require.Zero(t, candidateCount)
+	require.Zero(t, topK)
+}
+
+func TestOpenAIAdaptiveSchedulerNoAvailableErrorReportsCapacityFull(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11005)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	account := Account{
+		ID:          22007,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{
+			accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+			concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+				loadMap: map[int64]*AccountLoadInfo{
+					account.ID: {
+						AccountID:          account.ID,
+						CurrentConcurrency: 1,
+					},
+				},
+			}),
+		},
+		baseline: &defaultOpenAIAccountScheduler{},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.baseline.service = scheduler.service
+
+	order, candidateCount, topK, err := scheduler.buildAdaptiveSelectionOrder(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, cfg)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.EqualError(t, err, "no available OpenAI accounts supporting model: gpt-5.1 (pool=1, filtered: capacity_full=1, selection_order_empty)")
+	require.Empty(t, order)
+	require.Zero(t, candidateCount)
+	require.Zero(t, topK)
+}
+
+func TestOpenAIAdaptiveSchedulerNoAvailableErrorReportsSelectionAttempts(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11006)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	account := Account{
+		ID:          22008,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	service := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+	}
+	cache := &openAIAdaptiveRuntimeBlockingConcurrencyCache{}
+	cache.onAcquire = func() {
+		service.openaiAccountRuntimeBlockUntil.Store(account.ID, time.Now().Add(time.Hour))
+	}
+	service.concurrencyService = NewConcurrencyService(cache)
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service:  service,
+		baseline: &defaultOpenAIAccountScheduler{service: service},
+		state:    newOpenAIAdaptiveSchedulerStateStore(),
+	}
+
+	selection, candidateCount, topK, _, _, err := scheduler.selectByAdaptiveLoadBalance(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, cfg)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.EqualError(t, err, "no available OpenAI accounts supporting model: gpt-5.1 (pool=1, attempts: runtime_blocked=1 slot_unavailable=1 wait_runtime_blocked=1, selection_order_exhausted)")
+	require.Nil(t, selection)
+	require.Equal(t, 1, candidateCount)
+	require.Equal(t, 1, topK)
 }
 
 func TestOpenAIAdaptiveSchedulerActiveCooldownDoesNotBreakStickyHit(t *testing.T) {

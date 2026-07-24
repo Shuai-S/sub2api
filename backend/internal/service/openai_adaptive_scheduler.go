@@ -97,6 +97,64 @@ type openAIAdaptiveDiagnosticCandidate struct {
 	CooldownStatus     string    `json:"cooldown_status"`
 }
 
+type openAIAdaptiveSelectionPlan struct {
+	selectionOrder []openAIAdaptiveCandidateScore
+	candidateCount int
+	topK           int
+	loadSkew       float64
+	loadReq        []AccountWithConcurrency
+	filtered       []*Account
+	states         map[int64]openAIAdaptiveAccountState
+	filterStats    openAISelectionFilterStats
+}
+
+// Attempt statistics are kept separate from initial filter statistics because
+// an account may be retried across cached-load, fresh-load, and wait-plan passes.
+type openAIAdaptiveSelectionAttemptStats struct {
+	reasons map[string]int
+}
+
+func (s *openAIAdaptiveSelectionAttemptStats) record(reason string) {
+	if s == nil || reason == "" {
+		return
+	}
+	if s.reasons == nil {
+		s.reasons = make(map[string]int, 4)
+	}
+	s.reasons[reason]++
+}
+
+func (s *openAIAdaptiveSelectionAttemptStats) merge(prefix string, stats openAISelectionFilterStats) {
+	if s == nil {
+		return
+	}
+	for reason, count := range stats.reasons {
+		if count <= 0 {
+			continue
+		}
+		if s.reasons == nil {
+			s.reasons = make(map[string]int, 4)
+		}
+		s.reasons[prefix+reason] += count
+	}
+}
+
+func (s openAIAdaptiveSelectionAttemptStats) summary(outcome string) string {
+	parts := make([]string, 0, len(s.reasons))
+	for reason, count := range s.reasons {
+		parts = append(parts, fmt.Sprintf("%s=%d", reason, count))
+	}
+	sort.Strings(parts)
+	if len(parts) == 0 {
+		return outcome
+	}
+	details := "attempts: " + strings.Join(parts, " ")
+	if outcome != "" {
+		details += ", " + outcome
+	}
+	return details
+}
+
 func newAdaptiveOpenAIAccountScheduler(service *OpenAIGatewayService, stats *openAIAccountRuntimeStats) OpenAIAccountScheduler {
 	if stats == nil {
 		stats = newOpenAIAccountRuntimeStats()
@@ -395,26 +453,29 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 	if s.service.concurrencyService == nil || !s.service.schedulingConfig().LoadBatchEnabled {
 		return nil, 0, 0, 0, nil, errOpenAIAdaptiveSchedulerFallback
 	}
-	selectionOrder, candidateCount, topK, loadSkew, loadReq, filtered, states, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
-	diagnosticCandidates := openAIAdaptiveDiagnosticCandidates(selectionOrder, 5)
+	plan, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	diagnosticCandidates := openAIAdaptiveDiagnosticCandidates(plan.selectionOrder, 5)
 	if err != nil {
-		return nil, candidateCount, topK, loadSkew, diagnosticCandidates, err
+		return nil, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, err
 	}
-	result, compactBlocked, acquireErr := s.tryAcquireAdaptiveSelectionOrder(ctx, req, cfg, selectionOrder)
+	attemptStats := openAIAdaptiveSelectionAttemptStats{}
+	result, compactBlocked, acquireErr := s.tryAcquireAdaptiveSelectionOrder(ctx, req, cfg, plan.selectionOrder, &attemptStats)
 	if acquireErr != nil {
-		return nil, candidateCount, topK, loadSkew, diagnosticCandidates, acquireErr
+		return nil, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, acquireErr
 	}
 	if result != nil {
-		return result, candidateCount, topK, loadSkew, diagnosticCandidates, nil
+		return result, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, nil
 	}
 
 	if s.service.concurrencyService != nil {
-		if freshLoadMap, loadErr := s.service.concurrencyService.GetAccountsLoadBatchFresh(ctx, loadReq); loadErr == nil {
-			freshCandidates, freshSkew := s.buildAdaptiveCandidates(req, cfg, filtered, states, freshLoadMap, true)
+		if freshLoadMap, loadErr := s.service.concurrencyService.GetAccountsLoadBatchFresh(ctx, plan.loadReq); loadErr == nil {
+			freshFilterStats := openAISelectionFilterStats{}
+			freshCandidates, freshSkew := s.buildAdaptiveCandidates(req, cfg, plan.filtered, plan.states, freshLoadMap, true, &freshFilterStats)
+			attemptStats.merge("fresh_", freshFilterStats)
 			freshOrder := buildOpenAIAdaptiveSelectionOrder(freshCandidates, req, cfg)
-			freshResult, freshCompactBlocked, freshAcquireErr := s.tryAcquireAdaptiveSelectionOrder(ctx, req, cfg, freshOrder)
+			freshResult, freshCompactBlocked, freshAcquireErr := s.tryAcquireAdaptiveSelectionOrder(ctx, req, cfg, freshOrder, &attemptStats)
 			if freshAcquireErr != nil {
-				return nil, candidateCount, topK, loadSkew, diagnosticCandidates, freshAcquireErr
+				return nil, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, freshAcquireErr
 			}
 			if freshResult != nil {
 				freshTopK := cfg.OpenAIAdaptiveSchedulerTopK
@@ -424,21 +485,34 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 				return freshResult, len(freshCandidates), freshTopK, freshSkew, openAIAdaptiveDiagnosticCandidates(freshOrder, 5), nil
 			}
 			compactBlocked = compactBlocked || freshCompactBlocked
+		} else {
+			attemptStats.record("fresh_load_failed")
 		}
 	}
 
 	cfgWait := s.service.schedulingConfig()
-	for _, candidate := range selectionOrder {
+	for _, candidate := range plan.selectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.Platform, req.RequestedModel, false, req.RequiredCapability)
-		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
+		if fresh == nil {
+			attemptStats.record("wait_" + s.adaptiveFreshResolveFailureReason(ctx, candidate.account, req))
+			continue
+		}
+		if compatible, reason := s.isAdaptiveSelectionAccountCompatible(ctx, fresh, req); !compatible {
+			attemptStats.record("wait_" + reason)
 			continue
 		}
 		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.GroupID, req.Platform, req.RequestedModel, false, req.RequiredCapability)
-		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
+		if fresh == nil {
+			attemptStats.record("wait_db_recheck_failed")
+			continue
+		}
+		if compatible, reason := s.isAdaptiveSelectionAccountCompatible(ctx, fresh, req); !compatible {
+			attemptStats.record("wait_" + reason)
 			continue
 		}
 		if req.RequireCompact && openAICompactSupportTier(fresh) == 0 {
 			compactBlocked = true
+			attemptStats.record("wait_compact_unsupported")
 			continue
 		}
 		effectiveCapacity := effectiveOpenAIAdaptiveCapacityWithLoad(fresh, s.state.snapshot(fresh.ID, cfg), cfg, candidate.loadInfo)
@@ -448,10 +522,14 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 			Timeout:        cfgWait.FallbackWaitTimeout,
 			MaxWaiting:     cfgWait.FallbackMaxWaiting,
 		})
-		return selection, candidateCount, topK, loadSkew, diagnosticCandidates, selectErr
+		return selection, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, selectErr
 	}
 
-	return nil, candidateCount, topK, loadSkew, diagnosticCandidates, noAvailableOpenAISelectionError(req.RequestedModel, compactBlocked, "")
+	return nil, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, noAvailableOpenAISelectionError(
+		req.RequestedModel,
+		compactBlocked,
+		plan.filterStats.summary(attemptStats.summary("selection_order_exhausted")),
+	)
 }
 
 func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrder(
@@ -459,8 +537,8 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrder(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 ) ([]openAIAdaptiveCandidateScore, int, int, error) {
-	selectionOrder, candidateCount, topK, _, _, _, _, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, false)
-	return selectionOrder, candidateCount, topK, err
+	plan, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, false)
+	return plan.selectionOrder, plan.candidateCount, plan.topK, err
 }
 
 func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
@@ -468,13 +546,15 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 	allowSideEffects bool,
-) ([]openAIAdaptiveCandidateScore, int, int, float64, []AccountWithConcurrency, []*Account, map[int64]openAIAdaptiveAccountState, error) {
+) (openAIAdaptiveSelectionPlan, error) {
+	plan := openAIAdaptiveSelectionPlan{}
 	accounts, err := s.service.listSchedulableAccounts(ctx, req.GroupID, req.Platform)
 	if err != nil {
-		return nil, 0, 0, 0, nil, nil, nil, err
+		return plan, err
 	}
+	plan.filterStats.pool = len(accounts)
 	if len(accounts) == 0 {
-		return nil, 0, 0, 0, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false, "")
+		return plan, noAvailableOpenAISelectionError(req.RequestedModel, false, plan.filterStats.summary(""))
 	}
 
 	var schedGroup *Group
@@ -482,20 +562,27 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 		schedGroup, _ = s.service.schedulerSnapshot.GetGroupByID(ctx, *req.GroupID)
 	}
 
-	filtered := make([]*Account, 0, len(accounts))
-	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
-	states := make(map[int64]openAIAdaptiveAccountState, len(accounts))
+	plan.filtered = make([]*Account, 0, len(accounts))
+	plan.loadReq = make([]AccountWithConcurrency, 0, len(accounts))
+	plan.states = make(map[int64]openAIAdaptiveAccountState, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
 		if req.ExcludedIDs != nil {
 			if _, excluded := req.ExcludedIDs[account.ID]; excluded {
+				plan.filterStats.exclude("excluded")
 				continue
 			}
 		}
-		if !account.IsSchedulable() || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+		if !account.IsSchedulable() {
+			plan.filterStats.exclude("not_schedulable")
+			continue
+		}
+		if account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+			plan.filterStats.exclude("platform_mismatch")
 			continue
 		}
 		if s.service.isOpenAIAccountRuntimeBlocked(account) {
+			plan.filterStats.exclude("runtime_blocked")
 			continue
 		}
 		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
@@ -504,43 +591,54 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 				_ = s.service.accountRepo.SetError(ctx, account.ID,
 					fmt.Sprintf("Privacy not set, required by group [%s]", schedGroup.Name))
 			}
+			plan.filterStats.exclude("privacy_not_set")
 			continue
 		}
-		if !s.baseline.isAccountRequestCompatible(ctx, account, req) || !s.baseline.isAccountTransportCompatible(account, req.RequiredTransport) {
+		if compatible, reason := s.baseline.isAccountRequestCompatibleReason(ctx, account, req); !compatible {
+			plan.filterStats.exclude(reason)
+			continue
+		}
+		if !s.baseline.isAccountTransportCompatible(account, req.RequiredTransport) {
+			plan.filterStats.exclude("transport_incompatible")
 			continue
 		}
 		state := s.state.snapshot(account.ID, cfg)
 		effectiveCapacity := effectiveOpenAIAdaptiveCapacity(account, state, cfg)
-		filtered = append(filtered, account)
-		states[account.ID] = state
-		loadReq = append(loadReq, AccountWithConcurrency{
+		plan.filtered = append(plan.filtered, account)
+		plan.states[account.ID] = state
+		plan.loadReq = append(plan.loadReq, AccountWithConcurrency{
 			ID:             account.ID,
 			MaxConcurrency: effectiveCapacity,
 		})
 	}
-	if len(filtered) == 0 {
-		return nil, 0, 0, 0, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false, "")
+	if len(plan.filtered) == 0 {
+		return plan, noAvailableOpenAISelectionError(req.RequestedModel, false, plan.filterStats.summary(""))
 	}
 
 	loadMap := map[int64]*AccountLoadInfo{}
 	if s.service.concurrencyService != nil {
-		if batchLoad, loadErr := s.service.concurrencyService.GetAccountsLoadBatch(ctx, loadReq); loadErr == nil {
+		if batchLoad, loadErr := s.service.concurrencyService.GetAccountsLoadBatch(ctx, plan.loadReq); loadErr == nil {
 			loadMap = batchLoad
 		}
 	}
-	candidates, loadSkew := s.buildAdaptiveCandidates(req, cfg, filtered, states, loadMap, allowSideEffects)
+	candidates, loadSkew := s.buildAdaptiveCandidates(req, cfg, plan.filtered, plan.states, loadMap, allowSideEffects, &plan.filterStats)
+	plan.loadSkew = loadSkew
 	if req.RequireCompact && len(candidates) == 0 {
-		return nil, 0, 0, 0, nil, nil, nil, ErrNoAvailableCompactAccounts
+		return plan, ErrNoAvailableCompactAccounts
 	}
 	if len(candidates) == 0 {
-		return nil, 0, 0, loadSkew, nil, nil, nil, noAvailableOpenAISelectionError(req.RequestedModel, false, "")
+		return plan, noAvailableOpenAISelectionError(req.RequestedModel, false, plan.filterStats.summary("selection_order_empty"))
 	}
-	topK := cfg.OpenAIAdaptiveSchedulerTopK
-	if topK > len(candidates) {
-		topK = len(candidates)
+	plan.candidateCount = len(candidates)
+	plan.topK = cfg.OpenAIAdaptiveSchedulerTopK
+	if plan.topK > len(candidates) {
+		plan.topK = len(candidates)
 	}
-	selectionOrder := buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
-	return selectionOrder, len(candidates), topK, loadSkew, loadReq, filtered, states, nil
+	plan.selectionOrder = buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+	if len(plan.selectionOrder) == 0 {
+		return plan, noAvailableOpenAISelectionError(req.RequestedModel, false, plan.filterStats.summary("selection_order_empty"))
+	}
+	return plan, nil
 }
 
 func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
@@ -550,12 +648,16 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
 	states map[int64]openAIAdaptiveAccountState,
 	loadMap map[int64]*AccountLoadInfo,
 	allowSideEffects bool,
+	filterStats *openAISelectionFilterStats,
 ) ([]openAIAdaptiveCandidateScore, float64) {
 	candidates := make([]openAIAdaptiveCandidateScore, 0, len(filtered))
 	loadRateSum := 0.0
 	loadRateSumSquares := 0.0
 	for _, account := range filtered {
 		if req.RequireCompact && openAICompactSupportTier(account) == 0 {
+			if filterStats != nil {
+				filterStats.exclude("compact_unsupported")
+			}
 			continue
 		}
 		state := states[account.ID]
@@ -569,6 +671,9 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
 		}
 		effectiveCapacity := effectiveOpenAIAdaptiveCapacityWithLoad(account, state, cfg, loadInfo)
 		if effectiveCapacity > 0 && loadInfo.CurrentConcurrency >= effectiveCapacity {
+			if filterStats != nil {
+				filterStats.exclude("capacity_full")
+			}
 			continue
 		}
 		loadRate := adaptiveLoadRate(loadInfo, effectiveCapacity)
@@ -842,19 +947,31 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 	selectionOrder []openAIAdaptiveCandidateScore,
+	attemptStats *openAIAdaptiveSelectionAttemptStats,
 ) (*AccountSelectionResult, bool, error) {
 	compactBlocked := false
 	for _, candidate := range selectionOrder {
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.Platform, req.RequestedModel, false, req.RequiredCapability)
-		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
+		if fresh == nil {
+			attemptStats.record(s.adaptiveFreshResolveFailureReason(ctx, candidate.account, req))
+			continue
+		}
+		if compatible, reason := s.isAdaptiveSelectionAccountCompatible(ctx, fresh, req); !compatible {
+			attemptStats.record(reason)
 			continue
 		}
 		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.GroupID, req.Platform, req.RequestedModel, false, req.RequiredCapability)
-		if fresh == nil || !s.baseline.isAccountTransportCompatible(fresh, req.RequiredTransport) || !s.baseline.isAccountRequestCompatible(ctx, fresh, req) {
+		if fresh == nil {
+			attemptStats.record("db_recheck_failed")
+			continue
+		}
+		if compatible, reason := s.isAdaptiveSelectionAccountCompatible(ctx, fresh, req); !compatible {
+			attemptStats.record(reason)
 			continue
 		}
 		if req.RequireCompact && openAICompactSupportTier(fresh) == 0 {
 			compactBlocked = true
+			attemptStats.record("compact_unsupported")
 			continue
 		}
 		effectiveCapacity := effectiveOpenAIAdaptiveCapacityWithLoad(fresh, s.state.snapshot(fresh.ID, cfg), cfg, candidate.loadInfo)
@@ -869,8 +986,34 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 			selection, selectErr := s.service.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
 			return selection, compactBlocked, selectErr
 		}
+		attemptStats.record("slot_unavailable")
 	}
 	return nil, compactBlocked, nil
+}
+
+func (s *adaptiveOpenAIAccountScheduler) isAdaptiveSelectionAccountCompatible(
+	ctx context.Context,
+	account *Account,
+	req OpenAIAccountScheduleRequest,
+) (bool, string) {
+	if account == nil {
+		return false, "account_nil"
+	}
+	if !s.baseline.isAccountTransportCompatible(account, req.RequiredTransport) {
+		return false, "transport_incompatible"
+	}
+	return s.baseline.isAccountRequestCompatibleReason(ctx, account, req)
+}
+
+func (s *adaptiveOpenAIAccountScheduler) adaptiveFreshResolveFailureReason(
+	ctx context.Context,
+	account *Account,
+	req OpenAIAccountScheduleRequest,
+) string {
+	if compatible, reason := s.isAdaptiveSelectionAccountCompatible(ctx, account, req); !compatible {
+		return reason
+	}
+	return "fresh_resolve_failed"
 }
 
 func (s *adaptiveOpenAIAccountScheduler) logShadowDecision(
