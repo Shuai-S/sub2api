@@ -56,7 +56,8 @@ func TestOpenAIAdaptiveStateCacheRefreshesAccountExpiry(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { require.NoError(t, rdb.Close()) })
-	cache := NewGatewayCache(rdb).(service.AdaptiveSchedulerStateCache)
+	cache, ok := NewGatewayCache(rdb).(service.AdaptiveSchedulerStateCache)
+	require.True(t, ok)
 	now := time.Now()
 	hashKey, _, err := adaptiveSchedulerStateKeys("openai")
 	require.NoError(t, err)
@@ -78,7 +79,8 @@ func TestAdaptiveSchedulerStateCacheKeepsNamespacesIsolated(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { require.NoError(t, rdb.Close()) })
-	cache := NewGatewayCache(rdb).(service.AdaptiveSchedulerStateCache)
+	cache, ok := NewGatewayCache(rdb).(service.AdaptiveSchedulerStateCache)
+	require.True(t, ok)
 	now := time.Now()
 
 	for _, namespace := range []string{"openai", "anthropic"} {
