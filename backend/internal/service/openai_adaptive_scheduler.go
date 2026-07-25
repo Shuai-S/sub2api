@@ -54,6 +54,10 @@ type openAIAdaptiveAccountState struct {
 	RecentWindowStartedAt time.Time
 	LastCapacityFailureAt time.Time
 	CooldownUntil         time.Time
+	UpdatedAt             time.Time
+
+	revision          uint64
+	persistedRevision uint64
 }
 
 type openAIAdaptiveSchedulerStateStore struct {
@@ -163,10 +167,14 @@ func newAdaptiveOpenAIAccountScheduler(service *OpenAIGatewayService, stats *ope
 		service: service,
 		stats:   stats,
 	}
+	state := newOpenAIAdaptiveSchedulerStateStore()
+	if service != nil && service.openaiAdaptiveState != nil {
+		state = service.openaiAdaptiveState
+	}
 	return &adaptiveOpenAIAccountScheduler{
 		service:  service,
 		baseline: baseline,
-		state:    newOpenAIAdaptiveSchedulerStateStore(),
+		state:    state,
 	}
 }
 
@@ -1467,6 +1475,7 @@ func (s *openAIAdaptiveSchedulerStateStore) reportWithAccount(
 		state = &initial
 		s.states[accountID] = state
 	}
+	defer touchOpenAIAdaptiveAccountState(state, now)
 	refreshOpenAIAdaptiveLearningWindow(state, cfg, now)
 	state.TotalSamples++
 	state.RecentSamples++
@@ -1538,6 +1547,7 @@ func (s *openAIAdaptiveSchedulerStateStore) applyCooldown(
 		state = &initial
 		s.states[accountID] = state
 	}
+	defer touchOpenAIAdaptiveAccountState(state, now)
 	cooldown = openAIAdaptiveCooldownDurationForState(*state, cfg)
 	if cooldown <= 0 {
 		return
@@ -1596,9 +1606,16 @@ func (s *openAIAdaptiveSchedulerStateStore) observeLoad(
 		state = &initial
 		s.states[account.ID] = state
 	}
+	changed := false
+	defer func() {
+		if changed {
+			touchOpenAIAdaptiveAccountState(state, now)
+		}
+	}()
 	stableCapacity := stableOpenAIAdaptiveCapacity(account, *state, cfg)
 	if state.TotalSamples == 0 && state.EstimatedCapacity < stableCapacity {
 		state.EstimatedCapacity = stableCapacity
+		changed = true
 	}
 	if state.CooldownUntil.After(now) ||
 		state.ConsecutiveCapacityFailure > 0 ||
@@ -1611,8 +1628,20 @@ func (s *openAIAdaptiveSchedulerStateStore) observeLoad(
 	if nextCapacity > state.EstimatedCapacity {
 		state.EstimatedCapacity = nextCapacity
 		state.ConsecutiveSuccess = 0
+		changed = true
 	}
 	return *state
+}
+
+func touchOpenAIAdaptiveAccountState(state *openAIAdaptiveAccountState, now time.Time) {
+	if state == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state.UpdatedAt = now
+	state.revision++
 }
 
 func refreshOpenAIAdaptiveLearningWindow(state *openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings, now time.Time) {

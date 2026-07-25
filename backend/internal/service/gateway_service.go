@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -728,6 +729,8 @@ type GatewayService struct {
 	modelsListCacheTTL         time.Duration
 	settingService             *SettingService
 	anthropicAdaptiveScheduler *anthropicAdaptiveScheduler
+	anthropicStatePersistence  *anthropicAdaptiveStatePersistence
+	anthropicStatePersistOnce  sync.Once
 	responseHeaderFilter       *responseheaders.CompiledHeaderFilter
 	debugModelRouting          atomic.Bool
 	debugClaudeMimic           atomic.Bool
@@ -821,6 +824,7 @@ func NewGatewayService(
 	if path := strings.TrimSpace(os.Getenv(debugGatewayBodyEnv)); path != "" {
 		svc.initDebugGatewayBodyFile(path)
 	}
+	svc.startAnthropicAdaptiveStatePersistence()
 	return svc
 }
 

@@ -8,9 +8,9 @@ import (
 )
 
 type anthropicAdaptiveLatencyState struct {
-	TTFTEMA    float64
-	LatencyEMA float64
-	Samples    int64
+	TTFTEMA    float64 `json:"ttft_ema"`
+	LatencyEMA float64 `json:"latency_ema"`
+	Samples    int64   `json:"samples"`
 }
 
 type anthropicAdaptiveAccountState struct {
@@ -31,6 +31,10 @@ type anthropicAdaptiveAccountState struct {
 	LastCapacityFailureAt      time.Time
 	RecentWindowStartedAt      time.Time
 	CooldownUntil              time.Time
+	UpdatedAt                  time.Time
+
+	revision          uint64
+	persistedRevision uint64
 }
 
 type anthropicAdaptiveStateStore struct {
@@ -109,8 +113,19 @@ func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *Accoun
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := s.accounts[account.ID]
+	previousCapacity := 0
+	if previous != nil {
+		previousCapacity = previous.EstimatedCapacity
+	}
 	state := s.ensureLocked(account, now, settings)
-	s.resetWindowLocked(state, now, settings)
+	changed := previous != nil && previousCapacity != state.EstimatedCapacity
+	changed = s.resetWindowLocked(state, now, settings) || changed
+	defer func() {
+		if changed {
+			touchAnthropicAdaptiveAccountState(state, now)
+		}
+	}()
 	if account.Concurrency <= 0 || state.EstimatedCapacity >= account.Concurrency || state.CooldownUntil.After(now) {
 		return cloneAnthropicAdaptiveAccountState(state)
 	}
@@ -127,6 +142,7 @@ func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *Accoun
 			state.EstimatedCapacity = account.Concurrency
 		}
 		state.ConsecutiveSuccess = 0
+		changed = true
 	}
 	return cloneAnthropicAdaptiveAccountState(state)
 }
@@ -150,6 +166,7 @@ func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleRep
 	defer s.mu.Unlock()
 	state := s.ensureLocked(report.Account, now, settings)
 	s.resetWindowLocked(state, now, settings)
+	defer touchAnthropicAdaptiveAccountState(state, now)
 
 	if report.HealthSample {
 		state.TotalSamples++
@@ -218,7 +235,7 @@ func (s *anthropicAdaptiveStateStore) ensureLocked(account *Account, now time.Ti
 	return state
 }
 
-func (s *anthropicAdaptiveStateStore) resetWindowLocked(state *anthropicAdaptiveAccountState, now time.Time, settings AnthropicAdaptiveSchedulerSettings) {
+func (s *anthropicAdaptiveStateStore) resetWindowLocked(state *anthropicAdaptiveAccountState, now time.Time, settings AnthropicAdaptiveSchedulerSettings) bool {
 	learningWindow := time.Duration(settings.AnthropicAdaptiveSchedulerLearningWindowSeconds) * time.Second
 	if state.RecentWindowStartedAt.IsZero() || now.Sub(state.RecentWindowStartedAt) >= learningWindow {
 		state.RecentWindowStartedAt = now
@@ -226,7 +243,20 @@ func (s *anthropicAdaptiveStateStore) resetWindowLocked(state *anthropicAdaptive
 		state.RecentHealthFailures = 0
 		state.RecentCapacitySamples = 0
 		state.RecentCapacityFailures = 0
+		return true
 	}
+	return false
+}
+
+func touchAnthropicAdaptiveAccountState(state *anthropicAdaptiveAccountState, now time.Time) {
+	if state == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	state.UpdatedAt = now
+	state.revision++
 }
 
 func (s *anthropicAdaptiveStateStore) shouldShrinkLocked(state *anthropicAdaptiveAccountState, now time.Time, settings AnthropicAdaptiveSchedulerSettings) bool {

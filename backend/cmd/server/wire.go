@@ -104,6 +104,7 @@ func provideCleanup(
 	geminiOAuth *service.GeminiOAuthService,
 	antigravityOAuth *service.AntigravityOAuthService,
 	grokOAuth *service.GrokOAuthService,
+	gateway *service.GatewayService,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
 	backupSvc *service.BackupService,
@@ -287,6 +288,18 @@ func provideCleanup(
 			{"GrokOAuthService", func() error {
 				if grokOAuth != nil {
 					grokOAuth.Stop()
+				}
+				return nil
+			}},
+			{"AnthropicAdaptiveStatePersistence", func() error {
+				if gateway != nil {
+					return gateway.CloseAnthropicAdaptiveStatePersistence(ctx)
+				}
+				return nil
+			}},
+			{"OpenAIAdaptiveStatePersistence", func() error {
+				if openAIGateway != nil {
+					return openAIGateway.CloseOpenAIAdaptiveStatePersistence(ctx)
 				}
 				return nil
 			}},

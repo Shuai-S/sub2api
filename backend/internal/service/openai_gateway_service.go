@@ -421,6 +421,9 @@ type OpenAIGatewayService struct {
 	openaiWSPool                  *openAIWSConnPool
 	openaiWSStateStore            OpenAIWSStateStore
 	openaiScheduler               OpenAIAccountScheduler
+	openaiAdaptiveState           *openAIAdaptiveSchedulerStateStore
+	openaiAdaptivePersistence     *openAIAdaptiveStatePersistence
+	openaiAdaptivePersistenceOnce sync.Once
 	openaiWSPassthroughDialer     openAIWSClientDialer
 	openaiAccountStats            *openAIAccountRuntimeStats
 	openaiModelTransient          *openAIAccountModelTransientState
@@ -468,6 +471,7 @@ func NewOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
+	adaptiveState := newOpenAIAdaptiveSchedulerStateStore()
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
 		usageLogRepo:        usageLogRepo,
@@ -500,6 +504,7 @@ func NewOpenAIGatewayService(
 		balanceNotifyService:  balanceNotifyService,
 		settingService:        settingService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		openaiAdaptiveState:   adaptiveState,
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
 		openaiModelTransient:  newOpenAIAccountModelTransientState(openAIModelTransientDefaultMax),
@@ -510,6 +515,7 @@ func NewOpenAIGatewayService(
 	if openAITokenProvider != nil {
 		openAITokenProvider.SetAccountRuntimeBlocker(svc)
 	}
+	svc.startOpenAIAdaptiveStatePersistence()
 	svc.logOpenAIWSModeBootstrap()
 	return svc
 }

@@ -289,6 +289,9 @@ func (s *OpenAIGatewayService) openAIAdaptiveSchedulerStateStoreForSnapshot() *o
 	if s == nil {
 		return nil
 	}
+	if s.openaiAdaptiveState != nil {
+		return s.openaiAdaptiveState
+	}
 	s.openaiSchedulerMu.Lock()
 	defer s.openaiSchedulerMu.Unlock()
 	scheduler, _ := s.openaiScheduler.(*adaptiveOpenAIAccountScheduler)
