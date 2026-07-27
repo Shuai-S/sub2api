@@ -184,6 +184,8 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const optionsListRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<'bottom' | 'top'>('bottom')
 const triggerRect = ref<DOMRect | null>(null)
+const dropdownViewportPadding = 12
+const dropdownPreferredWidth = 360
 
 // i18n placeholders
 const placeholderText = computed(() => props.placeholder ?? t('common.selectOption'))
@@ -200,12 +202,13 @@ const dropdownStyle = computed(() => {
   if (!triggerRect.value) return {}
 
   const rect = triggerRect.value
-  const viewportPadding = 12
-  const maxViewportWidth = Math.max(200, window.innerWidth - viewportPadding * 2)
-  const preferredWidth = Math.max(rect.width, 360)
-  const dropdownWidth = Math.min(preferredWidth, maxViewportWidth)
-  const maxLeft = window.innerWidth - dropdownWidth - viewportPadding
-  const left = Math.max(viewportPadding, Math.min(rect.left, maxLeft))
+  const viewportWidth = Math.max(0, window.innerWidth)
+  const viewportPadding = Math.min(dropdownViewportPadding, viewportWidth / 2)
+  const availableWidth = Math.max(0, viewportWidth - viewportPadding * 2)
+  const preferredWidth = Math.max(rect.width, dropdownPreferredWidth)
+  const dropdownWidth = Math.min(preferredWidth, availableWidth)
+  const maxLeft = Math.max(viewportPadding, viewportWidth - viewportPadding - dropdownWidth)
+  const left = Math.min(Math.max(viewportPadding, rect.left), maxLeft)
   const style: Record<string, string> = {
     position: 'fixed',
     left: `${left}px`,
