@@ -39,6 +39,163 @@ func querySingleInt(t *testing.T, ctx context.Context, client *dbent.Client, que
 	return value
 }
 
+func TestAffiliateRepository_BindInviterWithRegistrationRewards(t *testing.T) {
+	tests := []struct {
+		name                string
+		inviterReward       float64
+		inviteeReward       float64
+		wantInviterLedger   int
+		wantInviteeLedger   int
+		wantInviteeTransfer int
+	}{
+		{name: "both rewards", inviterReward: 8.25, inviteeReward: 3.5, wantInviterLedger: 1, wantInviteeLedger: 1, wantInviteeTransfer: 1},
+		{name: "inviter only", inviterReward: 8.25, wantInviterLedger: 1},
+		{name: "invitee only", inviteeReward: 3.5, wantInviteeLedger: 1, wantInviteeTransfer: 1},
+		{name: "both disabled"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			tx := testEntTx(t)
+			txCtx := dbent.NewTxContext(ctx, tx)
+			client := tx.Client()
+			repo := NewAffiliateRepository(client, integrationDB)
+
+			now := time.Now().UnixNano()
+			inviter := mustCreateUser(t, client, &service.User{
+				Email:          fmt.Sprintf("registration-reward-inviter-%d@example.com", now),
+				PasswordHash:   "hash",
+				Role:           service.RoleUser,
+				Status:         service.StatusActive,
+				Balance:        10,
+				TotalRecharged: 4,
+				Concurrency:    5,
+			})
+			invitee := mustCreateUser(t, client, &service.User{
+				Email:          fmt.Sprintf("registration-reward-invitee-%d@example.com", now),
+				PasswordHash:   "hash",
+				Role:           service.RoleUser,
+				Status:         service.StatusActive,
+				Balance:        2.75,
+				TotalRecharged: 1.25,
+				Concurrency:    5,
+			})
+
+			result, err := repo.BindInviterWithRegistrationRewards(
+				txCtx,
+				invitee.ID,
+				inviter.ID,
+				tt.inviterReward,
+				tt.inviteeReward,
+			)
+			require.NoError(t, err)
+			require.True(t, result.Bound)
+			require.Equal(t, inviter.ID, result.InviterID)
+			require.InDelta(t, tt.inviterReward, result.InviterReward, 1e-9)
+			require.InDelta(t, tt.inviteeReward, result.InviteeReward, 1e-9)
+			if tt.inviteeReward > 0 {
+				require.InDelta(t, 2.75+tt.inviteeReward, result.InviteeBalance, 1e-9)
+			}
+
+			inviterQuota := querySingleFloat(t, txCtx, client,
+				"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+			inviterHistory := querySingleFloat(t, txCtx, client,
+				"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID)
+			inviteeQuota := querySingleFloat(t, txCtx, client,
+				"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", invitee.ID)
+			inviteeHistory := querySingleFloat(t, txCtx, client,
+				"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", invitee.ID)
+			inviteeBalance := querySingleFloat(t, txCtx, client,
+				"SELECT balance::double precision FROM users WHERE id = $1", invitee.ID)
+			inviteeTotalRecharged := querySingleFloat(t, txCtx, client,
+				"SELECT total_recharged::double precision FROM users WHERE id = $1", invitee.ID)
+
+			require.InDelta(t, tt.inviterReward, inviterQuota, 1e-9)
+			require.InDelta(t, tt.inviterReward, inviterHistory, 1e-9)
+			require.InDelta(t, 0, inviteeQuota, 1e-9)
+			require.InDelta(t, tt.inviteeReward, inviteeHistory, 1e-9)
+			require.InDelta(t, 2.75+tt.inviteeReward, inviteeBalance, 1e-9)
+			require.InDelta(t, 1.25+tt.inviteeReward, inviteeTotalRecharged, 1e-9)
+
+			require.Equal(t, 1, querySingleInt(t, txCtx, client,
+				"SELECT aff_count FROM user_affiliates WHERE user_id = $1", inviter.ID))
+			require.Equal(t, tt.wantInviterLedger, querySingleInt(t, txCtx, client,
+				"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = $3",
+				inviter.ID, invitee.ID, service.AffiliateLedgerActionRegistrationInviterReward))
+			require.Equal(t, tt.wantInviteeLedger, querySingleInt(t, txCtx, client,
+				"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = $3",
+				invitee.ID, inviter.ID, service.AffiliateLedgerActionRegistrationInviteeReward))
+			require.Equal(t, tt.wantInviteeTransfer, querySingleInt(t, txCtx, client,
+				"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id = $1 AND source_user_id = $2 AND action = $3",
+				invitee.ID, inviter.ID, service.AffiliateLedgerActionTransfer))
+
+			records, total, err := repo.ListAffiliateInviteRecords(txCtx, service.AffiliateRecordFilter{
+				Page:     1,
+				PageSize: 10,
+				SortBy:   "created_at",
+				SortDesc: true,
+			})
+			require.NoError(t, err)
+			require.Equal(t, int64(1), total)
+			require.Len(t, records, 1)
+			require.InDelta(t, tt.inviterReward, records[0].InviterRegistrationReward, 1e-9)
+			require.InDelta(t, tt.inviteeReward, records[0].InviteeRegistrationReward, 1e-9)
+			require.Zero(t, records[0].TotalRebate)
+
+			duplicate, err := repo.BindInviterWithRegistrationRewards(
+				txCtx,
+				invitee.ID,
+				inviter.ID,
+				tt.inviterReward,
+				tt.inviteeReward,
+			)
+			require.NoError(t, err)
+			require.False(t, duplicate.Bound)
+			require.InDelta(t, tt.inviterReward, querySingleFloat(t, txCtx, client,
+				"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", inviter.ID), 1e-9)
+			require.InDelta(t, 2.75+tt.inviteeReward, querySingleFloat(t, txCtx, client,
+				"SELECT balance::double precision FROM users WHERE id = $1", invitee.ID), 1e-9)
+		})
+	}
+}
+
+func TestAffiliateRepository_BindInviterWithRegistrationRewards_ReusesOuterTransaction(t *testing.T) {
+	ctx := context.Background()
+	outerTx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = outerTx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, outerTx)
+	client := outerTx.Client()
+	repo := NewAffiliateRepository(client, integrationDB)
+
+	now := time.Now().UnixNano()
+	inviter := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("registration-rollback-inviter-%d@example.com", now),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	invitee := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("registration-rollback-invitee-%d@example.com", now),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	result, err := repo.BindInviterWithRegistrationRewards(txCtx, invitee.ID, inviter.ID, 4.5, 2.25)
+	require.NoError(t, err)
+	require.True(t, result.Bound)
+	require.Equal(t, 3, querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*) FROM user_affiliate_ledger WHERE user_id IN ($1, $2)", inviter.ID, invitee.ID))
+
+	require.NoError(t, outerTx.Rollback())
+	require.Equal(t, 0, querySingleInt(t, ctx, integrationEntClient,
+		"SELECT COUNT(*) FROM users WHERE id IN ($1, $2)", inviter.ID, invitee.ID))
+}
+
 func TestAffiliateRepository_TransferQuotaToBalance_UsesClaimedQuotaBeforeClear(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

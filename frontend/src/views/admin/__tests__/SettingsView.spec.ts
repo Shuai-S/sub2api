@@ -363,6 +363,8 @@ const baseSettingsResponse = {
   totp_enabled: false,
   totp_encryption_key_configured: false,
   default_balance: 0,
+  affiliate_inviter_registration_reward: 0,
+  affiliate_invitee_registration_reward: 0,
   default_concurrency: 1,
   default_subscriptions: [],
   site_name: "Sub2API",
@@ -887,6 +889,32 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         affiliate_admin_recharge_enabled: true,
+      }),
+    );
+  });
+
+  it("loads and saves affiliate registration rewards", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      affiliate_enabled: true,
+      affiliate_inviter_registration_reward: 8.25,
+      affiliate_invitee_registration_reward: 3.5,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    const form = settingsForm(wrapper) as Record<string, unknown>;
+    expect(form.affiliate_inviter_registration_reward).toBe(8.25);
+    expect(form.affiliate_invitee_registration_reward).toBe(3.5);
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        affiliate_inviter_registration_reward: 8.25,
+        affiliate_invitee_registration_reward: 3.5,
       }),
     );
   });

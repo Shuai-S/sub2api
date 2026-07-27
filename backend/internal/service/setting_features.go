@@ -150,6 +150,26 @@ func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) fl
 	return cap
 }
 
+func (s *SettingService) GetAffiliateInviterRegistrationReward(ctx context.Context) float64 {
+	return s.getAffiliateRegistrationReward(ctx, SettingKeyAffiliateInviterRegistrationReward, AffiliateInviterRegistrationRewardDefault)
+}
+
+func (s *SettingService) GetAffiliateInviteeRegistrationReward(ctx context.Context) float64 {
+	return s.getAffiliateRegistrationReward(ctx, SettingKeyAffiliateInviteeRegistrationReward, AffiliateInviteeRegistrationRewardDefault)
+}
+
+func (s *SettingService) getAffiliateRegistrationReward(ctx context.Context, key string, fallback float64) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, key)
+	if err != nil {
+		return fallback
+	}
+	reward, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || reward < 0 || math.IsNaN(reward) || math.IsInf(reward, 0) {
+		return fallback
+	}
+	return roundTo(reward, 8)
+}
+
 // IsPasswordResetEnabled 检查是否启用密码重置功能
 // 要求：必须同时开启邮件验证
 func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {

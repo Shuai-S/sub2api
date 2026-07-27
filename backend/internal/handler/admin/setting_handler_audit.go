@@ -320,6 +320,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.AdminRechargeRebateEnabled != after.AdminRechargeRebateEnabled {
 		changed = append(changed, "affiliate_admin_recharge_enabled")
 	}
+	if before.AffiliateInviterRegistrationReward != after.AffiliateInviterRegistrationReward {
+		changed = append(changed, "affiliate_inviter_registration_reward")
+	}
+	if before.AffiliateInviteeRegistrationReward != after.AffiliateInviteeRegistrationReward {
+		changed = append(changed, "affiliate_invitee_registration_reward")
+	}
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
 	}

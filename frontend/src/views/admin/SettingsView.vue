@@ -6969,6 +6969,39 @@
                 <Toggle v-model="form.affiliate_admin_recharge_enabled" />
               </div>
 
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label class="input-label">
+                    {{ t('admin.settings.features.affiliate.inviterRegistrationReward') }}
+                  </label>
+                  <input
+                    v-model.number="form.affiliate_inviter_registration_reward"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    class="input"
+                  />
+                  <p class="mt-1 text-xs text-gray-400">
+                    {{ t('admin.settings.features.affiliate.inviterRegistrationRewardHint') }}
+                  </p>
+                </div>
+                <div>
+                  <label class="input-label">
+                    {{ t('admin.settings.features.affiliate.inviteeRegistrationReward') }}
+                  </label>
+                  <input
+                    v-model.number="form.affiliate_invitee_registration_reward"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    class="input"
+                  />
+                  <p class="mt-1 text-xs text-gray-400">
+                    {{ t('admin.settings.features.affiliate.inviteeRegistrationRewardHint') }}
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <label class="input-label">
                   {{ t('admin.settings.features.affiliate.rebateRate') }}
@@ -9443,6 +9476,8 @@ const form = reactive<SettingsForm>({
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
   affiliate_admin_recharge_enabled: false,
+  affiliate_inviter_registration_reward: 0,
+  affiliate_invitee_registration_reward: 0,
   default_concurrency: 1,
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
@@ -11031,6 +11066,8 @@ async function saveSettings() {
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),
       affiliate_admin_recharge_enabled: form.affiliate_admin_recharge_enabled,
+      affiliate_inviter_registration_reward: Math.max(0, Number(form.affiliate_inviter_registration_reward) || 0),
+      affiliate_invitee_registration_reward: Math.max(0, Number(form.affiliate_invitee_registration_reward) || 0),
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,
       force_email_on_third_party_signup: form.force_email_on_third_party_signup,

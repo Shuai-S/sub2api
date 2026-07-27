@@ -157,6 +157,8 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
+	AffiliateInviterRegistrationReward        *float64                          `json:"affiliate_inviter_registration_reward"`
+	AffiliateInviteeRegistrationReward        *float64                          `json:"affiliate_invitee_registration_reward"`
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance             *float64                          `json:"auth_source_default_email_balance"`
@@ -534,6 +536,20 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	adminRechargeRebateEnabled := previousSettings.AdminRechargeRebateEnabled
 	if req.AdminRechargeRebateEnabled != nil {
 		adminRechargeRebateEnabled = *req.AdminRechargeRebateEnabled
+	}
+	affiliateInviterRegistrationReward := previousSettings.AffiliateInviterRegistrationReward
+	if req.AffiliateInviterRegistrationReward != nil {
+		affiliateInviterRegistrationReward = *req.AffiliateInviterRegistrationReward
+	}
+	if affiliateInviterRegistrationReward < 0 {
+		affiliateInviterRegistrationReward = service.AffiliateInviterRegistrationRewardDefault
+	}
+	affiliateInviteeRegistrationReward := previousSettings.AffiliateInviteeRegistrationReward
+	if req.AffiliateInviteeRegistrationReward != nil {
+		affiliateInviteeRegistrationReward = *req.AffiliateInviteeRegistrationReward
+	}
+	if affiliateInviteeRegistrationReward < 0 {
+		affiliateInviteeRegistrationReward = service.AffiliateInviteeRegistrationRewardDefault
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1428,6 +1444,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
+		AffiliateInviterRegistrationReward:     affiliateInviterRegistrationReward,
+		AffiliateInviteeRegistrationReward:     affiliateInviteeRegistrationReward,
 		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    req.EnableModelFallback,
@@ -1959,6 +1977,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
+		AffiliateInviterRegistrationReward:                     updatedSettings.AffiliateInviterRegistrationReward,
+		AffiliateInviteeRegistrationReward:                     updatedSettings.AffiliateInviteeRegistrationReward,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,
 		EnableModelFallback:                                    updatedSettings.EnableModelFallback,

@@ -43,6 +43,8 @@ export interface AffiliateInviteRecord {
   invitee_username: string
   aff_code: string
   total_rebate: number
+  inviter_registration_reward: number
+  invitee_registration_reward: number
   created_at: string
 }
 

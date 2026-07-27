@@ -127,6 +127,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateFreezeHours:                strconv.Itoa(AffiliateRebateFreezeHoursDefault),
 		SettingKeyAffiliateRebateDurationDays:               strconv.Itoa(AffiliateRebateDurationDaysDefault),
 		SettingKeyAffiliateRebatePerInviteeCap:              strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
+		SettingKeyAffiliateInviterRegistrationReward:        strconv.FormatFloat(AffiliateInviterRegistrationRewardDefault, 'f', 8, 64),
+		SettingKeyAffiliateInviteeRegistrationReward:        strconv.FormatFloat(AffiliateInviteeRegistrationRewardDefault, 'f', 8, 64),
 		SettingKeyDefaultUserRPMLimit:                       "0",
 		SettingKeyDefaultSubscriptions:                      "[]",
 		SettingKeyAuthSourceDefaultEmailBalance:             "0",
@@ -334,6 +336,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",
 	}
+	result.AffiliateInviterRegistrationReward = AffiliateInviterRegistrationRewardDefault
+	result.AffiliateInviteeRegistrationReward = AffiliateInviteeRegistrationRewardDefault
 	result.TableDefaultPageSize, result.TablePageSizeOptions = parseTablePreferences(
 		settings[SettingKeyTableDefaultPageSize],
 		settings[SettingKeyTablePageSizeOptions],
@@ -381,6 +385,12 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	if perInviteeCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebatePerInviteeCap], 64); err == nil && perInviteeCap >= 0 {
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
+	}
+	if reward, err := strconv.ParseFloat(settings[SettingKeyAffiliateInviterRegistrationReward], 64); err == nil && reward >= 0 && !math.IsNaN(reward) && !math.IsInf(reward, 0) {
+		result.AffiliateInviterRegistrationReward = reward
+	}
+	if reward, err := strconv.ParseFloat(settings[SettingKeyAffiliateInviteeRegistrationReward], 64); err == nil && reward >= 0 && !math.IsNaN(reward) && !math.IsInf(reward, 0) {
+		result.AffiliateInviteeRegistrationReward = reward
 	}
 	result.AdminRechargeRebateEnabled = settings[SettingKeyAffiliateAdminRechargeEnabled] == "true"
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])

@@ -217,6 +217,52 @@ func TestSettingService_AffiliateAdminRechargeSetting(t *testing.T) {
 	})
 }
 
+func TestSettingService_AffiliateRegistrationRewards(t *testing.T) {
+	t.Run("missing and invalid values use zero defaults", func(t *testing.T) {
+		svc := NewSettingService(&settingGetAllRepoStub{values: map[string]string{
+			SettingKeyAffiliateInviterRegistrationReward: "-1",
+			SettingKeyAffiliateInviteeRegistrationReward: "NaN",
+		}}, &config.Config{})
+
+		settings, err := svc.GetAllSettings(context.Background())
+		require.NoError(t, err)
+		require.Zero(t, settings.AffiliateInviterRegistrationReward)
+		require.Zero(t, settings.AffiliateInviteeRegistrationReward)
+	})
+
+	t.Run("values are parsed and persisted precisely", func(t *testing.T) {
+		readService := NewSettingService(&settingGetAllRepoStub{values: map[string]string{
+			SettingKeyAffiliateInviterRegistrationReward: "12.34567891",
+			SettingKeyAffiliateInviteeRegistrationReward: "3.21098765",
+		}}, &config.Config{})
+
+		settings, err := readService.GetAllSettings(context.Background())
+		require.NoError(t, err)
+		require.InDelta(t, 12.34567891, settings.AffiliateInviterRegistrationReward, 1e-9)
+		require.InDelta(t, 3.21098765, settings.AffiliateInviteeRegistrationReward, 1e-9)
+
+		repo := &settingUpdateRepoStub{}
+		writeService := NewSettingService(repo, &config.Config{})
+		err = writeService.UpdateSettings(context.Background(), &SystemSettings{
+			AffiliateInviterRegistrationReward: 12.34567891,
+			AffiliateInviteeRegistrationReward: 3.21098765,
+		})
+		require.NoError(t, err)
+		require.Equal(t, "12.34567891", repo.updates[SettingKeyAffiliateInviterRegistrationReward])
+		require.Equal(t, "3.21098765", repo.updates[SettingKeyAffiliateInviteeRegistrationReward])
+	})
+
+	t.Run("runtime getters reject invalid values", func(t *testing.T) {
+		svc := NewSettingService(&settingRepoStub{values: map[string]string{
+			SettingKeyAffiliateInviterRegistrationReward: "8.123456789",
+			SettingKeyAffiliateInviteeRegistrationReward: "+Inf",
+		}}, &config.Config{})
+
+		require.InDelta(t, 8.12345679, svc.GetAffiliateInviterRegistrationReward(context.Background()), 1e-9)
+		require.Zero(t, svc.GetAffiliateInviteeRegistrationReward(context.Background()))
+	})
+}
+
 func (s *defaultSubGroupReaderStub) GetByID(ctx context.Context, id int64) (*Group, error) {
 	s.calls = append(s.calls, id)
 	if err, ok := s.errBy[id]; ok {

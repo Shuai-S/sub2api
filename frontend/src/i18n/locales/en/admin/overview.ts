@@ -401,6 +401,8 @@ export default {
         affCode: 'Invite Code',
         order: 'Order',
         totalRebate: 'Total Rebate',
+        inviterRegistrationReward: 'Inviter Signup Reward',
+        inviteeRegistrationReward: 'Invitee Signup Reward',
         orderAmount: 'Top-up Amount',
         payAmount: 'Paid Amount',
         rebateAmount: 'Rebate Amount',

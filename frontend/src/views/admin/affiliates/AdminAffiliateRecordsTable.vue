@@ -71,6 +71,12 @@
           <template #cell-total_rebate="{ row }">
             <AmountText :value="row.total_rebate" />
           </template>
+          <template #cell-inviter_registration_reward="{ row }">
+            <AmountText :value="row.inviter_registration_reward" />
+          </template>
+          <template #cell-invitee_registration_reward="{ row }">
+            <AmountText :value="row.invitee_registration_reward" />
+          </template>
           <template #cell-order_amount="{ row }">
             <AmountText :value="row.order_amount" />
           </template>
@@ -183,6 +189,8 @@ const columns = computed<Column[]>(() => {
       { key: 'invitee', label: t('admin.affiliates.records.invitee'), sortable: true },
       { key: 'aff_code', label: t('admin.affiliates.records.affCode'), sortable: true },
       { key: 'total_rebate', label: t('admin.affiliates.records.totalRebate'), sortable: true },
+      { key: 'inviter_registration_reward', label: t('admin.affiliates.records.inviterRegistrationReward'), sortable: true },
+      { key: 'invitee_registration_reward', label: t('admin.affiliates.records.inviteeRegistrationReward'), sortable: true },
       { key: 'created_at', label: t('admin.affiliates.records.invitedAt'), sortable: true },
     ]
   }

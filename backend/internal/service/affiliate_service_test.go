@@ -7,8 +7,62 @@ import (
 	"math"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
+
+type affiliateRegistrationRewardRepoStub struct {
+	AffiliateRepository
+	selfSummary    *AffiliateSummary
+	inviterSummary *AffiliateSummary
+	userID         int64
+	inviterID      int64
+	inviterReward  float64
+	inviteeReward  float64
+}
+
+func (r *affiliateRegistrationRewardRepoStub) EnsureUserAffiliate(context.Context, int64) (*AffiliateSummary, error) {
+	return r.selfSummary, nil
+}
+
+func (r *affiliateRegistrationRewardRepoStub) GetAffiliateByCode(context.Context, string) (*AffiliateSummary, error) {
+	return r.inviterSummary, nil
+}
+
+func (r *affiliateRegistrationRewardRepoStub) BindInviterWithRegistrationRewards(_ context.Context, userID, inviterID int64, inviterReward, inviteeReward float64) (*AffiliateRegistrationRewardResult, error) {
+	r.userID = userID
+	r.inviterID = inviterID
+	r.inviterReward = inviterReward
+	r.inviteeReward = inviteeReward
+	return &AffiliateRegistrationRewardResult{
+		Bound:          true,
+		InviterID:      inviterID,
+		InviterReward:  inviterReward,
+		InviteeReward:  inviteeReward,
+		InviteeBalance: 5.5,
+	}, nil
+}
+
+func TestBindInviterByCodeWithResult_UsesConfiguredRegistrationRewards(t *testing.T) {
+	repo := &affiliateRegistrationRewardRepoStub{
+		selfSummary:    &AffiliateSummary{UserID: 12},
+		inviterSummary: &AffiliateSummary{UserID: 34},
+	}
+	settings := NewSettingService(&settingRepoStub{values: map[string]string{
+		SettingKeyAffiliateEnabled:                   "true",
+		SettingKeyAffiliateInviterRegistrationReward: "8.123456789",
+		SettingKeyAffiliateInviteeRegistrationReward: "3.987654321",
+	}}, &config.Config{})
+	svc := NewAffiliateService(repo, settings, nil, nil)
+
+	result, err := svc.BindInviterByCodeWithResult(context.Background(), 12, " vip_2026 ")
+	require.NoError(t, err)
+	require.True(t, result.Bound)
+	require.Equal(t, int64(12), repo.userID)
+	require.Equal(t, int64(34), repo.inviterID)
+	require.InDelta(t, 8.12345679, repo.inviterReward, 1e-9)
+	require.InDelta(t, 3.98765432, repo.inviteeReward, 1e-9)
+}
 
 // TestResolveRebateRatePercent_PerUserOverride verifies that per-inviter
 // AffRebateRatePercent overrides the global rate, that NULL falls back to the

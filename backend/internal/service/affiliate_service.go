@@ -98,6 +98,7 @@ type AffiliateRepository interface {
 	EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error)
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
+	BindInviterWithRegistrationRewards(ctx context.Context, userID, inviterID int64, inviterReward, inviteeReward float64) (*AffiliateRegistrationRewardResult, error)
 	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error)
 	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
@@ -114,6 +115,14 @@ type AffiliateRepository interface {
 	ListAffiliateRebateRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error)
 	ListAffiliateTransferRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error)
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
+}
+
+type AffiliateRegistrationRewardResult struct {
+	Bound          bool    `json:"bound"`
+	InviterID      int64   `json:"inviter_id"`
+	InviterReward  float64 `json:"inviter_reward"`
+	InviteeReward  float64 `json:"invitee_reward"`
+	InviteeBalance float64 `json:"invitee_balance"`
 }
 
 // AffiliateAdminFilter 列表筛选条件
@@ -145,15 +154,17 @@ type AffiliateRecordFilter struct {
 }
 
 type AffiliateInviteRecord struct {
-	InviterID       int64     `json:"inviter_id"`
-	InviterEmail    string    `json:"inviter_email"`
-	InviterUsername string    `json:"inviter_username"`
-	InviteeID       int64     `json:"invitee_id"`
-	InviteeEmail    string    `json:"invitee_email"`
-	InviteeUsername string    `json:"invitee_username"`
-	AffCode         string    `json:"aff_code"`
-	TotalRebate     float64   `json:"total_rebate"`
-	CreatedAt       time.Time `json:"created_at"`
+	InviterID                 int64     `json:"inviter_id"`
+	InviterEmail              string    `json:"inviter_email"`
+	InviterUsername           string    `json:"inviter_username"`
+	InviteeID                 int64     `json:"invitee_id"`
+	InviteeEmail              string    `json:"invitee_email"`
+	InviteeUsername           string    `json:"invitee_username"`
+	AffCode                   string    `json:"aff_code"`
+	TotalRebate               float64   `json:"total_rebate"`
+	InviterRegistrationReward float64   `json:"inviter_registration_reward"`
+	InviteeRegistrationReward float64   `json:"invitee_registration_reward"`
+	CreatedAt                 time.Time `json:"created_at"`
 }
 
 type AffiliateRebateRecord struct {
@@ -267,48 +278,65 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 }
 
 func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, rawCode string) error {
+	_, err := s.BindInviterByCodeWithResult(ctx, userID, rawCode)
+	return err
+}
+
+func (s *AffiliateService) BindInviterByCodeWithResult(ctx context.Context, userID int64, rawCode string) (*AffiliateRegistrationRewardResult, error) {
 	code := strings.ToUpper(strings.TrimSpace(rawCode))
 	if code == "" {
-		return nil
+		return nil, nil
 	}
 	if s == nil || s.repo == nil {
-		return infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+		return nil, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
 	}
 	// 总开关关闭时，注册阶段静默忽略 aff 参数（不报错，避免阻断注册流程）
 	if !s.IsEnabled(ctx) {
-		return nil
+		return nil, nil
 	}
 	if !isValidAffiliateCodeFormat(code) {
-		return ErrAffiliateCodeInvalid
+		return nil, ErrAffiliateCodeInvalid
 	}
 
 	selfSummary, err := s.repo.EnsureUserAffiliate(ctx, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if selfSummary.InviterID != nil {
-		return nil
+		return nil, nil
 	}
 
 	inviterSummary, err := s.repo.GetAffiliateByCode(ctx, code)
 	if err != nil {
 		if errors.Is(err, ErrAffiliateProfileNotFound) {
-			return ErrAffiliateCodeInvalid
+			return nil, ErrAffiliateCodeInvalid
 		}
-		return err
+		return nil, err
 	}
 	if inviterSummary == nil || inviterSummary.UserID <= 0 || inviterSummary.UserID == userID {
-		return ErrAffiliateCodeInvalid
+		return nil, ErrAffiliateCodeInvalid
 	}
 
-	bound, err := s.repo.BindInviter(ctx, userID, inviterSummary.UserID)
+	var inviterReward, inviteeReward float64
+	if s.settingService != nil {
+		inviterReward = s.settingService.GetAffiliateInviterRegistrationReward(ctx)
+		inviteeReward = s.settingService.GetAffiliateInviteeRegistrationReward(ctx)
+	}
+
+	result, err := s.repo.BindInviterWithRegistrationRewards(
+		ctx,
+		userID,
+		inviterSummary.UserID,
+		roundTo(inviterReward, 8),
+		roundTo(inviteeReward, 8),
+	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !bound {
-		return ErrAffiliateAlreadyBound
+	if result == nil || !result.Bound {
+		return nil, ErrAffiliateAlreadyBound
 	}
-	return nil
+	return result, nil
 }
 
 func (s *AffiliateService) AccrueInviteRebate(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64) (float64, error) {

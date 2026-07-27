@@ -77,6 +77,19 @@ func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code strin
 }
 
 func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID int64) (bool, error) {
+	result, err := r.BindInviterWithRegistrationRewards(ctx, userID, inviterID, 0, 0)
+	if err != nil {
+		return false, err
+	}
+	return result != nil && result.Bound, nil
+}
+
+func (r *affiliateRepository) BindInviterWithRegistrationRewards(ctx context.Context, userID, inviterID int64, inviterReward, inviteeReward float64) (*service.AffiliateRegistrationRewardResult, error) {
+	result := &service.AffiliateRegistrationRewardResult{
+		InviterID:     inviterID,
+		InviterReward: inviterReward,
+		InviteeReward: inviteeReward,
+	}
 	var bound bool
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
 		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, userID); err != nil {
@@ -105,13 +118,128 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 		); err != nil {
 			return fmt.Errorf("increment inviter aff_count: %w", err)
 		}
+
+		if inviterReward > 0 {
+			if _, err := txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET aff_quota = aff_quota + $1,
+    aff_history_quota = aff_history_quota + $1,
+    updated_at = NOW()
+WHERE user_id = $2`, inviterReward, inviterID); err != nil {
+				return fmt.Errorf("credit inviter registration reward: %w", err)
+			}
+			snapshot, err := queryAffiliateTransferSnapshot(txCtx, txClient, inviterID)
+			if err != nil {
+				return err
+			}
+			if _, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (
+    user_id, action, amount, source_user_id,
+    aff_quota_after, aff_frozen_quota_after, aff_history_quota_after,
+    created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+				inviterID,
+				service.AffiliateLedgerActionRegistrationInviterReward,
+				inviterReward,
+				userID,
+				snapshot.AvailableQuotaAfter,
+				snapshot.FrozenQuotaAfter,
+				snapshot.HistoryQuotaAfter,
+			); err != nil {
+				return fmt.Errorf("insert inviter registration reward ledger: %w", err)
+			}
+		}
+
+		if inviteeReward > 0 {
+			if _, err := txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET aff_quota = aff_quota + $1,
+    aff_history_quota = aff_history_quota + $1,
+    updated_at = NOW()
+WHERE user_id = $2`, inviteeReward, userID); err != nil {
+				return fmt.Errorf("credit invitee registration reward: %w", err)
+			}
+			rewardSnapshot, err := queryAffiliateTransferSnapshot(txCtx, txClient, userID)
+			if err != nil {
+				return err
+			}
+			if _, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (
+    user_id, action, amount, source_user_id,
+    aff_quota_after, aff_frozen_quota_after, aff_history_quota_after,
+    created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+				userID,
+				service.AffiliateLedgerActionRegistrationInviteeReward,
+				inviteeReward,
+				inviterID,
+				rewardSnapshot.AvailableQuotaAfter,
+				rewardSnapshot.FrozenQuotaAfter,
+				rewardSnapshot.HistoryQuotaAfter,
+			); err != nil {
+				return fmt.Errorf("insert invitee registration reward ledger: %w", err)
+			}
+
+			res, err := txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET aff_quota = aff_quota - $1,
+    updated_at = NOW()
+WHERE user_id = $2
+  AND aff_quota >= $1`, inviteeReward, userID)
+			if err != nil {
+				return fmt.Errorf("claim invitee registration reward: %w", err)
+			}
+			affected, _ := res.RowsAffected()
+			if affected == 0 {
+				return fmt.Errorf("claim invitee registration reward: insufficient affiliate quota")
+			}
+
+			updatedUsers, err := txClient.User.Update().
+				Where(user.IDEQ(userID)).
+				AddBalance(inviteeReward).
+				AddTotalRecharged(inviteeReward).
+				Save(txCtx)
+			if err != nil {
+				return fmt.Errorf("transfer invitee registration reward to balance: %w", err)
+			}
+			if updatedUsers == 0 {
+				return service.ErrUserNotFound
+			}
+
+			transferSnapshot, err := queryAffiliateTransferSnapshot(txCtx, txClient, userID)
+			if err != nil {
+				return err
+			}
+			result.InviteeBalance = transferSnapshot.BalanceAfter
+			if _, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (
+    user_id, action, amount, source_user_id,
+    balance_after, aff_quota_after, aff_frozen_quota_after, aff_history_quota_after,
+    created_at, updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+				userID,
+				service.AffiliateLedgerActionTransfer,
+				inviteeReward,
+				inviterID,
+				transferSnapshot.BalanceAfter,
+				transferSnapshot.AvailableQuotaAfter,
+				transferSnapshot.FrozenQuotaAfter,
+				transferSnapshot.HistoryQuotaAfter,
+			); err != nil {
+				return fmt.Errorf("insert invitee registration transfer ledger: %w", err)
+			}
+		}
 		bound = true
 		return nil
 	})
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return bound, nil
+	result.Bound = bound
+	return result, nil
 }
 
 func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
@@ -402,11 +530,13 @@ JOIN user_affiliates inviter_aff ON inviter_aff.user_id = ua.inviter_id
 	}
 
 	orderBy := buildAffiliateRecordOrderBy(filter, map[string]string{
-		"inviter":      "inviter.email",
-		"invitee":      "invitee.email",
-		"aff_code":     "inviter_aff.aff_code",
-		"total_rebate": "total_rebate",
-		"created_at":   "ua.created_at",
+		"inviter":                     "inviter.email",
+		"invitee":                     "invitee.email",
+		"aff_code":                    "inviter_aff.aff_code",
+		"total_rebate":                "total_rebate",
+		"inviter_registration_reward": "inviter_registration_reward",
+		"invitee_registration_reward": "invitee_registration_reward",
+		"created_at":                  "ua.created_at",
 	}, "ua.created_at")
 	args = append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)
 	rows, err := client.QueryContext(ctx, `
@@ -418,6 +548,8 @@ SELECT ua.inviter_id,
        COALESCE(invitee.username, ''),
        COALESCE(inviter_aff.aff_code, ''),
        COALESCE(SUM(ual.amount), 0)::double precision AS total_rebate,
+       COALESCE(MAX(inviter_reward.amount), 0)::double precision AS inviter_registration_reward,
+       COALESCE(MAX(invitee_reward.amount), 0)::double precision AS invitee_registration_reward,
        ua.created_at
 FROM user_affiliates ua
 JOIN users invitee ON invitee.id = ua.user_id
@@ -427,6 +559,14 @@ LEFT JOIN user_affiliate_ledger ual
        ON ual.user_id = ua.inviter_id
       AND ual.source_user_id = ua.user_id
       AND ual.action = 'accrue'
+LEFT JOIN user_affiliate_ledger inviter_reward
+       ON inviter_reward.user_id = ua.inviter_id
+      AND inviter_reward.source_user_id = ua.user_id
+      AND inviter_reward.action = 'registration_inviter_reward'
+LEFT JOIN user_affiliate_ledger invitee_reward
+       ON invitee_reward.user_id = ua.user_id
+      AND invitee_reward.source_user_id = ua.inviter_id
+      AND invitee_reward.action = 'registration_invitee_reward'
 `+where+`
 GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, ua.created_at
 `+orderBy+`
@@ -448,6 +588,8 @@ LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 			&item.InviteeUsername,
 			&item.AffCode,
 			&item.TotalRebate,
+			&item.InviterRegistrationReward,
+			&item.InviteeRegistrationReward,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, 0, err

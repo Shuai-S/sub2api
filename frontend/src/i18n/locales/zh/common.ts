@@ -270,6 +270,8 @@ export default {
     promoCodeInvalidCannotRegister: '优惠码无效，请检查后重试或清空优惠码',
     invitationCodeLabel: '邀请码',
     invitationCodePlaceholder: '请输入邀请码',
+    affiliateCodeLabel: '好友邀请码',
+    affiliateCodePlaceholder: '请输入好友邀请码',
     invitationCodeRequired: '请输入邀请码',
     invitationCodeValid: '邀请码有效',
     invitationCodeInvalid: '邀请码无效或已被使用',
