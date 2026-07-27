@@ -956,6 +956,14 @@ export interface UpstreamBillingData {
 
 export type UpstreamBillingProbeStatus = 'ok' | 'unsupported' | 'failed'
 
+export interface UpstreamBillingRateSyncSnapshot {
+  status: 'applied' | 'unchanged' | 'invalid'
+  source_rate_multiplier?: number
+  previous_rate_multiplier?: number
+  applied_rate_multiplier?: number
+  synced_at: string
+}
+
 export interface UpstreamBillingProbeSnapshot {
   status: UpstreamBillingProbeStatus
   data?: UpstreamBillingData
@@ -966,6 +974,7 @@ export interface UpstreamBillingProbeSnapshot {
   failure_count?: number
   http_status?: number
   last_error?: string
+  rate_sync?: UpstreamBillingRateSyncSnapshot
 }
 
 export interface UpstreamBillingProbeSettings {
@@ -1047,6 +1056,7 @@ export interface Account {
     model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
     antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
     upstream_billing_probe_enabled?: boolean
+    upstream_billing_rate_sync_enabled?: boolean
     upstream_billing_probe?: UpstreamBillingProbeSnapshot
   } & Record<string, unknown>)
   proxy_id: number | null
@@ -1331,6 +1341,7 @@ export interface CreateAccountRequest {
   expires_at?: number | null
   auto_pause_on_expired?: boolean
   upstream_billing_probe_enabled?: boolean
+  upstream_billing_rate_sync_enabled?: boolean
   confirm_mixed_channel_risk?: boolean
 }
 
@@ -1350,6 +1361,8 @@ export interface UpdateAccountRequest {
   group_ids?: number[]
   expires_at?: number | null
   auto_pause_on_expired?: boolean
+  upstream_billing_probe_enabled?: boolean
+  upstream_billing_rate_sync_enabled?: boolean
   confirm_mixed_channel_risk?: boolean
 }
 

@@ -226,6 +226,14 @@ export default {
         trustWarning: 'This rate is declared by the upstream site for the current API key. Sub2API cannot verify that it matches actual charges. The upstream site or an intermediary may return forged, stale, or modified data. Verify it against bills, balance changes, and actual usage.',
         autoProbe: 'Automatically probe upstream declared rate',
         autoProbeHint: 'Probe this account\'s upstream declared rate on the global interval when global probing is enabled.',
+        rateSync: 'Sync upstream rate to account rate',
+        rateSyncHint: 'After a successful probe, apply the upstream resolved rate to the account. Peak-period rates are never persisted. Manual rate editing is disabled while sync is on.',
+        rateSyncState: 'Account rate sync:',
+        rateSyncStatus: {
+          applied: 'Applied new rate',
+          unchanged: 'Rate unchanged',
+          invalid: 'Invalid upstream rate; not applied'
+        },
         manualProbe: 'Probe upstream rate now',
         stale: 'Stale',
         unsupported: 'Unsupported',

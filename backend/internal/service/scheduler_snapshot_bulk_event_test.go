@@ -13,7 +13,18 @@ import (
 
 type bulkEventAccountRepo struct {
 	*batchAccountQueryRepo
-	accounts []*Account
+	accounts     []*Account
+	getByIDCalls int
+}
+
+func (r *bulkEventAccountRepo) GetByID(_ context.Context, id int64) (*Account, error) {
+	r.getByIDCalls++
+	for _, account := range r.accounts {
+		if account != nil && account.ID == id {
+			return account, nil
+		}
+	}
+	return nil, ErrAccountNotFound
 }
 
 func newBulkEventAccountRepo(accounts ...*Account) *bulkEventAccountRepo {
@@ -112,6 +123,25 @@ func TestSchedulerBulkAccountEventScopesOpenAIRebuildToFreshPlatform(t *testing.
 	set, deleted := cache.accountWrites()
 	require.Equal(t, []int64{1}, set)
 	require.Empty(t, deleted)
+}
+
+func TestSchedulerAccountCacheChangedEventRefreshesOneAccountWithoutBucketRebuild(t *testing.T) {
+	cache := newBulkEventSnapshotCache()
+	repo := newBulkEventAccountRepo(&Account{ID: 44, Platform: PlatformOpenAI, GroupIDs: []int64{12}})
+	svc := newBulkEventTestService(cache, repo)
+	accountID := int64(44)
+
+	err := svc.handleOutboxEvent(context.Background(), SchedulerOutboxEvent{
+		EventType: SchedulerOutboxEventAccountCacheChanged,
+		AccountID: &accountID,
+	}, make(map[batchSeenKey]struct{}))
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.getByIDCalls)
+	set, deleted := cache.accountWrites()
+	require.Equal(t, []int64{44}, set)
+	require.Empty(t, deleted)
+	require.Empty(t, cache.capturedBuckets())
 }
 
 func TestSchedulerBulkAccountEventRebuildsOpenAIUngroupedBucket(t *testing.T) {

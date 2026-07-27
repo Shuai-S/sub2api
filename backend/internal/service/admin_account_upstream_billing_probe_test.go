@@ -64,6 +64,27 @@ func TestCreateAccountAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) 
 	require.ErrorIs(t, err, ErrUpstreamBillingProbeAccountInvalid)
 }
 
+func TestCreateAccountRateSyncEnablesProbeAndRejectsManualRate(t *testing.T) {
+	enabled := true
+	repo := &upstreamBillingProbeAccountRepo{}
+	created, err := (&adminServiceImpl{accountRepo: repo}).CreateAccount(context.Background(), &CreateAccountInput{
+		Name: "upstream", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"}, RateSyncEnabled: &enabled,
+		SkipDefaultGroupBind: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, true, created.Extra[UpstreamBillingProbeEnabledExtraKey])
+	require.Equal(t, true, created.Extra[UpstreamBillingRateSyncEnabledExtraKey])
+
+	rate := 0.8
+	_, err = (&adminServiceImpl{accountRepo: repo}).CreateAccount(context.Background(), &CreateAccountInput{
+		Name: "upstream-rate", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-test"}, RateSyncEnabled: &enabled,
+		RateMultiplier: &rate, SkipDefaultGroupBind: true,
+	})
+	require.ErrorIs(t, err, ErrUpstreamBillingRateSyncManualRate)
+}
+
 func TestUpdateAccountPreservesManagedUpstreamBillingProbeStateForUnrelatedEdit(t *testing.T) {
 	accountID := int64(110)
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
@@ -299,6 +320,26 @@ func TestUpdateAccountAcceptsProbeEnabledAndRejectsInjectedSnapshot(t *testing.T
 	require.NotContains(t, updated.Extra, UpstreamBillingProbeExtraKey)
 }
 
+func TestUpdateAccountRateSyncInvariants(t *testing.T) {
+	accountID := int64(211)
+	currentRate := 1.0
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		accountID: {
+			ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+			RateMultiplier: &currentRate, Extra: map[string]any{},
+		},
+	}}
+	enabled := true
+	updated, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{RateSyncEnabled: &enabled})
+	require.NoError(t, err)
+	require.Equal(t, true, updated.Extra[UpstreamBillingProbeEnabledExtraKey])
+	require.Equal(t, true, updated.Extra[UpstreamBillingRateSyncEnabledExtraKey])
+
+	manualRate := 0.7
+	_, err = (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{RateMultiplier: &manualRate})
+	require.ErrorIs(t, err, ErrUpstreamBillingRateSyncManualRate)
+}
+
 func TestUpdateAccountExplicitProbeDisableUsesDedicatedExtraUpdate(t *testing.T) {
 	accountID := int64(113)
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
@@ -407,6 +448,34 @@ func TestBulkUpdateAccountsAcceptsDedicatedUpstreamBillingProbeSetting(t *testin
 			require.Equal(t, enabled, *repo.bulkUpdates[0].ProbeEnabled)
 		})
 	}
+}
+
+func TestBulkUpdateAccountsRateSyncInvariants(t *testing.T) {
+	enabled := true
+	currentRate := 1.0
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		1: {ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &currentRate},
+	}}
+	_, err := (&adminServiceImpl{accountRepo: repo}).BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1}, RateSyncEnabled: &enabled,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.bulkUpdates[0].ProbeEnabled)
+	require.True(t, *repo.bulkUpdates[0].ProbeEnabled)
+	require.True(t, *repo.bulkUpdates[0].RateSyncEnabled)
+
+	repo.accounts[1].Extra = map[string]any{UpstreamBillingRateSyncEnabledExtraKey: true}
+	manualRate := 0.7
+	_, err = (&adminServiceImpl{accountRepo: repo}).BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1}, RateMultiplier: &manualRate,
+	})
+	require.ErrorIs(t, err, ErrUpstreamBillingRateSyncManualRate)
+
+	disabled := false
+	_, err = (&adminServiceImpl{accountRepo: repo}).BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1}, RateSyncEnabled: &disabled, RateMultiplier: &manualRate,
+	})
+	require.NoError(t, err)
 }
 
 func TestBulkUpdateAccountsRejectsProbeSettingForIneligibleTargetBeforeWrite(t *testing.T) {

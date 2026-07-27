@@ -141,17 +141,18 @@ type AdminAccountRepository interface {
 // AccountBulkUpdate describes the fields that can be updated in a bulk operation.
 // Nil pointers mean "do not change".
 type AccountBulkUpdate struct {
-	Name           *string
-	ProxyID        *int64
-	Concurrency    *int
-	Priority       *int
-	RateMultiplier *float64
-	LoadFactor     *int
-	Status         *string
-	Schedulable    *bool
-	Credentials    map[string]any
-	Extra          map[string]any
-	ProbeEnabled   *bool
+	Name            *string
+	ProxyID         *int64
+	Concurrency     *int
+	Priority        *int
+	RateMultiplier  *float64
+	LoadFactor      *int
+	Status          *string
+	Schedulable     *bool
+	Credentials     map[string]any
+	Extra           map[string]any
+	ProbeEnabled    *bool
+	RateSyncEnabled *bool
 }
 
 // CreateAccountRequest 创建账号请求

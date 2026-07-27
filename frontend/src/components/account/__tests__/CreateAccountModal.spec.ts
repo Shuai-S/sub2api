@@ -114,7 +114,8 @@ async function selectButtonByText(wrapper: ReturnType<typeof mountModal>, text: 
 async function submitApiKeyAccount(
   platform: 'openai' | 'anthropic',
   enableLongContextBilling = false,
-  disableUpstreamBillingProbe = false
+  disableUpstreamBillingProbe = false,
+  enableUpstreamBillingRateSync = false
 ) {
   const wrapper = mountModal()
   await selectButtonByText(wrapper, platform === 'openai' ? 'OpenAI' : 'admin.accounts.claudeConsole')
@@ -128,6 +129,9 @@ async function submitApiKeyAccount(
   }
   if (disableUpstreamBillingProbe) {
     await wrapper.get('[data-testid="upstream-billing-auto-probe"]').trigger('click')
+  }
+  if (enableUpstreamBillingRateSync) {
+    await wrapper.get('[data-testid="upstream-billing-rate-sync"]').trigger('click')
   }
   await wrapper.get('form#create-account-form').trigger('submit.prevent')
   await flushPromises()
@@ -171,6 +175,15 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await submitApiKeyAccount('openai')
 
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
+  })
+
+  it('enabling upstream rate sync keeps probing on and omits the manual account rate', async () => {
+    await submitApiKeyAccount('openai', false, true, true)
+
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload?.upstream_billing_probe_enabled).toBe(true)
+    expect(payload?.upstream_billing_rate_sync_enabled).toBe(true)
+    expect(payload?.rate_multiplier).toBeUndefined()
   })
 
   it('waits for the initial upstream billing probe before refreshing the account list', async () => {

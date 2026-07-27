@@ -229,6 +229,7 @@ func schedulerOutboxDedupKey(eventType string, accountID *int64, groupID *int64,
 func schedulerOutboxEventSupportsDedup(eventType string) bool {
 	switch eventType {
 	case service.SchedulerOutboxEventAccountChanged,
+		service.SchedulerOutboxEventAccountCacheChanged,
 		service.SchedulerOutboxEventGroupChanged,
 		service.SchedulerOutboxEventFullRebuild:
 		return true

@@ -439,6 +439,8 @@ func (s *SchedulerSnapshotService) handleOutboxEvent(ctx context.Context, event 
 	switch event.EventType {
 	case SchedulerOutboxEventAccountLastUsed:
 		return s.handleLastUsedEvent(ctx, event.Payload)
+	case SchedulerOutboxEventAccountCacheChanged:
+		return s.handleAccountCacheEvent(ctx, event.AccountID)
 	case SchedulerOutboxEventAccountBulkChanged:
 		return s.handleBulkAccountEvent(ctx, event.Payload, seen)
 	case SchedulerOutboxEventAccountGroupsChanged:
@@ -452,6 +454,20 @@ func (s *SchedulerSnapshotService) handleOutboxEvent(ctx context.Context, event 
 	default:
 		return nil
 	}
+}
+
+func (s *SchedulerSnapshotService) handleAccountCacheEvent(ctx context.Context, accountID *int64) error {
+	if accountID == nil || *accountID <= 0 || s.accountRepo == nil || s.cache == nil {
+		return nil
+	}
+	account, err := s.accountRepo.GetByID(ctx, *accountID)
+	if err != nil {
+		if errors.Is(err, ErrAccountNotFound) {
+			return s.cache.DeleteAccount(ctx, *accountID)
+		}
+		return err
+	}
+	return s.cache.SetAccount(ctx, account)
 }
 
 func (s *SchedulerSnapshotService) handleLastUsedEvent(ctx context.Context, payload map[string]any) error {

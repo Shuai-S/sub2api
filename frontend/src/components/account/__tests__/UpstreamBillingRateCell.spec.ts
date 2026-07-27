@@ -100,6 +100,38 @@ describe('UpstreamBillingRateCell', () => {
     )
   })
 
+  it('shows the latest account-rate synchronization result', async () => {
+    const wrapper = mount(UpstreamBillingRateCell, {
+      props: {
+        account: makeAccount({
+          extra: {
+            upstream_billing_probe_enabled: true,
+            upstream_billing_rate_sync_enabled: true,
+            upstream_billing_probe: {
+              status: 'ok', data: billingData,
+              received_at: '2026-07-13T00:00:00Z', fresh_until: '2026-07-14T00:00:00Z',
+              last_attempt_at: '2026-07-13T00:00:00Z', next_probe_at: '2026-07-13T00:30:00Z',
+              rate_sync: {
+                status: 'applied', applied_rate_multiplier: 0.6, synced_at: '2026-07-13T00:00:00Z'
+              }
+            }
+          }
+        }),
+        now: Date.now()
+      }
+    })
+
+    await wrapper.get('[data-testid="upstream-billing-details"]').trigger('mouseenter')
+    await flushPromises()
+
+    const tooltips = document.body.querySelectorAll('[role="tooltip"]')
+    const tooltip = tooltips[tooltips.length - 1] as HTMLElement
+    expect(tooltip.querySelector('[data-testid="upstream-billing-rate-sync-state"]')?.textContent)
+      .toContain('admin.accounts.upstreamBilling.enabled')
+    expect(tooltip.querySelector('[data-testid="upstream-billing-rate-sync-result"]')?.textContent)
+      .toContain('0.6x')
+  })
+
   it('uses retained failed data only while it is still fresh', async () => {
     const account = makeAccount({
       extra: {

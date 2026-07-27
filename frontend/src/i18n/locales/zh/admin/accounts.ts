@@ -179,6 +179,14 @@ export default {
         trustWarning: '此倍率由上游站点针对当前 API Key 自行声明。Sub2API 无法验证该值是否与实际扣费一致；上游站点或中间代理可能返回伪造、过期或被篡改的数据。请结合账单、余额变化和实际用量自行核验。',
         autoProbe: '自动探测上游声明倍率',
         autoProbeHint: '启用后按全局探测周期查询此账号的上游声明倍率；全局探测关闭时不会执行。',
+        rateSync: '同步上游倍率到账号倍率',
+        rateSyncHint: '探测成功后使用上游 resolved 倍率更新账号倍率；高峰时段倍率不会写入。开启后不可手工修改账号倍率。',
+        rateSyncState: '账号倍率同步：',
+        rateSyncStatus: {
+          applied: '已同步新倍率',
+          unchanged: '倍率未变化',
+          invalid: '上游倍率无效，未同步'
+        },
         manualProbe: '立即探测上游倍率',
         stale: '已过期',
         unsupported: '不支持',

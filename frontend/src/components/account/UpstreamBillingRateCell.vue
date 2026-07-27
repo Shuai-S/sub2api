@@ -63,6 +63,17 @@
           {{ t('admin.accounts.upstreamBilling.globalProbeState') }}
           <span class="text-red-400">{{ t('admin.accounts.upstreamBilling.disabled') }}</span>
         </p>
+        <p class="mt-1" data-testid="upstream-billing-rate-sync-state">
+          {{ t('admin.accounts.upstreamBilling.rateSyncState') }}
+          <span :class="rateSyncEnabled ? 'text-emerald-400' : 'text-gray-400'">
+            {{ rateSyncEnabled ? t('admin.accounts.upstreamBilling.enabled') : t('admin.accounts.upstreamBilling.disabled') }}
+          </span>
+        </p>
+        <p v-if="snapshot?.rate_sync" class="mt-1" data-testid="upstream-billing-rate-sync-result">
+          {{ t(`admin.accounts.upstreamBilling.rateSyncStatus.${snapshot.rate_sync.status}`) }}
+          · {{ snapshot.rate_sync.applied_rate_multiplier ?? '-' }}x
+          · {{ formatDate(snapshot.rate_sync.synced_at) }}
+        </p>
       </div>
     </HelpTooltip>
     <span v-if="hasEffectiveRate && statusLabel" :class="statusClass" class="whitespace-nowrap text-[10px] font-medium">
@@ -109,6 +120,7 @@ const eligible = computed(() => props.account.platform === 'openai' && props.acc
 const snapshot = computed<UpstreamBillingProbeSnapshot | undefined>(() => props.account.extra?.upstream_billing_probe)
 const data = computed(() => snapshot.value?.data)
 const probeEnabled = computed(() => props.account.extra?.upstream_billing_probe_enabled === true)
+const rateSyncEnabled = computed(() => props.account.extra?.upstream_billing_rate_sync_enabled === true)
 const nextProbeAt = computed(() => {
   const value = snapshot.value?.next_probe_at
   return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : ''

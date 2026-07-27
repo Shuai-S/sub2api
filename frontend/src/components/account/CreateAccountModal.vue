@@ -1145,19 +1145,34 @@
 
         <div
           v-if="form.platform === 'openai'"
-          class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+          class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
         >
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-            </p>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="upstreamBillingAutoProbeEnabled"
+              data-testid="upstream-billing-auto-probe"
+              :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
+            />
           </div>
-          <Toggle
-            v-model="upstreamBillingAutoProbeEnabled"
-            data-testid="upstream-billing-auto-probe"
-            :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
-          />
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.rateSync') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.upstreamBilling.rateSyncHint') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="upstreamBillingRateSyncEnabled"
+              data-testid="upstream-billing-rate-sync"
+              :aria-label="t('admin.accounts.upstreamBilling.rateSync')"
+            />
+          </div>
         </div>
 
         <!-- Gemini API Key tier selection -->
@@ -2741,7 +2756,15 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
-          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" />
+          <input
+            v-model.number="form.rate_multiplier"
+            type="number"
+            min="0"
+            step="0.0001"
+            class="input"
+            :disabled="form.platform === 'openai' && form.type === 'apikey' && upstreamBillingRateSyncEnabled"
+            data-testid="account-rate-multiplier"
+          />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
@@ -3719,6 +3742,14 @@ const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
+const upstreamBillingRateSyncEnabled = ref(false)
+
+watch(upstreamBillingRateSyncEnabled, enabled => {
+  if (enabled) upstreamBillingAutoProbeEnabled.value = true
+})
+watch(upstreamBillingAutoProbeEnabled, enabled => {
+  if (!enabled) upstreamBillingRateSyncEnabled.value = false
+})
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
@@ -4657,6 +4688,7 @@ const resetForm = () => {
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   upstreamBillingAutoProbeEnabled.value = true
+  upstreamBillingRateSyncEnabled.value = false
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -5161,6 +5193,10 @@ const handleSubmit = async () => {
     extra,
     upstream_billing_probe_enabled:
       form.platform === 'openai' ? upstreamBillingAutoProbeEnabled.value : undefined,
+    upstream_billing_rate_sync_enabled:
+      form.platform === 'openai' ? upstreamBillingRateSyncEnabled.value : undefined,
+    rate_multiplier:
+      form.platform === 'openai' && upstreamBillingRateSyncEnabled.value ? undefined : form.rate_multiplier,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
 }

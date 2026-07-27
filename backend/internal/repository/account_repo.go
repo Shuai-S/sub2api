@@ -397,16 +397,22 @@ func (r *accountRepository) ListCRSAccountIDs(ctx context.Context) (map[string]i
 }
 
 func (r *accountRepository) Update(ctx context.Context, account *service.Account) error {
-	return r.updateAccount(ctx, account, nil)
+	return r.updateAccount(ctx, account, nil, nil, false)
 }
 
 // UpdateWithUpstreamBillingProbeEnabled applies an explicit probe switch in the
 // same row-lock transaction as the rest of an admin account edit.
 func (r *accountRepository) UpdateWithUpstreamBillingProbeEnabled(ctx context.Context, account *service.Account, enabled bool) error {
-	return r.updateAccount(ctx, account, &enabled)
+	return r.UpdateWithUpstreamBillingSettings(ctx, account, &enabled, nil, false)
 }
 
-func (r *accountRepository) updateAccount(ctx context.Context, account *service.Account, explicitProbeEnabled *bool) error {
+// UpdateWithUpstreamBillingSettings updates both account switches under the
+// same row lock as the rest of the account edit.
+func (r *accountRepository) UpdateWithUpstreamBillingSettings(ctx context.Context, account *service.Account, explicitProbeEnabled, explicitRateSyncEnabled *bool, manualRateUpdate bool) error {
+	return r.updateAccount(ctx, account, explicitProbeEnabled, explicitRateSyncEnabled, manualRateUpdate)
+}
+
+func (r *accountRepository) updateAccount(ctx context.Context, account *service.Account, explicitProbeEnabled, explicitRateSyncEnabled *bool, manualRateUpdate bool) error {
 	if account == nil {
 		return nil
 	}
@@ -430,7 +436,7 @@ func (r *accountRepository) updateAccount(ctx context.Context, account *service.
 		}
 	}
 
-	updated, err := r.updateLockedAccount(ctx, client, account, explicitProbeEnabled)
+	updated, err := r.updateLockedAccount(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled, manualRateUpdate)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
@@ -452,10 +458,15 @@ func (r *accountRepository) updateAccount(ctx context.Context, account *service.
 	return nil
 }
 
-func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbent.Client, account *service.Account, explicitProbeEnabled *bool) (*dbent.Account, error) {
-	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled)
+func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbent.Client, account *service.Account, explicitProbeEnabled, explicitRateSyncEnabled *bool, manualRateUpdate bool) (*dbent.Account, error) {
+	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
 	if err != nil {
 		return nil, err
+	}
+	if manualRateUpdate {
+		if enabled, _ := extra[service.UpstreamBillingRateSyncEnabledExtraKey].(bool); enabled {
+			return nil, service.ErrUpstreamBillingRateSyncManualRate
+		}
 	}
 	account.Extra = extra
 
@@ -542,7 +553,11 @@ func (r *accountRepository) updateLockedAccount(ctx context.Context, client *dbe
 	return builder.Save(ctx)
 }
 
-func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, account *service.Account, explicitProbeEnabled *bool) (map[string]any, error) {
+func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, account *service.Account, explicitProbeEnabled *bool, rateSyncUpdates ...*bool) (map[string]any, error) {
+	var explicitRateSyncEnabled *bool
+	if len(rateSyncUpdates) > 0 {
+		explicitRateSyncEnabled = rateSyncUpdates[0]
+	}
 	credentials, err := json.Marshal(normalizeJSONMap(account.Credentials))
 	if err != nil {
 		return nil, err
@@ -569,6 +584,7 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 			),
 			proxy_id IS NOT DISTINCT FROM $5,
 			extra -> 'upstream_billing_probe_enabled',
+			extra -> 'upstream_billing_rate_sync_enabled',
 			extra -> 'upstream_billing_probe',
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
@@ -593,6 +609,7 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		ollamaGroupIdentityUnchanged bool
 		ollamaProxyIdentityUnchanged bool
 		currentEnabled               []byte
+		currentRateSyncEnabled       []byte
 		currentSnapshot              []byte
 		currentOllamaSession         []byte
 		currentOllamaAutoRefresh     []byte
@@ -603,6 +620,7 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 		&ollamaGroupIdentityUnchanged,
 		&ollamaProxyIdentityUnchanged,
 		&currentEnabled,
+		&currentRateSyncEnabled,
 		&currentSnapshot,
 		&currentOllamaSession,
 		&currentOllamaAutoRefresh,
@@ -617,6 +635,7 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 	extra := copyJSONMap(normalizeJSONMap(account.Extra))
 	for _, key := range []string{
 		service.UpstreamBillingProbeEnabledExtraKey,
+		service.UpstreamBillingRateSyncEnabledExtraKey,
 		service.UpstreamBillingProbeExtraKey,
 		service.OllamaCloudUsageSessionExtraKey,
 		service.OllamaCloudUsageAutoRefreshExtraKey,
@@ -624,22 +643,43 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 	} {
 		delete(extra, key)
 	}
-	probeExplicitlyDisabled := false
 	probeAccount := account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeAPIKey
-	if probeAccount && explicitProbeEnabled != nil {
-		extra[service.UpstreamBillingProbeEnabledExtraKey] = *explicitProbeEnabled
-		probeExplicitlyDisabled = !*explicitProbeEnabled
-	} else if probeAccount {
-		if enabled, ok, err := decodeAccountExtraJSON(currentEnabled); err != nil {
-			return nil, err
-		} else if ok {
-			extra[service.UpstreamBillingProbeEnabledExtraKey] = enabled
-			if value, isBool := enabled.(bool); isBool && !value {
-				probeExplicitlyDisabled = true
-			}
-		}
+	currentProbeEnabled, currentProbeSet, err := decodeAccountExtraBool(currentEnabled)
+	if err != nil {
+		return nil, err
 	}
-	if identityUnchanged && !probeExplicitlyDisabled {
+	currentRateSync, currentRateSyncSet, err := decodeAccountExtraBool(currentRateSyncEnabled)
+	if err != nil {
+		return nil, err
+	}
+	targetProbeEnabled := currentProbeEnabled
+	targetProbeSet := currentProbeSet
+	targetRateSync := currentRateSync
+	targetRateSyncSet := currentRateSyncSet
+	if explicitProbeEnabled != nil {
+		targetProbeEnabled = *explicitProbeEnabled
+		targetProbeSet = true
+	}
+	if explicitRateSyncEnabled != nil {
+		targetRateSync = *explicitRateSyncEnabled
+		targetRateSyncSet = true
+	}
+	if targetRateSync {
+		targetProbeEnabled = true
+		targetProbeSet = true
+	}
+	if targetProbeSet && !targetProbeEnabled {
+		targetRateSync = false
+		targetRateSyncSet = targetRateSyncSet || currentRateSyncSet
+	}
+	if probeAccount && targetProbeSet {
+		extra[service.UpstreamBillingProbeEnabledExtraKey] = targetProbeEnabled
+	}
+	if probeAccount && targetRateSyncSet {
+		extra[service.UpstreamBillingRateSyncEnabledExtraKey] = targetRateSync
+	}
+	rateSyncBecameEnabled := targetRateSync && !currentRateSync
+	if identityUnchanged && (!targetProbeSet || targetProbeEnabled) && !rateSyncBecameEnabled {
 		if snapshot, ok, err := decodeAccountExtraJSON(currentSnapshot); err != nil {
 			return nil, err
 		} else if ok {
@@ -678,6 +718,15 @@ func decodeAccountExtraJSON(raw []byte) (any, bool, error) {
 		return nil, false, err
 	}
 	return value, true, nil
+}
+
+func decodeAccountExtraBool(raw []byte) (bool, bool, error) {
+	value, set, err := decodeAccountExtraJSON(raw)
+	if err != nil || !set {
+		return false, set, err
+	}
+	enabled, ok := value.(bool)
+	return enabled, ok, nil
 }
 
 func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
@@ -2455,6 +2504,12 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	if len(updates) == 0 {
 		return nil
 	}
+	if upstreamBillingProbeExplicitlyDisabled(updates) {
+		updates[service.UpstreamBillingRateSyncEnabledExtraKey] = false
+	}
+	if upstreamBillingRateSyncExplicitlyEnabled(updates) {
+		updates[service.UpstreamBillingProbeEnabledExtraKey] = true
+	}
 
 	// 使用 JSONB 合并操作实现原子更新，避免读-改-写的并发丢失更新问题
 	payload, err := json.Marshal(updates)
@@ -2462,7 +2517,7 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 		return err
 	}
 
-	clearProbeSnapshot := upstreamBillingProbeExplicitlyDisabled(updates) || upstreamBillingProbeSnapshotClearRequested(updates)
+	clearProbeSnapshot := upstreamBillingProbeExplicitlyDisabled(updates) || upstreamBillingProbeSnapshotClearRequested(updates) || upstreamBillingRateSyncExplicitlyEnabled(updates)
 	durableSchedulerChange := shouldEnqueueSchedulerOutboxForExtraUpdates(updates) || clearProbeSnapshot
 	baseCtx := ctx
 	contextTx := dbent.TxFromContext(ctx)
@@ -2531,20 +2586,32 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 	account *service.Account,
 	snapshot *service.UpstreamBillingProbeSnapshot,
 ) error {
+	return r.ApplyUpstreamBillingProbeResult(ctx, account, snapshot, nil)
+}
+
+// ApplyUpstreamBillingProbeResult atomically stores the probe snapshot and,
+// when requested, the normalized upstream rate. The rate CAS prevents a probe
+// started before an admin edit from overwriting that newer manual value.
+func (r *accountRepository) ApplyUpstreamBillingProbeResult(
+	ctx context.Context,
+	account *service.Account,
+	snapshot *service.UpstreamBillingProbeSnapshot,
+	targetRate *float64,
+) error {
 	if account == nil || snapshot == nil {
 		return service.ErrAccountNilInput
 	}
 	if dbent.TxFromContext(ctx) == nil {
 		tx, err := r.client.Tx(ctx)
 		if errors.Is(err, dbent.ErrTxStarted) {
-			return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+			return r.applyUpstreamBillingProbeResultInTx(ctx, account, snapshot, targetRate)
 		}
 		if err != nil {
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
 
-		if err := r.updateUpstreamBillingProbeSnapshotInTx(dbent.NewTxContext(ctx, tx), account, snapshot); err != nil {
+		if err := r.applyUpstreamBillingProbeResultInTx(dbent.NewTxContext(ctx, tx), account, snapshot, targetRate); err != nil {
 			return err
 		}
 		if err := tx.Commit(); err != nil {
@@ -2552,16 +2619,17 @@ func (r *accountRepository) UpdateUpstreamBillingProbeSnapshot(
 		}
 		// The durable outbox event is committed with the snapshot. This direct
 		// cache write only reduces visibility latency on the current instance.
-		r.syncSchedulerAccountSnapshot(ctx, account.ID)
+		r.syncSchedulerAccountSnapshotDetached(ctx, account.ID)
 		return nil
 	}
-	return r.updateUpstreamBillingProbeSnapshotInTx(ctx, account, snapshot)
+	return r.applyUpstreamBillingProbeResultInTx(ctx, account, snapshot, targetRate)
 }
 
-func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
+func (r *accountRepository) applyUpstreamBillingProbeResultInTx(
 	ctx context.Context,
 	account *service.Account,
 	snapshot *service.UpstreamBillingProbeSnapshot,
+	targetRate *float64,
 ) error {
 	payload, err := json.Marshal(map[string]any{service.UpstreamBillingProbeExtraKey: snapshot})
 	if err != nil {
@@ -2587,6 +2655,14 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	if err != nil {
 		return err
 	}
+	var expectedSyncEnabled any
+	if account.Extra != nil {
+		expectedSyncEnabled = account.Extra[service.UpstreamBillingRateSyncEnabledExtraKey]
+	}
+	expectedSyncEnabledJSON, err := json.Marshal(expectedSyncEnabled)
+	if err != nil {
+		return err
+	}
 	client := clientFromContext(ctx, r.client)
 	proxyMatches, err := lockAndMatchProbeProxyIdentity(ctx, client, account)
 	if err != nil {
@@ -2599,7 +2675,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	if account.ProxyID != nil {
 		proxyID = *account.ProxyID
 	}
-	result, err := client.ExecContext(ctx, `
+	query := `
 		UPDATE accounts
 		SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
 		WHERE id = $2
@@ -2609,8 +2685,28 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 			AND proxy_id IS NOT DISTINCT FROM $6
 			AND COALESCE(extra -> 'upstream_billing_probe', 'null'::jsonb) = $7::jsonb
 			AND COALESCE(extra -> 'upstream_billing_probe_enabled', 'null'::jsonb) = $8::jsonb
+			AND COALESCE(extra -> 'upstream_billing_rate_sync_enabled', 'null'::jsonb) = $9::jsonb
 			AND deleted_at IS NULL
-	`, string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON))
+	`
+	args := []any{string(payload), account.ID, account.Platform, account.Type, string(credentials), proxyID, string(expectedSnapshotJSON), string(expectedEnabledJSON), string(expectedSyncEnabledJSON)}
+	if targetRate != nil {
+		normalizedTarget, valid := service.NormalizeUpstreamBillingRateMultiplier(*targetRate)
+		if !valid {
+			return errors.New("invalid upstream billing rate multiplier")
+		}
+		expectedRate, valid := service.NormalizeUpstreamBillingRateMultiplier(account.BillingRateMultiplier())
+		if !valid {
+			return service.ErrUpstreamBillingProbeIdentityChanged
+		}
+		query = strings.Replace(query,
+			"SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW()",
+			"SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, rate_multiplier = $10, updated_at = NOW()",
+			1,
+		)
+		query = strings.Replace(query, "\t\t\tAND deleted_at IS NULL", "\t\t\tAND rate_multiplier = $11\n\t\t\tAND deleted_at IS NULL", 1)
+		args = append(args, normalizedTarget, expectedRate)
+	}
+	result, err := client.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -2621,7 +2717,7 @@ func (r *accountRepository) updateUpstreamBillingProbeSnapshotInTx(
 	if affected == 0 {
 		return service.ErrUpstreamBillingProbeIdentityChanged
 	}
-	return enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil)
+	return enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountCacheChanged, &account.ID, nil, nil)
 }
 
 func lockAndMatchProbeProxyIdentity(ctx context.Context, client *dbent.Client, account *service.Account) (bool, error) {
@@ -2686,6 +2782,11 @@ func isSchedulerNeutralExtraKey(key string) bool {
 func upstreamBillingProbeExplicitlyDisabled(extra map[string]any) bool {
 	enabled, ok := extra[service.UpstreamBillingProbeEnabledExtraKey].(bool)
 	return ok && !enabled
+}
+
+func upstreamBillingRateSyncExplicitlyEnabled(extra map[string]any) bool {
+	enabled, ok := extra[service.UpstreamBillingRateSyncEnabledExtraKey].(bool)
+	return ok && enabled
 }
 
 func upstreamBillingProbeSnapshotClearRequested(extra map[string]any) bool {
@@ -2766,6 +2867,20 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		}
 		updates.Extra[service.UpstreamBillingProbeEnabledExtraKey] = *updates.ProbeEnabled
 	}
+	if updates.RateSyncEnabled != nil {
+		if updates.Extra == nil {
+			updates.Extra = make(map[string]any)
+		}
+		updates.Extra[service.UpstreamBillingRateSyncEnabledExtraKey] = *updates.RateSyncEnabled
+	}
+	if updates.ProbeEnabled != nil && !*updates.ProbeEnabled {
+		updates.Extra[service.UpstreamBillingRateSyncEnabledExtraKey] = false
+	}
+	if updates.RateSyncEnabled != nil && *updates.RateSyncEnabled {
+		probeEnabled := true
+		updates.ProbeEnabled = &probeEnabled
+		updates.Extra[service.UpstreamBillingProbeEnabledExtraKey] = true
+	}
 	// JSONB 需要合并而非覆盖，使用 raw SQL 保持旧行为。
 	credentialPlaceholder := ""
 	if len(updates.Credentials) > 0 {
@@ -2799,7 +2914,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			extraExpression += " || $" + itoa(idx) + "::jsonb"
 			args = append(args, payload)
 			idx++
-			if upstreamBillingProbeExplicitlyDisabled(updates.Extra) || upstreamBillingProbeSnapshotClearRequested(updates.Extra) {
+			if upstreamBillingProbeExplicitlyDisabled(updates.Extra) || upstreamBillingProbeSnapshotClearRequested(updates.Extra) || upstreamBillingRateSyncExplicitlyEnabled(updates.Extra) {
 				extraExpression = "(" + extraExpression + ") - 'upstream_billing_probe'"
 			}
 			if ollamaCloudUsageSnapshotClearRequested(updates.Extra) {
@@ -2840,7 +2955,13 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 	whereClause := " WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
 	args = append(args, pq.Array(ids))
 	idx++
-	if updates.ProbeEnabled != nil {
+	rateSyncExplicitlyDisabled := (updates.RateSyncEnabled != nil && !*updates.RateSyncEnabled) ||
+		(updates.ProbeEnabled != nil && !*updates.ProbeEnabled)
+	guardManualRateUpdate := updates.RateMultiplier != nil && !rateSyncExplicitlyDisabled
+	if guardManualRateUpdate {
+		whereClause += " AND COALESCE(extra ->> 'upstream_billing_rate_sync_enabled', 'false') <> 'true'"
+	}
+	if updates.ProbeEnabled != nil || updates.RateSyncEnabled != nil {
 		whereClause += " AND platform = $" + itoa(idx) + " AND type = $" + itoa(idx+1)
 		args = append(args, service.PlatformOpenAI, service.AccountTypeAPIKey)
 	}
@@ -2873,7 +2994,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 	if err != nil {
 		return 0, err
 	}
-	if updates.ProbeEnabled != nil {
+	if updates.ProbeEnabled != nil || updates.RateSyncEnabled != nil || guardManualRateUpdate {
 		expectedRows := int64(0)
 		seenIDs := make(map[int64]struct{}, len(ids))
 		for _, id := range ids {
@@ -2884,6 +3005,9 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			expectedRows++
 		}
 		if rows != expectedRows {
+			if guardManualRateUpdate {
+				return 0, service.ErrUpstreamBillingRateSyncManualRate
+			}
 			return 0, service.ErrUpstreamBillingProbeAccountInvalid
 		}
 	}

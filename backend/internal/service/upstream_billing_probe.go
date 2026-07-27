@@ -27,8 +27,9 @@ import (
 
 const (
 	// These values live in accounts.extra so PR2 does not require a schema migration.
-	UpstreamBillingProbeExtraKey        = "upstream_billing_probe"
-	UpstreamBillingProbeEnabledExtraKey = "upstream_billing_probe_enabled"
+	UpstreamBillingProbeExtraKey           = "upstream_billing_probe"
+	UpstreamBillingProbeEnabledExtraKey    = "upstream_billing_probe_enabled"
+	UpstreamBillingRateSyncEnabledExtraKey = "upstream_billing_rate_sync_enabled"
 
 	upstreamBillingProbeDefaultIntervalMinutes = 30
 	upstreamBillingProbeMinIntervalMinutes     = 5
@@ -41,6 +42,8 @@ const (
 	upstreamBillingProbeMaxDelay               = 24 * time.Hour
 	upstreamBillingProbeLeaderLockKey          = "upstream:billing:probe:leader"
 	upstreamBillingProbeLeaderLockTTL          = 2 * time.Minute
+	upstreamBillingRateMultiplierScale         = 10000.0
+	upstreamBillingRateMultiplierMax           = 999999.9999
 )
 
 // UpstreamBillingProbeMaxBatchSize limits one manual batch and one runner cycle.
@@ -55,6 +58,9 @@ var (
 	)
 	ErrUpstreamBillingProbeIdentityChanged = infraerrors.Conflict(
 		"UPSTREAM_BILLING_PROBE_IDENTITY_CHANGED", "account identity changed during upstream billing probe; retry the probe",
+	)
+	ErrUpstreamBillingRateSyncManualRate = infraerrors.BadRequest(
+		"UPSTREAM_BILLING_RATE_SYNC_MANUAL_RATE", "rate_multiplier cannot be changed while upstream billing rate sync is enabled",
 	)
 )
 
@@ -73,15 +79,32 @@ type UpstreamBillingProbeSettings struct {
 // UpstreamBillingProbeSnapshot is persisted in accounts.extra. Data is kept as
 // a sanitized map so future response fields do not require a database change.
 type UpstreamBillingProbeSnapshot struct {
-	Status        string         `json:"status"`
-	Data          map[string]any `json:"data,omitempty"`
-	ReceivedAt    *time.Time     `json:"received_at,omitempty"`
-	FreshUntil    *time.Time     `json:"fresh_until,omitempty"`
-	LastAttemptAt time.Time      `json:"last_attempt_at"`
-	NextProbeAt   time.Time      `json:"next_probe_at"`
-	FailureCount  int            `json:"failure_count,omitempty"`
-	HTTPStatus    int            `json:"http_status,omitempty"`
-	LastError     string         `json:"last_error,omitempty"`
+	Status        string                           `json:"status"`
+	Data          map[string]any                   `json:"data,omitempty"`
+	ReceivedAt    *time.Time                       `json:"received_at,omitempty"`
+	FreshUntil    *time.Time                       `json:"fresh_until,omitempty"`
+	LastAttemptAt time.Time                        `json:"last_attempt_at"`
+	NextProbeAt   time.Time                        `json:"next_probe_at"`
+	FailureCount  int                              `json:"failure_count,omitempty"`
+	HTTPStatus    int                              `json:"http_status,omitempty"`
+	LastError     string                           `json:"last_error,omitempty"`
+	RateSync      *UpstreamBillingRateSyncSnapshot `json:"rate_sync,omitempty"`
+}
+
+const (
+	UpstreamBillingRateSyncStatusApplied   = "applied"
+	UpstreamBillingRateSyncStatusUnchanged = "unchanged"
+	UpstreamBillingRateSyncStatusInvalid   = "invalid"
+)
+
+// UpstreamBillingRateSyncSnapshot records the latest attempt to apply the
+// upstream resolved (non-peak) multiplier to the local account.
+type UpstreamBillingRateSyncSnapshot struct {
+	Status                 string    `json:"status"`
+	SourceRateMultiplier   *float64  `json:"source_rate_multiplier,omitempty"`
+	PreviousRateMultiplier *float64  `json:"previous_rate_multiplier,omitempty"`
+	AppliedRateMultiplier  *float64  `json:"applied_rate_multiplier,omitempty"`
+	SyncedAt               time.Time `json:"synced_at"`
 }
 
 // UpstreamBillingProbeResult is returned by manual probe endpoints.
@@ -193,6 +216,10 @@ type UpstreamBillingProbeService struct {
 
 type upstreamBillingProbeSnapshotWriter interface {
 	UpdateUpstreamBillingProbeSnapshot(context.Context, *Account, *UpstreamBillingProbeSnapshot) error
+}
+
+type upstreamBillingProbeResultWriter interface {
+	ApplyUpstreamBillingProbeResult(context.Context, *Account, *UpstreamBillingProbeSnapshot, *float64) error
 }
 
 type upstreamBillingProbeDueAccountLister interface {
@@ -541,9 +568,11 @@ func (s *UpstreamBillingProbeService) SetAccountEnabled(ctx context.Context, acc
 	if !isUpstreamBillingProbeAccount(account) {
 		return ErrUpstreamBillingProbeAccountInvalid
 	}
-	return s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
-		UpstreamBillingProbeEnabledExtraKey: enabled,
-	})
+	updates := map[string]any{UpstreamBillingProbeEnabledExtraKey: enabled}
+	if !enabled {
+		updates[UpstreamBillingRateSyncEnabledExtraKey] = false
+	}
+	return s.accountRepo.UpdateExtra(ctx, accountID, updates)
 }
 
 func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, account *Account, intervalMinutes int) (*UpstreamBillingProbeSnapshot, error) {
@@ -659,6 +688,7 @@ func (s *UpstreamBillingProbeService) persistProbeFailure(
 		snapshot.Data = previous.Data
 		snapshot.ReceivedAt = previous.ReceivedAt
 		snapshot.FreshUntil = previous.FreshUntil
+		snapshot.RateSync = previous.RateSync
 		if snapshot.FreshUntil == nil && previous.Status == UpstreamBillingProbeStatusOK && previous.ReceivedAt != nil {
 			snapshot.FreshUntil = probeTimePtr(previous.ReceivedAt.Add(2 * time.Duration(intervalMinutes) * time.Minute))
 		}
@@ -670,11 +700,78 @@ func (s *UpstreamBillingProbeService) persistProbeFailure(
 }
 
 func (s *UpstreamBillingProbeService) updateSnapshot(ctx context.Context, account *Account, snapshot *UpstreamBillingProbeSnapshot) error {
+	targetRate := prepareUpstreamBillingRateSync(account, snapshot, s.currentTime().UTC())
+	if writer, ok := s.accountRepo.(upstreamBillingProbeResultWriter); ok {
+		return writer.ApplyUpstreamBillingProbeResult(ctx, account, snapshot, targetRate)
+	}
 	writer, ok := s.accountRepo.(upstreamBillingProbeSnapshotWriter)
 	if !ok {
 		return ErrUpstreamBillingProbeUnavailable
 	}
 	return writer.UpdateUpstreamBillingProbeSnapshot(ctx, account, snapshot)
+}
+
+func prepareUpstreamBillingRateSync(account *Account, snapshot *UpstreamBillingProbeSnapshot, now time.Time) *float64 {
+	previous := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	if !upstreamBillingRateSyncEnabled(account) || snapshot == nil || snapshot.Status != UpstreamBillingProbeStatusOK {
+		if snapshot != nil && previous != nil {
+			snapshot.RateSync = previous.RateSync
+		}
+		return nil
+	}
+
+	source, ok := resolveAccountExtraNumber(snapshot.Data, "resolved_rate_multiplier")
+	if !ok {
+		snapshot.RateSync = &UpstreamBillingRateSyncSnapshot{
+			Status:   UpstreamBillingRateSyncStatusInvalid,
+			SyncedAt: now,
+		}
+		return nil
+	}
+	normalized, ok := NormalizeUpstreamBillingRateMultiplier(source)
+	if !ok {
+		snapshot.RateSync = &UpstreamBillingRateSyncSnapshot{
+			Status:               UpstreamBillingRateSyncStatusInvalid,
+			SourceRateMultiplier: probeFloatPtr(source),
+			SyncedAt:             now,
+		}
+		return nil
+	}
+
+	previousRate := account.BillingRateMultiplier()
+	previousNormalized, validPrevious := NormalizeUpstreamBillingRateMultiplier(previousRate)
+	if !validPrevious {
+		previousNormalized = previousRate
+	}
+	status := UpstreamBillingRateSyncStatusApplied
+	if equalBillingMultiplier(previousNormalized, normalized) {
+		status = UpstreamBillingRateSyncStatusUnchanged
+	}
+	snapshot.RateSync = &UpstreamBillingRateSyncSnapshot{
+		Status:                 status,
+		SourceRateMultiplier:   probeFloatPtr(source),
+		PreviousRateMultiplier: probeFloatPtr(previousNormalized),
+		AppliedRateMultiplier:  probeFloatPtr(normalized),
+		SyncedAt:               now,
+	}
+	return probeFloatPtr(normalized)
+}
+
+// NormalizeUpstreamBillingRateMultiplier maps an upstream number to the
+// DECIMAL(10,4) representation used by accounts.rate_multiplier.
+func NormalizeUpstreamBillingRateMultiplier(value float64) (float64, bool) {
+	if value < 0 || value > upstreamBillingRateMultiplierMax || math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	normalized := math.Round(value*upstreamBillingRateMultiplierScale) / upstreamBillingRateMultiplierScale
+	if normalized < 0 || normalized > upstreamBillingRateMultiplierMax {
+		return 0, false
+	}
+	return normalized, true
+}
+
+func probeFloatPtr(value float64) *float64 {
+	return &value
 }
 
 func parseUpstreamBillingProbeResponse(body []byte) (map[string]any, error) {
@@ -849,6 +946,14 @@ func upstreamBillingProbeEnabled(account *Account) bool {
 		return false
 	}
 	enabled, ok := account.Extra[UpstreamBillingProbeEnabledExtraKey].(bool)
+	return ok && enabled
+}
+
+func upstreamBillingRateSyncEnabled(account *Account) bool {
+	if account == nil || account.Extra == nil {
+		return false
+	}
+	enabled, ok := account.Extra[UpstreamBillingRateSyncEnabledExtraKey].(bool)
 	return ok && enabled
 }
 

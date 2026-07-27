@@ -427,6 +427,22 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI API Key 批量开启倍率同步时联动自动探测并禁用手工倍率', async () => {
+    const wrapper = mountModal({ selectedPlatforms: ['openai'], selectedTypes: ['apikey'] })
+
+    await wrapper.get('#bulk-edit-rate-multiplier-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-upstream-billing-rate-sync-enabled').setValue(true)
+    await flushPromises()
+    expect((wrapper.get('#bulk-edit-rate-multiplier-enabled').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      upstream_billing_probe_enabled: true,
+      upstream_billing_rate_sync_enabled: true
+    })
+  })
+
   it('非 OpenAI API Key 目标不显示上游倍率自动探测批量开关', () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
@@ -434,6 +450,7 @@ describe('BulkEditAccountModal', () => {
     })
 
     expect(wrapper.find('#bulk-edit-upstream-billing-auto-probe-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-upstream-billing-rate-sync-enabled').exists()).toBe(false)
   })
 
   it('筛选结果批量编辑可统一开启上游倍率自动探测', async () => {

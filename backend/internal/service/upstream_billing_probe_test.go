@@ -24,6 +24,7 @@ type upstreamBillingProbeAccountRepo struct {
 	accounts    map[int64]*Account
 	updates     map[int64][]map[string]any
 	bulkUpdates []AccountBulkUpdate
+	rateTargets map[int64][]*float64
 }
 
 type staleDueUpstreamBillingProbeAccountRepo struct {
@@ -111,6 +112,14 @@ func (r *upstreamBillingProbeAccountRepo) UpdateExtra(_ context.Context, id int6
 }
 
 func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(_ context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot) error {
+	return r.applyUpstreamBillingProbeResult(expected, snapshot, nil)
+}
+
+func (r *upstreamBillingProbeAccountRepo) ApplyUpstreamBillingProbeResult(_ context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot, targetRate *float64) error {
+	return r.applyUpstreamBillingProbeResult(expected, snapshot, targetRate)
+}
+
+func (r *upstreamBillingProbeAccountRepo) applyUpstreamBillingProbeResult(expected *Account, snapshot *UpstreamBillingProbeSnapshot, targetRate *float64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	account := r.accounts[expected.ID]
@@ -121,6 +130,16 @@ func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(_ c
 		account.Extra = make(map[string]any)
 	}
 	account.Extra[UpstreamBillingProbeExtraKey] = snapshot
+	if r.rateTargets == nil {
+		r.rateTargets = make(map[int64][]*float64)
+	}
+	var recorded *float64
+	if targetRate != nil {
+		value := *targetRate
+		recorded = &value
+		account.RateMultiplier = &value
+	}
+	r.rateTargets[expected.ID] = append(r.rateTargets[expected.ID], recorded)
 	return nil
 }
 
@@ -213,6 +232,64 @@ func newUpstreamBillingProbeTestService(
 	}}}
 	accountTestService := &AccountTestService{accountRepo: repo, httpUpstream: upstream, cfg: cfg}
 	return NewUpstreamBillingProbeService(repo, accountTestService, NewSettingService(settingRepo, cfg))
+}
+
+func TestPrepareUpstreamBillingRateSyncUsesResolvedRateAndNormalizesPrecision(t *testing.T) {
+	current := 1.25
+	account := &Account{
+		RateMultiplier: &current,
+		Extra: map[string]any{
+			UpstreamBillingRateSyncEnabledExtraKey: true,
+		},
+	}
+	snapshot := &UpstreamBillingProbeSnapshot{
+		Status: UpstreamBillingProbeStatusOK,
+		Data: map[string]any{
+			"resolved_rate_multiplier":  0.812345,
+			"effective_rate_multiplier": 8.12345,
+		},
+	}
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+
+	target := prepareUpstreamBillingRateSync(account, snapshot, now)
+
+	require.NotNil(t, target)
+	require.Equal(t, 0.8123, *target)
+	require.NotNil(t, snapshot.RateSync)
+	require.Equal(t, UpstreamBillingRateSyncStatusApplied, snapshot.RateSync.Status)
+	require.Equal(t, 0.812345, *snapshot.RateSync.SourceRateMultiplier)
+	require.Equal(t, 0.8123, *snapshot.RateSync.AppliedRateMultiplier)
+}
+
+func TestPrepareUpstreamBillingRateSyncMarksUnchangedAndRejectsOutOfBounds(t *testing.T) {
+	current := 0.8123
+	account := &Account{RateMultiplier: &current, Extra: map[string]any{UpstreamBillingRateSyncEnabledExtraKey: true}}
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+
+	unchanged := &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK, Data: map[string]any{"resolved_rate_multiplier": 0.81234}}
+	target := prepareUpstreamBillingRateSync(account, unchanged, now)
+	require.NotNil(t, target)
+	require.Equal(t, UpstreamBillingRateSyncStatusUnchanged, unchanged.RateSync.Status)
+
+	invalid := &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK, Data: map[string]any{"resolved_rate_multiplier": 1000000.0}}
+	require.Nil(t, prepareUpstreamBillingRateSync(account, invalid, now))
+	require.Equal(t, UpstreamBillingRateSyncStatusInvalid, invalid.RateSync.Status)
+}
+
+func TestPrepareUpstreamBillingRateSyncDoesNotApplyFailedProbe(t *testing.T) {
+	previousSync := &UpstreamBillingRateSyncSnapshot{Status: UpstreamBillingRateSyncStatusApplied, SyncedAt: time.Now().Add(-time.Hour)}
+	account := &Account{Extra: map[string]any{
+		UpstreamBillingRateSyncEnabledExtraKey: true,
+		UpstreamBillingProbeExtraKey: &UpstreamBillingProbeSnapshot{
+			Status:   UpstreamBillingProbeStatusOK,
+			RateSync: previousSync,
+		},
+	}}
+	snapshot := &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusFailed}
+
+	require.Nil(t, prepareUpstreamBillingRateSync(account, snapshot, time.Now()))
+	require.Equal(t, previousSync.Status, snapshot.RateSync.Status)
+	require.True(t, previousSync.SyncedAt.Equal(snapshot.RateSync.SyncedAt))
 }
 
 func TestUpstreamBillingProbeSettingsDefaultsAndValidation(t *testing.T) {
