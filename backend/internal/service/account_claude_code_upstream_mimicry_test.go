@@ -110,7 +110,7 @@ func TestClaudeCodeUpstreamMimicryBodyAndHeadersPassValidator(t *testing.T) {
 	validationReq.Header = make(http.Header, len(req.Header))
 	for key, values := range req.Header {
 		for _, value := range values {
-			validationReq.Header.Add(http.CanonicalHeaderKey(key), value)
+			validationReq.Header.Add(key, value)
 		}
 	}
 	require.True(t, NewClaudeCodeValidator().Validate(validationReq, payload))
