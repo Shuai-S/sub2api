@@ -254,6 +254,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 		sessionHash = h.gatewayService.GenerateSessionHash(parsedReq)
 	}
+	// countTokens does not produce account-bound thought signatures, so it must not
+	// establish or migrate a conversational sticky binding.
+	if action == "countTokens" {
+		sessionHash = ""
+	}
 	sessionKey := sessionHash
 	if sessionHash != "" {
 		sessionKey = "gemini:" + sessionHash
@@ -344,6 +349,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	cleanedForUnknownBinding := false
 
 	fs := NewFailoverState(h.maxAccountSwitchesGemini, hasBoundSession)
+	c.Request = c.Request.WithContext(service.WithGeminiAdaptiveRequestHint(c.Request.Context(), action, stream))
 
 	// 单账号分组提前设置 SingleAccountRetry 标记，让 Service 层首次 503 就不设模型限流标记。
 	// 避免单账号分组收到 503 (MODEL_CAPACITY_EXHAUSTED) 时设 29s 限流，导致后续请求连续快速失败。
@@ -382,6 +388,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		if selection.PendingGeminiMigration != nil {
+			defer h.gatewayService.AbortGeminiStickyMigration(c.Request.Context(), selection.PendingGeminiMigration)
+		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		// 检测账号切换：如果粘性会话绑定的账号与当前选择的账号不同，清除 thoughtSignature
@@ -454,8 +463,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
 				accountWaitCounted = false
 			}
-			if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
-				reqLog.Warn("gemini.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			if selection.PendingGeminiMigration == nil {
+				if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
+					reqLog.Warn("gemini.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				}
 			}
 		}
 		// 账号槽位/等待计数需要在超时或断开时安全回收
@@ -468,6 +479,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 		}
 		sessionGroupID := derefGroupID(apiKey.GroupID)
+		migrationWriter, restoreWriter := installGeminiStickyMigrationWriter(c, h.gatewayService, selection.PendingGeminiMigration)
 		if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 			result, err = h.antigravityGatewayService.ForwardGemini(
 				requestCtx,
@@ -483,10 +495,25 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		} else {
 			result, err = h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
 		}
+		restoreWriter()
+		result, err = finishGeminiStickyMigration(requestCtx, h.gatewayService, selection.PendingGeminiMigration, migrationWriter, result, err)
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
+		h.gatewayService.ReportGeminiAdaptiveResult(requestCtx, account, modelName, action, result, err)
 		if err != nil {
+			if migration := selection.PendingGeminiMigration; migration != nil && (migrationWriter == nil || !migrationWriter.Committed()) {
+				sessionBoundAccountID = migration.ExpectedAccountID
+				if migration.DeleteSourceOnFailure {
+					sessionBoundAccountID = 0
+				}
+				prefetchedGroupID := int64(0)
+				if apiKey.GroupID != nil {
+					prefetchedGroupID = *apiKey.GroupID
+				}
+				ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, prefetchedGroupID, h.metadataBridgeEnabled())
+				c.Request = c.Request.WithContext(ctx)
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				failoverAction := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)

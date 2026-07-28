@@ -291,6 +291,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIAdvancedSchedulerEnabled:                         settings.OpenAIAdvancedSchedulerEnabled,
 		OpenAIAdaptiveSchedulerSettings:                        settings.OpenAIAdaptiveScheduler,
 		AnthropicAdaptiveSchedulerSettings:                     settings.AnthropicAdaptiveScheduler,
+		GeminiAdaptiveSchedulerSettings:                        settings.GeminiAdaptiveScheduler,
 		OpenAIAdvancedSchedulerStickyWeightedEnabled:           settings.OpenAIAdvancedSchedulerStickyWeightedEnabled,
 		OpenAIAdvancedSchedulerSubscriptionPriorityEnabled:     settings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
 		OpenAIAdvancedSchedulerLBTopK:                          settings.OpenAIAdvancedSchedulerLBTopK,

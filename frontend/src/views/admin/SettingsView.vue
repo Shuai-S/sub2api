@@ -4606,6 +4606,140 @@
               </div>
 
               <div
+                class="space-y-4 border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-testid="gemini-adaptive-scheduler-settings"
+              >
+                <div class="flex items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.geminiAdaptiveScheduler.title") }}
+                    </label>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.geminiAdaptiveScheduler.description") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.gemini_adaptive_scheduler_enabled"
+                    data-testid="gemini-adaptive-scheduler-toggle"
+                  />
+                </div>
+
+                <div
+                  class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                  :class="{ 'opacity-60': !form.gemini_adaptive_scheduler_enabled }"
+                >
+                  <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>{{ t("admin.settings.geminiAdaptiveScheduler.mode") }}</span>
+                    <SchedulerParamHelp
+                      :content="t('admin.settings.geminiAdaptiveScheduler.tooltips.mode')"
+                    />
+                  </span>
+                  <div
+                    class="inline-flex w-full overflow-hidden rounded-md border border-gray-300 sm:w-auto dark:border-dark-600"
+                    role="group"
+                    :aria-label="t('admin.settings.geminiAdaptiveScheduler.mode')"
+                  >
+                    <button
+                      v-for="mode in (['shadow', 'enforce'] as const)"
+                      :key="mode"
+                      type="button"
+                      class="min-w-0 flex-1 px-3 py-1.5 text-sm transition-colors sm:min-w-28"
+                      :class="
+                        form.gemini_adaptive_scheduler_mode === mode
+                          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                          : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700'
+                      "
+                      :disabled="!form.gemini_adaptive_scheduler_enabled"
+                      :aria-pressed="form.gemini_adaptive_scheduler_mode === mode"
+                      :data-testid="`gemini-adaptive-mode-${mode}`"
+                      @click="form.gemini_adaptive_scheduler_mode = mode"
+                    >
+                      {{ t(`admin.settings.geminiAdaptiveScheduler.modes.${mode}`) }}
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  class="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2 dark:border-dark-700"
+                  :class="{ 'opacity-60': !form.gemini_adaptive_scheduler_enabled }"
+                >
+                  <div class="flex items-center justify-between gap-4">
+                    <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <span>{{ t("admin.settings.geminiAdaptiveScheduler.stickyEscape") }}</span>
+                      <SchedulerParamHelp
+                        :content="t('admin.settings.geminiAdaptiveScheduler.tooltips.stickyEscape')"
+                      />
+                    </span>
+                    <Toggle
+                      v-model="form.gemini_adaptive_scheduler_sticky_escape_on_capacity_full"
+                      :disabled="!form.gemini_adaptive_scheduler_enabled"
+                      data-testid="gemini-adaptive-sticky-escape-toggle"
+                    />
+                  </div>
+                  <div class="flex items-center justify-between gap-4">
+                    <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <span>{{ t("admin.settings.geminiAdaptiveScheduler.diagnosticLog") }}</span>
+                      <SchedulerParamHelp
+                        :content="t('admin.settings.geminiAdaptiveScheduler.tooltips.diagnosticLog')"
+                      />
+                    </span>
+                    <Toggle
+                      v-model="form.gemini_adaptive_scheduler_diagnostic_log_enabled"
+                      :disabled="!form.gemini_adaptive_scheduler_enabled"
+                      data-testid="gemini-adaptive-diagnostic-log-toggle"
+                    />
+                  </div>
+                </div>
+
+                <div
+                  class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700"
+                  :class="{ 'opacity-60': !form.gemini_adaptive_scheduler_enabled }"
+                  data-testid="gemini-adaptive-scheduler-parameters"
+                >
+                  <section
+                    v-for="section in geminiAdaptiveSchedulerSections"
+                    :key="section.key"
+                    class="space-y-3"
+                  >
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      {{ t(`admin.settings.geminiAdaptiveScheduler.sections.${section.key}`) }}
+                    </h3>
+                    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div v-for="field in section.fields" :key="field.key">
+                        <label
+                          class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300"
+                          :for="field.key"
+                        >
+                          <span>
+                            {{ t(`admin.settings.geminiAdaptiveScheduler.parameters.${field.label}`) }}
+                          </span>
+                          <SchedulerParamHelp
+                            :content="t(`admin.settings.geminiAdaptiveScheduler.tooltips.${field.label}`)"
+                          />
+                        </label>
+                        <input
+                          :id="field.key"
+                          v-model.number="form[field.key]"
+                          class="input"
+                          type="number"
+                          :min="field.min"
+                          :max="field.max"
+                          :step="field.step"
+                          :placeholder="geminiAdaptiveSchedulerPlaceholder(field.key)"
+                          :disabled="
+                            !form.gemini_adaptive_scheduler_enabled ||
+                            (section.key === 'diagnostics' &&
+                              !form.gemini_adaptive_scheduler_diagnostic_log_enabled)
+                          "
+                          :data-testid="field.key.replace(/_/g, '-')"
+                        />
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+
+              <div
                 v-if="!form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
               >
@@ -9217,6 +9351,38 @@ type SettingsForm = Omit<
   anthropic_adaptive_scheduler_capacity_increase_step: number;
   anthropic_adaptive_scheduler_min_capacity: number;
   anthropic_adaptive_scheduler_hard_shrink_failure_multiplier: number;
+  gemini_adaptive_scheduler_enabled: boolean;
+  gemini_adaptive_scheduler_mode: string;
+  gemini_adaptive_scheduler_sticky_escape_on_capacity_full: boolean;
+  gemini_adaptive_scheduler_top_k: number;
+  gemini_adaptive_scheduler_softmax_temperature: number;
+  gemini_adaptive_scheduler_initial_reliability: number;
+  gemini_adaptive_scheduler_consecutive_failure_penalty: number;
+  gemini_adaptive_scheduler_neutral_latency_score: number;
+  gemini_adaptive_scheduler_neutral_quota_score: number;
+  gemini_adaptive_scheduler_success_ema_alpha: number;
+  gemini_adaptive_scheduler_latency_ema_alpha: number;
+  gemini_adaptive_scheduler_min_cost_multiplier: number;
+  gemini_adaptive_scheduler_weight_reliability: number;
+  gemini_adaptive_scheduler_weight_quota: number;
+  gemini_adaptive_scheduler_weight_capacity: number;
+  gemini_adaptive_scheduler_weight_latency: number;
+  gemini_adaptive_scheduler_weight_cost: number;
+  gemini_adaptive_scheduler_weight_exploration: number;
+  gemini_adaptive_scheduler_capacity_probe_load_threshold: number;
+  gemini_adaptive_scheduler_capacity_success_threshold: number;
+  gemini_adaptive_scheduler_capacity_increase_step: number;
+  gemini_adaptive_scheduler_min_capacity: number;
+  gemini_adaptive_scheduler_capacity_failure_threshold: number;
+  gemini_adaptive_scheduler_min_recent_samples_for_shrink: number;
+  gemini_adaptive_scheduler_shrink_error_threshold: number;
+  gemini_adaptive_scheduler_shrink_factor_soft: number;
+  gemini_adaptive_scheduler_shrink_factor_hard: number;
+  gemini_adaptive_scheduler_hard_shrink_failure_multiplier: number;
+  gemini_adaptive_scheduler_learning_window_seconds: number;
+  gemini_adaptive_scheduler_cooldown_seconds: number;
+  gemini_adaptive_scheduler_diagnostic_log_enabled: boolean;
+  gemini_adaptive_scheduler_diagnostic_log_sample_rate: number;
   openai_adaptive_scheduler_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate: number;
@@ -9387,6 +9553,157 @@ function anthropicAdaptiveSchedulerNumber(
   return Number.isFinite(numericValue)
     ? numericValue
     : anthropicAdaptiveSchedulerRecommendedValues[key];
+}
+
+const geminiAdaptiveSchedulerRecommendedValues = {
+  gemini_adaptive_scheduler_top_k: 8,
+  gemini_adaptive_scheduler_softmax_temperature: 0.35,
+  gemini_adaptive_scheduler_initial_reliability: 0.5,
+  gemini_adaptive_scheduler_consecutive_failure_penalty: 0.25,
+  gemini_adaptive_scheduler_neutral_latency_score: 0.5,
+  gemini_adaptive_scheduler_neutral_quota_score: 0.5,
+  gemini_adaptive_scheduler_success_ema_alpha: 0.05,
+  gemini_adaptive_scheduler_latency_ema_alpha: 0.05,
+  gemini_adaptive_scheduler_min_cost_multiplier: 0.03,
+  gemini_adaptive_scheduler_weight_reliability: 0.3,
+  gemini_adaptive_scheduler_weight_quota: 0.25,
+  gemini_adaptive_scheduler_weight_capacity: 0.2,
+  gemini_adaptive_scheduler_weight_latency: 0.15,
+  gemini_adaptive_scheduler_weight_cost: 0.05,
+  gemini_adaptive_scheduler_weight_exploration: 0.05,
+  gemini_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
+  gemini_adaptive_scheduler_capacity_success_threshold: 0.97,
+  gemini_adaptive_scheduler_capacity_increase_step: 1,
+  gemini_adaptive_scheduler_min_capacity: 1,
+  gemini_adaptive_scheduler_capacity_failure_threshold: 3,
+  gemini_adaptive_scheduler_min_recent_samples_for_shrink: 30,
+  gemini_adaptive_scheduler_shrink_error_threshold: 0.25,
+  gemini_adaptive_scheduler_shrink_factor_soft: 0.85,
+  gemini_adaptive_scheduler_shrink_factor_hard: 0.6,
+  gemini_adaptive_scheduler_hard_shrink_failure_multiplier: 2,
+  gemini_adaptive_scheduler_learning_window_seconds: 1200,
+  gemini_adaptive_scheduler_cooldown_seconds: 60,
+  gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
+} satisfies Partial<SettingsForm>;
+
+type GeminiAdaptiveSchedulerNumberKey =
+  keyof typeof geminiAdaptiveSchedulerRecommendedValues;
+
+type GeminiAdaptiveSchedulerParameterLabel =
+  | "topK"
+  | "softmaxTemperature"
+  | "initialReliability"
+  | "consecutiveFailurePenalty"
+  | "neutralLatencyScore"
+  | "neutralQuotaScore"
+  | "minCostMultiplier"
+  | "capacityProbeLoadThreshold"
+  | "capacitySuccessThreshold"
+  | "capacityIncreaseStep"
+  | "minCapacity"
+  | "capacityFailureThreshold"
+  | "minRecentSamplesForShrink"
+  | "shrinkErrorThreshold"
+  | "shrinkFactorSoft"
+  | "shrinkFactorHard"
+  | "hardShrinkFailureMultiplier"
+  | "learningWindowSeconds"
+  | "cooldownSeconds"
+  | "successEmaAlpha"
+  | "latencyEmaAlpha"
+  | "weightReliability"
+  | "weightQuota"
+  | "weightCapacity"
+  | "weightLatency"
+  | "weightCost"
+  | "weightExploration"
+  | "diagnosticLogSampleRate";
+
+const geminiAdaptiveSchedulerSections: ReadonlyArray<{
+  key: "selection" | "capacity" | "learningAndWeights" | "diagnostics";
+  fields: ReadonlyArray<{
+    key: GeminiAdaptiveSchedulerNumberKey;
+    label: GeminiAdaptiveSchedulerParameterLabel;
+    min: number;
+    max?: number;
+    step: number;
+  }>;
+}> = [
+  {
+    key: "selection",
+    fields: [
+      { key: "gemini_adaptive_scheduler_top_k", label: "topK", min: 1, max: 100, step: 1 },
+      { key: "gemini_adaptive_scheduler_softmax_temperature", label: "softmaxTemperature", min: 0.01, max: 10, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_initial_reliability", label: "initialReliability", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_consecutive_failure_penalty", label: "consecutiveFailurePenalty", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_neutral_latency_score", label: "neutralLatencyScore", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_neutral_quota_score", label: "neutralQuotaScore", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_min_cost_multiplier", label: "minCostMultiplier", min: 0.0001, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    key: "capacity",
+    fields: [
+      { key: "gemini_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityProbeLoadThreshold", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_capacity_success_threshold", label: "capacitySuccessThreshold", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_capacity_increase_step", label: "capacityIncreaseStep", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_min_capacity", label: "minCapacity", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_capacity_failure_threshold", label: "capacityFailureThreshold", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_min_recent_samples_for_shrink", label: "minRecentSamplesForShrink", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_shrink_error_threshold", label: "shrinkErrorThreshold", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_shrink_factor_soft", label: "shrinkFactorSoft", min: 0.01, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_shrink_factor_hard", label: "shrinkFactorHard", min: 0.01, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_hard_shrink_failure_multiplier", label: "hardShrinkFailureMultiplier", min: 1, max: 100, step: 1 },
+      { key: "gemini_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
+    ],
+  },
+  {
+    key: "learningAndWeights",
+    fields: [
+      { key: "gemini_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_latency_ema_alpha", label: "latencyEmaAlpha", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_reliability", label: "weightReliability", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_quota", label: "weightQuota", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_latency", label: "weightLatency", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_exploration", label: "weightExploration", min: 0, step: 0.01 },
+    ],
+  },
+  {
+    key: "diagnostics",
+    fields: [
+      { key: "gemini_adaptive_scheduler_diagnostic_log_sample_rate", label: "diagnosticLogSampleRate", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+];
+
+function geminiAdaptiveSchedulerPlaceholder(
+  key: GeminiAdaptiveSchedulerNumberKey,
+): string {
+  return String(geminiAdaptiveSchedulerRecommendedValues[key]);
+}
+
+function geminiAdaptiveSchedulerNumber(
+  key: GeminiAdaptiveSchedulerNumberKey,
+): number {
+  const raw = (form as unknown as Record<
+    GeminiAdaptiveSchedulerNumberKey,
+    unknown
+  >)[key];
+  if (
+    raw === "" ||
+    (typeof raw === "string" && raw.trim() === "") ||
+    raw === null ||
+    raw === undefined
+  ) {
+    return geminiAdaptiveSchedulerRecommendedValues[key];
+  }
+  const numericValue = Number(raw);
+  return Number.isFinite(numericValue)
+    ? numericValue
+    : geminiAdaptiveSchedulerRecommendedValues[key];
 }
 
 const openAIAdaptiveSchedulerRecommendedValues = {
@@ -9667,6 +9984,11 @@ const form = reactive<SettingsForm>({
   anthropic_adaptive_scheduler_enabled: false,
   anthropic_adaptive_scheduler_mode: "shadow",
   ...anthropicAdaptiveSchedulerRecommendedValues,
+  gemini_adaptive_scheduler_enabled: false,
+  gemini_adaptive_scheduler_mode: "shadow",
+  gemini_adaptive_scheduler_sticky_escape_on_capacity_full: false,
+  gemini_adaptive_scheduler_diagnostic_log_enabled: false,
+  ...geminiAdaptiveSchedulerRecommendedValues,
   openai_adaptive_scheduler_enabled: false,
   openai_adaptive_scheduler_diagnostic_log_enabled: false,
   openai_adaptive_scheduler_mode: "enforce",
@@ -9746,6 +10068,34 @@ function applyAnthropicAdaptiveSchedulerRecommendedValues(): void {
   const entries = Object.entries(
     anthropicAdaptiveSchedulerRecommendedValues,
   ) as Array<[AnthropicAdaptiveSchedulerNumberKey, number]>;
+
+  for (const [key, recommendedValue] of entries) {
+    const currentValue = formRecord[key];
+    if (
+      currentValue === "" ||
+      (typeof currentValue === "string" && currentValue.trim() === "") ||
+      currentValue === null ||
+      currentValue === undefined
+    ) {
+      formRecord[key] = recommendedValue;
+      continue;
+    }
+
+    const numericValue = Number(currentValue);
+    formRecord[key] = Number.isFinite(numericValue)
+      ? numericValue
+      : recommendedValue;
+  }
+}
+
+function applyGeminiAdaptiveSchedulerRecommendedValues(): void {
+  const formRecord = form as unknown as Record<
+    GeminiAdaptiveSchedulerNumberKey,
+    unknown
+  >;
+  const entries = Object.entries(
+    geminiAdaptiveSchedulerRecommendedValues,
+  ) as Array<[GeminiAdaptiveSchedulerNumberKey, number]>;
 
   for (const [key, recommendedValue] of entries) {
     const currentValue = formRecord[key];
@@ -10671,7 +11021,10 @@ async function loadSettings() {
     }
     form.anthropic_adaptive_scheduler_mode =
       form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow";
+    form.gemini_adaptive_scheduler_mode =
+      form.gemini_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow";
     applyAnthropicAdaptiveSchedulerRecommendedValues();
+    applyGeminiAdaptiveSchedulerRecommendedValues();
     applyOpenAIAdaptiveSchedulerRecommendedValues();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
@@ -11342,6 +11695,70 @@ async function saveSettings() {
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_min_capacity"),
       anthropic_adaptive_scheduler_hard_shrink_failure_multiplier:
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_hard_shrink_failure_multiplier"),
+      gemini_adaptive_scheduler_enabled:
+        form.gemini_adaptive_scheduler_enabled,
+      gemini_adaptive_scheduler_mode:
+        form.gemini_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow",
+      gemini_adaptive_scheduler_sticky_escape_on_capacity_full:
+        form.gemini_adaptive_scheduler_sticky_escape_on_capacity_full,
+      gemini_adaptive_scheduler_top_k:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_top_k"),
+      gemini_adaptive_scheduler_softmax_temperature:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_softmax_temperature"),
+      gemini_adaptive_scheduler_initial_reliability:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_initial_reliability"),
+      gemini_adaptive_scheduler_consecutive_failure_penalty:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_consecutive_failure_penalty"),
+      gemini_adaptive_scheduler_neutral_latency_score:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_neutral_latency_score"),
+      gemini_adaptive_scheduler_neutral_quota_score:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_neutral_quota_score"),
+      gemini_adaptive_scheduler_success_ema_alpha:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_success_ema_alpha"),
+      gemini_adaptive_scheduler_latency_ema_alpha:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_latency_ema_alpha"),
+      gemini_adaptive_scheduler_min_cost_multiplier:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_min_cost_multiplier"),
+      gemini_adaptive_scheduler_weight_reliability:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_reliability"),
+      gemini_adaptive_scheduler_weight_quota:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_quota"),
+      gemini_adaptive_scheduler_weight_capacity:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_capacity"),
+      gemini_adaptive_scheduler_weight_latency:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_latency"),
+      gemini_adaptive_scheduler_weight_cost:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_cost"),
+      gemini_adaptive_scheduler_weight_exploration:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_exploration"),
+      gemini_adaptive_scheduler_capacity_probe_load_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_probe_load_threshold"),
+      gemini_adaptive_scheduler_capacity_success_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_success_threshold"),
+      gemini_adaptive_scheduler_capacity_increase_step:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_increase_step"),
+      gemini_adaptive_scheduler_min_capacity:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_min_capacity"),
+      gemini_adaptive_scheduler_capacity_failure_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_failure_threshold"),
+      gemini_adaptive_scheduler_min_recent_samples_for_shrink:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_min_recent_samples_for_shrink"),
+      gemini_adaptive_scheduler_shrink_error_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_error_threshold"),
+      gemini_adaptive_scheduler_shrink_factor_soft:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_factor_soft"),
+      gemini_adaptive_scheduler_shrink_factor_hard:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_factor_hard"),
+      gemini_adaptive_scheduler_hard_shrink_failure_multiplier:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_hard_shrink_failure_multiplier"),
+      gemini_adaptive_scheduler_learning_window_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_learning_window_seconds"),
+      gemini_adaptive_scheduler_cooldown_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_seconds"),
+      gemini_adaptive_scheduler_diagnostic_log_enabled:
+        form.gemini_adaptive_scheduler_diagnostic_log_enabled,
+      gemini_adaptive_scheduler_diagnostic_log_sample_rate:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_diagnostic_log_sample_rate"),
       openai_adaptive_scheduler_enabled:
         form.openai_adaptive_scheduler_enabled,
       openai_adaptive_scheduler_diagnostic_log_enabled:

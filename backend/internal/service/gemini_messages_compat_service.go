@@ -1336,6 +1336,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Stream:        false,
 					Duration:      time.Since(startTime),
 					FirstTokenMs:  nil,
+					Synthetic:     true,
 				}, nil
 			}
 			setOpsUpstreamError(c, 0, safeErr, "")
@@ -1406,6 +1407,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 					Stream:        false,
 					Duration:      time.Since(startTime),
 					FirstTokenMs:  nil,
+					Synthetic:     true,
 				}, nil
 			}
 			// Final attempt: surface the upstream error body (passed through below) instead of a generic retry error.
@@ -1447,6 +1449,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				Stream:        false,
 				Duration:      time.Since(startTime),
 				FirstTokenMs:  nil,
+				Synthetic:     true,
 			}, nil
 		}
 

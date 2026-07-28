@@ -984,6 +984,76 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("loads and saves Gemini adaptive scheduler settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      gemini_adaptive_scheduler_enabled: true,
+      gemini_adaptive_scheduler_mode: "shadow",
+      gemini_adaptive_scheduler_sticky_escape_on_capacity_full: true,
+      gemini_adaptive_scheduler_top_k: 4,
+      gemini_adaptive_scheduler_softmax_temperature: 0.2,
+      gemini_adaptive_scheduler_neutral_quota_score: 0.6,
+      gemini_adaptive_scheduler_weight_quota: 0.35,
+      gemini_adaptive_scheduler_diagnostic_log_enabled: true,
+      gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.25,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(
+      (
+        wrapper.get('[data-testid="gemini-adaptive-scheduler-toggle"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="gemini-adaptive-sticky-escape-toggle"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="gemini-adaptive-diagnostic-log-toggle"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    const topKInput = wrapper.get(
+      '[data-testid="gemini-adaptive-scheduler-top-k"]',
+    );
+    expect((topKInput.element as HTMLInputElement).value).toBe("4");
+    expect(
+      (
+        wrapper.get(
+          '[data-testid="gemini-adaptive-scheduler-neutral-quota-score"]',
+        ).element as HTMLInputElement
+      ).value,
+    ).toBe("0.6");
+
+    await topKInput.setValue("6");
+    await wrapper
+      .get('[data-testid="gemini-adaptive-mode-enforce"]')
+      .trigger("click");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gemini_adaptive_scheduler_enabled: true,
+        gemini_adaptive_scheduler_mode: "enforce",
+        gemini_adaptive_scheduler_sticky_escape_on_capacity_full: true,
+        gemini_adaptive_scheduler_top_k: 6,
+        gemini_adaptive_scheduler_softmax_temperature: 0.2,
+        gemini_adaptive_scheduler_neutral_quota_score: 0.6,
+        gemini_adaptive_scheduler_weight_quota: 0.35,
+        gemini_adaptive_scheduler_diagnostic_log_enabled: true,
+        gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.25,
+      }),
+    );
+  });
+
   it("submits message cache_control rewrite gateway setting", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,

@@ -32,6 +32,7 @@ const (
 const (
 	adaptiveSchedulerStateNamespaceOpenAI    = "openai"
 	adaptiveSchedulerStateNamespaceAnthropic = "anthropic"
+	adaptiveSchedulerStateNamespaceGemini    = "gemini"
 )
 
 // AdaptiveSchedulerStateCacheRecord is one raw account snapshot read from Redis.

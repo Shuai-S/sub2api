@@ -293,7 +293,7 @@ func provideCleanup(
 			}},
 			{"AnthropicAdaptiveStatePersistence", func() error {
 				if gateway != nil {
-					return gateway.CloseAnthropicAdaptiveStatePersistence(ctx)
+					return gateway.CloseAdaptiveStatePersistence(ctx)
 				}
 				return nil
 			}},

@@ -230,6 +230,7 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerEnabled                         bool
 	OpenAIAdaptiveScheduler                                OpenAIAdaptiveSchedulerSettings
 	AnthropicAdaptiveScheduler                             AnthropicAdaptiveSchedulerSettings
+	GeminiAdaptiveScheduler                                GeminiAdaptiveSchedulerSettings
 	OpenAIAdvancedSchedulerStickyWeightedEnabled           bool
 	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled     bool
 	OpenAIAdvancedSchedulerLBTopK                          string

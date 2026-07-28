@@ -308,6 +308,91 @@ export default {
           lastEvent: 'Last Event'
         }
       },
+      geminiAdaptiveLearning: {
+        title: 'Gemini Adaptive Scheduling Learning',
+        description: 'Shows dynamic capacity, six-dimension scores, model-family EMAs, quota pace, and sticky migration metrics for the Gemini and Antigravity pool.',
+        disabled: 'Disabled',
+        realtimeOff: 'Realtime concurrency off',
+        openSettings: 'Scheduler Settings',
+        openSettingsTitle: 'Open system settings to tune or disable Gemini adaptive scheduling',
+        failedToLoad: 'Failed to load Gemini adaptive scheduling learning state',
+        empty: 'No schedulable Gemini or Antigravity accounts for the current filters',
+        queued: 'queued {count}',
+        successEma: 'success EMA',
+        failureStreaks: 'failure streak H {health} / C {capacity}',
+        capacityFailureRate: 'capacity fail',
+        cooldownRemaining: 'cooldown {value}',
+        totalAccounts: 'Total accounts: {total}',
+        scoreNote: 'Scores use a 0-100 reference scale. R/Q/C/L/$/E represent reliability, quota pace, remaining capacity, model-family latency, cost, and exploration. Real routing also enforces Priority tiers, model capability, sticky state, exclusions, and request context.',
+        mode: {
+          enforce: 'Enforce',
+          shadow: 'Shadow'
+        },
+        model: {
+          placeholder: 'Requested model',
+          tooltip: 'Enter the actual requested model used for model-family EMA, model mapping, and Pro/Flash quota snapshots'
+        },
+        status: {
+          disabled: 'Disabled',
+          unavailable: 'Unavailable',
+          quotaLimited: 'Quota limited',
+          cooldown: 'Cooldown',
+          highError: 'High capacity error',
+          saturated: 'Saturated',
+          learning: 'Learning',
+          unlearned: 'Unlearned',
+          healthy: 'Healthy'
+        },
+        statusFilter: {
+          all: 'All statuses'
+        },
+        summary: {
+          tracked: 'Tracked',
+          healthy: 'Healthy',
+          constrained: 'Constrained',
+          unavailable: 'Unavailable'
+        },
+        settings: {
+          topK: 'TopK',
+          temperature: 'Softmax temp',
+          weights: 'R/Q/C/L/$/E weights',
+          stickyEscape: 'Sticky migration',
+          window: 'Window'
+        },
+        metrics: {
+          select: 'Selections',
+          stickyHit: 'Sticky hits',
+          stickyMigrate: 'Sticky migrations',
+          fallback: 'Fallbacks',
+          capacityDecrease: 'Shrinks',
+          quotaErrors: 'Quota snapshot errors',
+          shadowDiverge: 'Shadow divergences'
+        },
+        quota: {
+          unavailable: 'No quota snapshot',
+          unlimited: 'Unlimited',
+          reset: 'minute reset',
+          bucket: {
+            shared: 'Shared',
+            pro: 'Pro',
+            flash: 'Flash',
+            unlimited: 'Unlimited',
+            unknown: 'Unknown'
+          }
+        },
+        table: {
+          account: 'Account',
+          status: 'Status',
+          capacity: 'Learned Capacity',
+          capacityHint: 'estimated/config',
+          load: 'Load',
+          score: 'Six Scores',
+          quota: 'Quota Pace',
+          samples: 'Samples and EMA',
+          latency: 'TTFT/Total',
+          lastEvent: 'Last Event'
+        }
+      },
       fullscreen: {
         enter: 'Enter Fullscreen'
       },

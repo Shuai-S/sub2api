@@ -542,6 +542,198 @@ export interface OpsAnthropicAdaptiveLearningParams {
   sort_order?: OpsAnthropicAdaptiveLearningSortOrder
 }
 
+export type OpsGeminiAdaptiveLearningStatus =
+  | 'disabled'
+  | 'unavailable'
+  | 'quota_limited'
+  | 'cooldown'
+  | 'high_error'
+  | 'saturated'
+  | 'learning'
+  | 'unlearned'
+  | 'healthy'
+
+export type OpsGeminiAdaptiveLearningSortBy =
+  | 'account'
+  | 'status'
+  | 'capacity'
+  | 'load'
+  | 'score'
+  | 'samples'
+  | 'error'
+  | 'latency'
+  | 'quota'
+  | 'last_event'
+
+export type OpsGeminiAdaptiveLearningSortOrder = 'asc' | 'desc'
+export type OpsGeminiAdaptiveQuotaBucket = 'shared' | 'pro' | 'flash' | 'unlimited' | 'unknown'
+
+export interface OpsGeminiAdaptiveQuotaSnapshot {
+  scope: {
+    daily: OpsGeminiAdaptiveQuotaBucket | string
+    minute: OpsGeminiAdaptiveQuotaBucket | string
+  }
+  daily_used: number
+  daily_limit: number
+  daily_reset_at: string
+  minute_used: number
+  minute_limit: number
+  minute_reset_at: string
+  hard_rejected: boolean
+  data_available: boolean
+}
+
+export interface OpsGeminiAdaptiveLearningSettingsSnapshot {
+  sticky_escape_on_capacity_full: boolean
+  top_k: number
+  softmax_temperature: number
+  weight_reliability: number
+  weight_quota: number
+  weight_capacity: number
+  weight_latency: number
+  weight_cost: number
+  weight_exploration: number
+  initial_reliability: number
+  neutral_latency_score: number
+  neutral_quota_score: number
+  capacity_failure_threshold: number
+  min_recent_samples_for_shrink: number
+  shrink_error_threshold: number
+  learning_window_seconds: number
+  cooldown_seconds: number
+  capacity_increase_step: number
+  min_capacity: number
+  diagnostic_log_enabled: boolean
+  diagnostic_log_sample_rate: number
+}
+
+export interface OpsGeminiAdaptiveMetricsSnapshot {
+  select_total: number
+  shadow_diverge_total: number
+  fallback_total: number
+  sticky_hit_total: number
+  sticky_migrate_total: number
+  capacity_decrease_total: number
+  quota_snapshot_error_total: number
+}
+
+export interface OpsGeminiAdaptiveLearningSummary {
+  tracked_accounts: number
+  disabled_accounts: number
+  unavailable_accounts: number
+  quota_limited_accounts: number
+  cooldown_accounts: number
+  high_error_accounts: number
+  saturated_accounts: number
+  learning_accounts: number
+  unlearned_accounts: number
+  healthy_accounts: number
+}
+
+export interface OpsGeminiAdaptiveModelLearningSnapshot {
+  model_family: string
+  success_ema: number
+  ttft_ema: number
+  latency_ema: number
+  samples: number
+  failures: number
+}
+
+export interface OpsGeminiAdaptiveLearningAccount {
+  account_id: number
+  account_name: string
+  platform: string
+  type: string
+  account_status: string
+  schedulable: boolean
+  priority: number
+
+  configured_concurrency: number
+  estimated_capacity: number
+  effective_capacity: number
+  current_concurrency: number
+  waiting_count: number
+  load_percentage: number
+
+  scheduler_status: OpsGeminiAdaptiveLearningStatus | string
+  status_reason?: string
+  learned: boolean
+
+  scheduler_score: number
+  reliability_score: number
+  quota_score: number
+  capacity_score: number
+  latency_score: number
+  cost_score: number
+  exploration_score: number
+
+  path_success_ema: number
+  model_family: string
+  model_success_ema: number
+  ttft_ema: number
+  latency_ema: number
+  model_samples: number
+  model_failures: number
+  by_model_family: OpsGeminiAdaptiveModelLearningSnapshot[]
+  quota: OpsGeminiAdaptiveQuotaSnapshot
+
+  total_samples: number
+  recent_health_samples: number
+  recent_health_failures: number
+  recent_health_failure_rate: number
+  recent_capacity_samples: number
+  recent_capacity_failures: number
+  recent_capacity_failure_rate: number
+  consecutive_success: number
+  consecutive_failure: number
+  consecutive_capacity_failure: number
+
+  learning_window_started_at?: string
+  last_success_at?: string
+  last_failure_at?: string
+  last_capacity_failure_at?: string
+  cooldown_until?: string
+  cooldown_remaining_sec: number
+}
+
+export interface OpsGeminiAdaptiveLearningResponse {
+  enabled: boolean
+  mode: string
+  realtime_enabled: boolean
+  generated_at: string
+  requested_model?: string
+  model_family: string
+  time_range?: OpsOpenAITokenStatsTimeRange
+  start_time?: string
+  end_time?: string
+  total_accounts: number
+  total: number
+  returned_accounts: number
+  limit: number
+  page?: number
+  page_size?: number
+  top_n?: number
+  sort_by?: OpsGeminiAdaptiveLearningSortBy
+  sort_order?: OpsGeminiAdaptiveLearningSortOrder
+  settings: OpsGeminiAdaptiveLearningSettingsSnapshot
+  metrics: OpsGeminiAdaptiveMetricsSnapshot
+  summary: OpsGeminiAdaptiveLearningSummary
+  accounts: OpsGeminiAdaptiveLearningAccount[]
+}
+
+export interface OpsGeminiAdaptiveLearningParams {
+  time_range?: OpsOpenAITokenStatsTimeRange
+  group_id?: number | null
+  model?: string
+  status?: OpsGeminiAdaptiveLearningStatus | string
+  page?: number
+  page_size?: number
+  top_n?: number
+  limit?: number
+  sort_by?: OpsGeminiAdaptiveLearningSortBy
+  sort_order?: OpsGeminiAdaptiveLearningSortOrder
+}
+
 export interface OpsSystemMetricsSnapshot {
   id: number
   created_at: string
@@ -1399,6 +1591,17 @@ export async function getAnthropicAdaptiveLearning(
   return data
 }
 
+export async function getGeminiAdaptiveLearning(
+  params: OpsGeminiAdaptiveLearningParams,
+  options: OpsRequestOptions = {}
+): Promise<OpsGeminiAdaptiveLearningResponse> {
+  const { data } = await apiClient.get<OpsGeminiAdaptiveLearningResponse>('/admin/ops/dashboard/gemini-adaptive-learning', {
+    params,
+    signal: options.signal
+  })
+  return data
+}
+
 export type OpsErrorListView = 'errors' | 'excluded' | 'all'
 
 export type OpsErrorListQueryParams = {
@@ -1635,6 +1838,7 @@ export const opsAPI = {
   getOpenAITokenStats,
   getOpenAIAdaptiveLearning,
   getAnthropicAdaptiveLearning,
+  getGeminiAdaptiveLearning,
   getConcurrencyStats,
   getUserConcurrencyStats,
   getAccountAvailabilityStats,

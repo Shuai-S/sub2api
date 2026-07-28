@@ -157,15 +157,34 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		APIKeyID:  apiKey.ID,
 	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
+	groupPlatform := effectiveAPIKeyPlatform(c, apiKey)
+	selectionSessionHash := sessionHash
+	if groupPlatform == service.PlatformGemini && selectionSessionHash != "" {
+		selectionSessionHash = "gemini:" + selectionSessionHash
+	}
+	var sessionBoundAccountID int64
+	if groupPlatform == service.PlatformGemini {
+		requestCtx = service.WithGeminiAdaptiveRequestHint(requestCtx, "generateContent", reqStream)
+		if selectionSessionHash != "" {
+			sessionBoundAccountID, _ = h.gatewayService.GetCachedSessionAccountID(requestCtx, apiKey.GroupID, selectionSessionHash)
+			if sessionBoundAccountID > 0 {
+				requestCtx = service.WithPrefetchedStickySession(requestCtx, sessionBoundAccountID, derefGroupID(apiKey.GroupID), h.metadataBridgeEnabled())
+			}
+		}
+		c.Request = c.Request.WithContext(requestCtx)
+	}
 
 	// 3. Account selection + failover loop
-	fs := NewFailoverState(h.maxAccountSwitches, false)
+	fs := NewFailoverState(h.maxAccountSwitches, sessionBoundAccountID > 0)
+	if groupPlatform == service.PlatformGemini {
+		fs = NewFailoverState(h.maxAccountSwitchesGemini, sessionBoundAccountID > 0)
+	}
 
 	for {
 		if requestCtx.Err() != nil {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
@@ -196,6 +215,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		if selection.PendingGeminiMigration != nil {
+			defer h.gatewayService.AbortGeminiStickyMigration(requestCtx, selection.PendingGeminiMigration)
+		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		// 4. Acquire account concurrency slot
@@ -219,6 +241,11 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}
+			if groupPlatform == service.PlatformGemini && selection.PendingGeminiMigration == nil {
+				if bindErr := h.gatewayService.BindStickySession(requestCtx, apiKey.GroupID, selectionSessionHash, account.ID); bindErr != nil {
+					reqLog.Warn("gateway.responses.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(bindErr))
+				}
+			}
 		}
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 
@@ -229,8 +256,18 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
+		migrationWriter, restoreWriter := installGeminiStickyMigrationWriter(c, h.gatewayService, selection.PendingGeminiMigration)
 		setActualUpstreamEndpoint(c, "")
-		if shouldUseAntigravityCompat(account) {
+		if account.Platform == service.PlatformGemini {
+			if h.geminiCompatService == nil {
+				h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", "Gemini compatibility service is not configured")
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				return
+			}
+			result, err = h.geminiCompatService.ForwardAsResponses(requestCtx, c, account, forwardBody)
+		} else if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
 				if accountReleaseFunc != nil {
@@ -243,13 +280,24 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		} else {
 			result, err = h.gatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
 		}
+		restoreWriter()
+		result, err = finishGeminiStickyMigration(requestCtx, h.gatewayService, selection.PendingGeminiMigration, migrationWriter, result, err)
 
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
 		h.gatewayService.ReportAnthropicAdaptiveResult(requestCtx, account, reqModel, result, err)
+		h.gatewayService.ReportGeminiAdaptiveResult(requestCtx, account, reqModel, "generateContent", result, err)
 
 		if err != nil {
+			if migration := selection.PendingGeminiMigration; migration != nil && (migrationWriter == nil || !migrationWriter.Committed()) {
+				sessionBoundAccountID = migration.ExpectedAccountID
+				if migration.DeleteSourceOnFailure {
+					sessionBoundAccountID = 0
+				}
+				requestCtx = service.WithPrefetchedStickySession(requestCtx, sessionBoundAccountID, derefGroupID(apiKey.GroupID), h.metadataBridgeEnabled())
+				c.Request = c.Request.WithContext(requestCtx)
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				// Can't failover if streaming content already sent

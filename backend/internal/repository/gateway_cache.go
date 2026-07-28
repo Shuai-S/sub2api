@@ -13,6 +13,7 @@ import (
 )
 
 const stickySessionPrefix = "sticky_session:"
+const stickySessionMigrationPrefix = "sticky_session_migration:"
 const liveCallPrefix = "live:call:"
 
 type gatewayCache struct {
@@ -27,6 +28,10 @@ func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
 // 格式: sticky_session:{groupID}:{sessionHash}
 func buildSessionKey(groupID int64, sessionHash string) string {
 	return fmt.Sprintf("%s%d:%s", stickySessionPrefix, groupID, sessionHash)
+}
+
+func buildSessionMigrationKey(groupID int64, sessionHash string) string {
+	return fmt.Sprintf("%s%d:%s", stickySessionMigrationPrefix, groupID, sessionHash)
 }
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -55,6 +60,81 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
 }
+
+var compareAndSwapSessionAccountScript = redis.NewScript(`
+	if redis.call('GET', KEYS[2]) ~= ARGV[3] then
+		return -1
+	end
+	local current = redis.call('GET', KEYS[1])
+	if ARGV[1] == '0' then
+		if current ~= false then
+			return 0
+		end
+	elseif current == false or current ~= ARGV[1] then
+		return 0
+	end
+	redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[4])
+	return 1
+`)
+
+var compareAndDeleteSessionAccountScript = redis.NewScript(`
+	if redis.call('GET', KEYS[2]) ~= ARGV[2] then
+		return -1
+	end
+	local current = redis.call('GET', KEYS[1])
+	if current == false or current ~= ARGV[1] then
+		return 0
+	end
+	redis.call('DEL', KEYS[1])
+	return 1
+`)
+
+var releaseSessionMigrationLeaseScript = redis.NewScript(`
+	if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+		return 0
+	end
+	redis.call('DEL', KEYS[1])
+	return 1
+`)
+
+func (c *gatewayCache) TryAcquireSessionMigrationLease(ctx context.Context, groupID int64, sessionHash, token string, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil || sessionHash == "" || token == "" || ttl <= 0 {
+		return false, nil
+	}
+	return c.rdb.SetNX(ctx, buildSessionMigrationKey(groupID, sessionHash), token, ttl).Result()
+}
+
+func (c *gatewayCache) CompareAndSwapSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID, targetAccountID int64, token string, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil || sessionHash == "" || targetAccountID <= 0 || token == "" || ttl <= 0 {
+		return false, nil
+	}
+	result, err := compareAndSwapSessionAccountScript.Run(ctx, c.rdb,
+		[]string{buildSessionKey(groupID, sessionHash), buildSessionMigrationKey(groupID, sessionHash)},
+		strconv.FormatInt(expectedAccountID, 10), strconv.FormatInt(targetAccountID, 10), token, strconv.FormatInt(ttl.Milliseconds(), 10),
+	).Int64()
+	return result == 1, err
+}
+
+func (c *gatewayCache) CompareAndDeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64, token string) (bool, error) {
+	if c == nil || c.rdb == nil || sessionHash == "" || expectedAccountID <= 0 || token == "" {
+		return false, nil
+	}
+	result, err := compareAndDeleteSessionAccountScript.Run(ctx, c.rdb,
+		[]string{buildSessionKey(groupID, sessionHash), buildSessionMigrationKey(groupID, sessionHash)},
+		strconv.FormatInt(expectedAccountID, 10), token,
+	).Int64()
+	return result == 1, err
+}
+
+func (c *gatewayCache) ReleaseSessionMigrationLease(ctx context.Context, groupID int64, sessionHash, token string) (bool, error) {
+	if c == nil || c.rdb == nil || sessionHash == "" || token == "" {
+		return false, nil
+	}
+	result, err := releaseSessionMigrationLeaseScript.Run(ctx, c.rdb, []string{buildSessionMigrationKey(groupID, sessionHash)}, token).Int64()
+	return result == 1, err
+}
+
+var _ service.GeminiSessionMigrationCache = (*gatewayCache)(nil)
 
 // DeleteSessionsByAccountID deletes all sticky session keys whose value points to
 // accountID. It is best-effort and intended for rare account-level cooldowns.

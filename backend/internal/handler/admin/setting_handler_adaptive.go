@@ -114,6 +114,142 @@ func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveS
 	return service.NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 }
 
+type GeminiAdaptiveSchedulerSettingsUpdateRequest struct {
+	GeminiAdaptiveSchedulerEnabled                     *bool    `json:"gemini_adaptive_scheduler_enabled"`
+	GeminiAdaptiveSchedulerMode                        *string  `json:"gemini_adaptive_scheduler_mode"`
+	GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull  *bool    `json:"gemini_adaptive_scheduler_sticky_escape_on_capacity_full"`
+	GeminiAdaptiveSchedulerTopK                        *int     `json:"gemini_adaptive_scheduler_top_k"`
+	GeminiAdaptiveSchedulerSoftmaxTemperature          *float64 `json:"gemini_adaptive_scheduler_softmax_temperature"`
+	GeminiAdaptiveSchedulerInitialReliability          *float64 `json:"gemini_adaptive_scheduler_initial_reliability"`
+	GeminiAdaptiveSchedulerConsecutiveFailurePenalty   *float64 `json:"gemini_adaptive_scheduler_consecutive_failure_penalty"`
+	GeminiAdaptiveSchedulerNeutralLatencyScore         *float64 `json:"gemini_adaptive_scheduler_neutral_latency_score"`
+	GeminiAdaptiveSchedulerNeutralQuotaScore           *float64 `json:"gemini_adaptive_scheduler_neutral_quota_score"`
+	GeminiAdaptiveSchedulerSuccessEMAAlpha             *float64 `json:"gemini_adaptive_scheduler_success_ema_alpha"`
+	GeminiAdaptiveSchedulerLatencyEMAAlpha             *float64 `json:"gemini_adaptive_scheduler_latency_ema_alpha"`
+	GeminiAdaptiveSchedulerMinCostMultiplier           *float64 `json:"gemini_adaptive_scheduler_min_cost_multiplier"`
+	GeminiAdaptiveSchedulerWeightReliability           *float64 `json:"gemini_adaptive_scheduler_weight_reliability"`
+	GeminiAdaptiveSchedulerWeightQuota                 *float64 `json:"gemini_adaptive_scheduler_weight_quota"`
+	GeminiAdaptiveSchedulerWeightCapacity              *float64 `json:"gemini_adaptive_scheduler_weight_capacity"`
+	GeminiAdaptiveSchedulerWeightLatency               *float64 `json:"gemini_adaptive_scheduler_weight_latency"`
+	GeminiAdaptiveSchedulerWeightCost                  *float64 `json:"gemini_adaptive_scheduler_weight_cost"`
+	GeminiAdaptiveSchedulerWeightExploration           *float64 `json:"gemini_adaptive_scheduler_weight_exploration"`
+	GeminiAdaptiveSchedulerCapacityProbeLoadThreshold  *float64 `json:"gemini_adaptive_scheduler_capacity_probe_load_threshold"`
+	GeminiAdaptiveSchedulerCapacitySuccessThreshold    *float64 `json:"gemini_adaptive_scheduler_capacity_success_threshold"`
+	GeminiAdaptiveSchedulerCapacityIncreaseStep        *int     `json:"gemini_adaptive_scheduler_capacity_increase_step"`
+	GeminiAdaptiveSchedulerMinCapacity                 *int     `json:"gemini_adaptive_scheduler_min_capacity"`
+	GeminiAdaptiveSchedulerCapacityFailureThreshold    *int     `json:"gemini_adaptive_scheduler_capacity_failure_threshold"`
+	GeminiAdaptiveSchedulerMinRecentSamplesForShrink   *int     `json:"gemini_adaptive_scheduler_min_recent_samples_for_shrink"`
+	GeminiAdaptiveSchedulerShrinkErrorThreshold        *float64 `json:"gemini_adaptive_scheduler_shrink_error_threshold"`
+	GeminiAdaptiveSchedulerShrinkFactorSoft            *float64 `json:"gemini_adaptive_scheduler_shrink_factor_soft"`
+	GeminiAdaptiveSchedulerShrinkFactorHard            *float64 `json:"gemini_adaptive_scheduler_shrink_factor_hard"`
+	GeminiAdaptiveSchedulerHardShrinkFailureMultiplier *int     `json:"gemini_adaptive_scheduler_hard_shrink_failure_multiplier"`
+	GeminiAdaptiveSchedulerLearningWindowSeconds       *int     `json:"gemini_adaptive_scheduler_learning_window_seconds"`
+	GeminiAdaptiveSchedulerCooldownSeconds             *int     `json:"gemini_adaptive_scheduler_cooldown_seconds"`
+	GeminiAdaptiveSchedulerDiagnosticLogEnabled        *bool    `json:"gemini_adaptive_scheduler_diagnostic_log_enabled"`
+	GeminiAdaptiveSchedulerDiagnosticLogSampleRate     *float64 `json:"gemini_adaptive_scheduler_diagnostic_log_sample_rate"`
+}
+
+func mergeGeminiAdaptiveSchedulerSettings(previous service.GeminiAdaptiveSchedulerSettings, req GeminiAdaptiveSchedulerSettingsUpdateRequest) service.GeminiAdaptiveSchedulerSettings {
+	settings := previous
+	if req.GeminiAdaptiveSchedulerEnabled != nil {
+		settings.GeminiAdaptiveSchedulerEnabled = *req.GeminiAdaptiveSchedulerEnabled
+	}
+	if req.GeminiAdaptiveSchedulerMode != nil {
+		settings.GeminiAdaptiveSchedulerMode = strings.TrimSpace(*req.GeminiAdaptiveSchedulerMode)
+	}
+	if req.GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull != nil {
+		settings.GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull = *req.GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull
+	}
+	if req.GeminiAdaptiveSchedulerTopK != nil {
+		settings.GeminiAdaptiveSchedulerTopK = *req.GeminiAdaptiveSchedulerTopK
+	}
+	if req.GeminiAdaptiveSchedulerSoftmaxTemperature != nil {
+		settings.GeminiAdaptiveSchedulerSoftmaxTemperature = *req.GeminiAdaptiveSchedulerSoftmaxTemperature
+	}
+	if req.GeminiAdaptiveSchedulerInitialReliability != nil {
+		settings.GeminiAdaptiveSchedulerInitialReliability = *req.GeminiAdaptiveSchedulerInitialReliability
+	}
+	if req.GeminiAdaptiveSchedulerConsecutiveFailurePenalty != nil {
+		settings.GeminiAdaptiveSchedulerConsecutiveFailurePenalty = *req.GeminiAdaptiveSchedulerConsecutiveFailurePenalty
+	}
+	if req.GeminiAdaptiveSchedulerNeutralLatencyScore != nil {
+		settings.GeminiAdaptiveSchedulerNeutralLatencyScore = *req.GeminiAdaptiveSchedulerNeutralLatencyScore
+	}
+	if req.GeminiAdaptiveSchedulerNeutralQuotaScore != nil {
+		settings.GeminiAdaptiveSchedulerNeutralQuotaScore = *req.GeminiAdaptiveSchedulerNeutralQuotaScore
+	}
+	if req.GeminiAdaptiveSchedulerSuccessEMAAlpha != nil {
+		settings.GeminiAdaptiveSchedulerSuccessEMAAlpha = *req.GeminiAdaptiveSchedulerSuccessEMAAlpha
+	}
+	if req.GeminiAdaptiveSchedulerLatencyEMAAlpha != nil {
+		settings.GeminiAdaptiveSchedulerLatencyEMAAlpha = *req.GeminiAdaptiveSchedulerLatencyEMAAlpha
+	}
+	if req.GeminiAdaptiveSchedulerMinCostMultiplier != nil {
+		settings.GeminiAdaptiveSchedulerMinCostMultiplier = *req.GeminiAdaptiveSchedulerMinCostMultiplier
+	}
+	if req.GeminiAdaptiveSchedulerWeightReliability != nil {
+		settings.GeminiAdaptiveSchedulerWeightReliability = *req.GeminiAdaptiveSchedulerWeightReliability
+	}
+	if req.GeminiAdaptiveSchedulerWeightQuota != nil {
+		settings.GeminiAdaptiveSchedulerWeightQuota = *req.GeminiAdaptiveSchedulerWeightQuota
+	}
+	if req.GeminiAdaptiveSchedulerWeightCapacity != nil {
+		settings.GeminiAdaptiveSchedulerWeightCapacity = *req.GeminiAdaptiveSchedulerWeightCapacity
+	}
+	if req.GeminiAdaptiveSchedulerWeightLatency != nil {
+		settings.GeminiAdaptiveSchedulerWeightLatency = *req.GeminiAdaptiveSchedulerWeightLatency
+	}
+	if req.GeminiAdaptiveSchedulerWeightCost != nil {
+		settings.GeminiAdaptiveSchedulerWeightCost = *req.GeminiAdaptiveSchedulerWeightCost
+	}
+	if req.GeminiAdaptiveSchedulerWeightExploration != nil {
+		settings.GeminiAdaptiveSchedulerWeightExploration = *req.GeminiAdaptiveSchedulerWeightExploration
+	}
+	if req.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold != nil {
+		settings.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold = *req.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold
+	}
+	if req.GeminiAdaptiveSchedulerCapacitySuccessThreshold != nil {
+		settings.GeminiAdaptiveSchedulerCapacitySuccessThreshold = *req.GeminiAdaptiveSchedulerCapacitySuccessThreshold
+	}
+	if req.GeminiAdaptiveSchedulerCapacityIncreaseStep != nil {
+		settings.GeminiAdaptiveSchedulerCapacityIncreaseStep = *req.GeminiAdaptiveSchedulerCapacityIncreaseStep
+	}
+	if req.GeminiAdaptiveSchedulerMinCapacity != nil {
+		settings.GeminiAdaptiveSchedulerMinCapacity = *req.GeminiAdaptiveSchedulerMinCapacity
+	}
+	if req.GeminiAdaptiveSchedulerCapacityFailureThreshold != nil {
+		settings.GeminiAdaptiveSchedulerCapacityFailureThreshold = *req.GeminiAdaptiveSchedulerCapacityFailureThreshold
+	}
+	if req.GeminiAdaptiveSchedulerMinRecentSamplesForShrink != nil {
+		settings.GeminiAdaptiveSchedulerMinRecentSamplesForShrink = *req.GeminiAdaptiveSchedulerMinRecentSamplesForShrink
+	}
+	if req.GeminiAdaptiveSchedulerShrinkErrorThreshold != nil {
+		settings.GeminiAdaptiveSchedulerShrinkErrorThreshold = *req.GeminiAdaptiveSchedulerShrinkErrorThreshold
+	}
+	if req.GeminiAdaptiveSchedulerShrinkFactorSoft != nil {
+		settings.GeminiAdaptiveSchedulerShrinkFactorSoft = *req.GeminiAdaptiveSchedulerShrinkFactorSoft
+	}
+	if req.GeminiAdaptiveSchedulerShrinkFactorHard != nil {
+		settings.GeminiAdaptiveSchedulerShrinkFactorHard = *req.GeminiAdaptiveSchedulerShrinkFactorHard
+	}
+	if req.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier != nil {
+		settings.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier = *req.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier
+	}
+	if req.GeminiAdaptiveSchedulerLearningWindowSeconds != nil {
+		settings.GeminiAdaptiveSchedulerLearningWindowSeconds = *req.GeminiAdaptiveSchedulerLearningWindowSeconds
+	}
+	if req.GeminiAdaptiveSchedulerCooldownSeconds != nil {
+		settings.GeminiAdaptiveSchedulerCooldownSeconds = *req.GeminiAdaptiveSchedulerCooldownSeconds
+	}
+	if req.GeminiAdaptiveSchedulerDiagnosticLogEnabled != nil {
+		settings.GeminiAdaptiveSchedulerDiagnosticLogEnabled = *req.GeminiAdaptiveSchedulerDiagnosticLogEnabled
+	}
+	if req.GeminiAdaptiveSchedulerDiagnosticLogSampleRate != nil {
+		settings.GeminiAdaptiveSchedulerDiagnosticLogSampleRate = *req.GeminiAdaptiveSchedulerDiagnosticLogSampleRate
+	}
+	return service.NormalizeGeminiAdaptiveSchedulerSettings(settings)
+}
+
 type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerEnabled                    *bool    `json:"openai_adaptive_scheduler_enabled"`
 	OpenAIAdaptiveSchedulerDiagnosticLogEnabled       *bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`

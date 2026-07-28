@@ -220,6 +220,7 @@ type SystemSettings struct {
 	OpenAIAdvancedSchedulerEnabled       bool    `json:"openai_advanced_scheduler_enabled"`
 	service.OpenAIAdaptiveSchedulerSettings
 	service.AnthropicAdaptiveSchedulerSettings
+	service.GeminiAdaptiveSchedulerSettings
 	OpenAIAdvancedSchedulerStickyWeightedEnabled           bool   `json:"openai_advanced_scheduler_sticky_weighted_enabled"`
 	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled     bool   `json:"openai_advanced_scheduler_subscription_priority_enabled"`
 	OpenAIAdvancedSchedulerLBTopK                          string `json:"openai_advanced_scheduler_lb_top_k"`

@@ -304,6 +304,91 @@ export default {
           lastEvent: '最近事件'
         }
       },
+      geminiAdaptiveLearning: {
+        title: 'Gemini 自适应调度学习',
+        description: '展示 Gemini 与 Antigravity 混合池的动态容量、六维评分、模型族 EMA、配额节奏和 Sticky 迁移指标。',
+        disabled: '已关闭',
+        realtimeOff: '实时并发关闭',
+        openSettings: '调度设置',
+        openSettingsTitle: '打开系统设置，调整或关闭 Gemini 自适应调度',
+        failedToLoad: '加载 Gemini 自适应调度学习状态失败',
+        empty: '当前筛选条件下暂无可调度的 Gemini 或 Antigravity 账号',
+        queued: '排队 {count}',
+        successEma: '成功 EMA',
+        failureStreaks: '连续失败 H {health} / C {capacity}',
+        capacityFailureRate: '容量失败率',
+        cooldownRemaining: '冷却剩余 {value}',
+        totalAccounts: '账号总数：{total}',
+        scoreNote: '当前分值为 0-100 的参考分；R/Q/C/L/$/E 分别表示可靠性、配额节奏、剩余容量、模型族延迟、成本和探索。真实调度仍受 Priority 硬分层、模型能力、Sticky、排除账号和请求上下文约束。',
+        mode: {
+          enforce: '执行模式',
+          shadow: '观察模式'
+        },
+        model: {
+          placeholder: '请求模型',
+          tooltip: '输入实际请求模型，用于模型族 EMA、模型映射和 Pro/Flash 配额快照计算'
+        },
+        status: {
+          disabled: '已关闭',
+          unavailable: '不可调度',
+          quotaLimited: '配额耗尽',
+          cooldown: '冷却中',
+          highError: '容量错误偏高',
+          saturated: '容量打满',
+          learning: '学习中',
+          unlearned: '未学习',
+          healthy: '健康'
+        },
+        statusFilter: {
+          all: '全部状态'
+        },
+        summary: {
+          tracked: '已跟踪账号',
+          healthy: '健康',
+          constrained: '受限',
+          unavailable: '不可调度'
+        },
+        settings: {
+          topK: 'TopK',
+          temperature: 'Softmax 温度',
+          weights: 'R/Q/C/L/$/E 权重',
+          stickyEscape: 'Sticky 满载迁移',
+          window: '学习窗口'
+        },
+        metrics: {
+          select: '选择',
+          stickyHit: 'Sticky 命中',
+          stickyMigrate: 'Sticky 迁移',
+          fallback: '回退',
+          capacityDecrease: '缩容',
+          quotaErrors: '配额快照错误',
+          shadowDiverge: 'Shadow 分歧'
+        },
+        quota: {
+          unavailable: '无配额快照',
+          unlimited: '不限量',
+          reset: '分钟重置',
+          bucket: {
+            shared: '共享',
+            pro: 'Pro',
+            flash: 'Flash',
+            unlimited: '不限量',
+            unknown: '未知'
+          }
+        },
+        table: {
+          account: '账号',
+          status: '状态',
+          capacity: '学习容量',
+          capacityHint: '估算/配置',
+          load: '负载',
+          score: '六维分值',
+          quota: '配额节奏',
+          samples: '样本与 EMA',
+          latency: '首包/总延迟',
+          lastEvent: '最近事件'
+        }
+      },
       customTimeRange: {
         startTime: '开始时间',
         endTime: '结束时间'

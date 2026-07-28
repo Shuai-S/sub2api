@@ -470,6 +470,15 @@ type GatewayCache interface {
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
 }
 
+// GeminiSessionMigrationCache is an optional atomic cache capability used when
+// a Gemini response may establish or move a thought-signature session binding.
+type GeminiSessionMigrationCache interface {
+	TryAcquireSessionMigrationLease(ctx context.Context, groupID int64, sessionHash, token string, ttl time.Duration) (bool, error)
+	CompareAndSwapSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID, targetAccountID int64, token string, ttl time.Duration) (bool, error)
+	CompareAndDeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string, expectedAccountID int64, token string) (bool, error)
+	ReleaseSessionMigrationLease(ctx context.Context, groupID int64, sessionHash, token string) (bool, error)
+}
+
 // GatewayAccountStickyCleaner is an optional cache capability for best-effort
 // cleanup of all sticky sessions currently bound to an account.
 type GatewayAccountStickyCleaner interface {
@@ -545,11 +554,23 @@ type AccountWaitPlan struct {
 }
 
 type AccountSelectionResult struct {
-	Account               *Account
-	Acquired              bool
-	ReleaseFunc           func()
-	WaitPlan              *AccountWaitPlan // nil means no wait allowed
-	PreserveStickyBinding bool             // keep an existing busy sticky binding when this request uses another account
+	Account                *Account
+	Acquired               bool
+	ReleaseFunc            func()
+	WaitPlan               *AccountWaitPlan // nil means no wait allowed
+	PreserveStickyBinding  bool             // keep an existing busy sticky binding when this request uses another account
+	PendingGeminiMigration *GeminiPendingStickyMigration
+}
+
+type GeminiPendingStickyMigration struct {
+	GroupID                  int64
+	SessionKey               string
+	ExpectedAccountID        int64
+	SignatureSourceAccountID int64
+	ToAccountID              int64
+	LeaseToken               string
+	DeleteSourceOnFailure    bool
+	completed                atomic.Bool
 }
 
 // ClaudeUsage 表示Claude API返回的usage信息
@@ -575,6 +596,7 @@ type ForwardResult struct {
 	Duration         time.Duration
 	FirstTokenMs     *int // 首字时间（流式请求）
 	ClientDisconnect bool // 客户端是否在流式传输过程中断开
+	Synthetic        bool // true when the response was produced locally without a real upstream sample
 	ReasoningEffort  *string
 
 	// 图片生成计费字段（图片生成模型使用）
@@ -736,6 +758,9 @@ type GatewayService struct {
 	anthropicAdaptiveScheduler *anthropicAdaptiveScheduler
 	anthropicStatePersistence  *anthropicAdaptiveStatePersistence
 	anthropicStatePersistOnce  sync.Once
+	geminiAdaptiveScheduler    *geminiAdaptiveScheduler
+	geminiStatePersistence     *geminiAdaptiveStatePersistence
+	geminiStatePersistOnce     sync.Once
 	responseHeaderFilter       *responseheaders.CompiledHeaderFilter
 	debugModelRouting          atomic.Bool
 	debugClaudeMimic           atomic.Bool
@@ -807,6 +832,7 @@ func NewGatewayService(
 		userGroupRateCache:         gocache.New(userGroupRateTTL, time.Minute),
 		settingService:             settingService,
 		anthropicAdaptiveScheduler: newAnthropicAdaptiveScheduler(),
+		geminiAdaptiveScheduler:    newGeminiAdaptiveScheduler(),
 		modelsListCache:            gocache.New(modelsListTTL, time.Minute),
 		modelsListCacheTTL:         modelsListTTL,
 		responseHeaderFilter:       compileResponseHeaderFilter(cfg),
@@ -830,6 +856,7 @@ func NewGatewayService(
 		svc.initDebugGatewayBodyFile(path)
 	}
 	svc.startAnthropicAdaptiveStatePersistence()
+	svc.startGeminiAdaptiveStatePersistence()
 	return svc
 }
 

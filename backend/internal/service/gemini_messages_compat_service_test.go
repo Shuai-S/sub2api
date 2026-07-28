@@ -170,6 +170,144 @@ func TestGeminiForwardAsChatCompletions_StreamsOpenAIChunksFromGeminiSSE(t *test
 	require.Contains(t, out, "data: [DONE]")
 }
 
+func TestGeminiForwardAsResponses_APIKeyReturnsResponsesFormat(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"candidates":[{"content":{"parts":[{"text":"hello from gemini"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3}}`,
+			)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
+	account := &Account{
+		ID:       104,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+		Concurrency: 1,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gemini-2.5-flash","input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Stream)
+	require.Equal(t, 7, result.Usage.InputTokens)
+	require.Equal(t, 3, result.Usage.OutputTokens)
+	require.Contains(t, httpStub.lastReq.URL.String(), "/v1beta/models/gemini-2.5-flash:generateContent")
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "response", got["object"])
+	require.Equal(t, "completed", got["status"])
+	require.Equal(t, "gemini-2.5-flash", got["model"])
+	require.NotContains(t, got, "choices")
+	output := got["output"].([]any)
+	require.Equal(t, "message", output[0].(map[string]any)["type"])
+	content := output[0].(map[string]any)["content"].([]any)
+	require.Equal(t, "hello from gemini", content[0].(map[string]any)["text"])
+}
+
+func TestGeminiForwardAsResponses_RestoresCustomToolCall(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"exec","args":{"input":"pwd"}}}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2}}`,
+			)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
+	account := &Account{
+		ID:       105,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+		Concurrency: 1,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{
+		"model":"gemini-2.5-flash",
+		"input":"run pwd",
+		"tools":[{"type":"custom","name":"exec","description":"Run a shell command"}]
+	}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	_, err := svc.ForwardAsResponses(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.Contains(t, rec.Body.String(), `"type":"custom_tool_call"`)
+	require.Contains(t, rec.Body.String(), `"name":"exec"`)
+	require.Contains(t, rec.Body.String(), `"input":"pwd"`)
+	require.NotContains(t, rec.Body.String(), `"type":"function_call"`)
+
+	postedBody, err := io.ReadAll(httpStub.lastReq.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(postedBody), `"name":"exec"`)
+}
+
+func TestGeminiForwardAsResponses_StreamsResponsesEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamBody := `data: {"candidates":[{"content":{"parts":[{"text":"hel"}]}}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1}}` + "\n\n" +
+		`data: {"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":2}}` + "\n\n" +
+		"data: [DONE]\n\n"
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
+	account := &Account{
+		ID:       106,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "gemini-api-key",
+		},
+		Concurrency: 1,
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gemini-2.5-flash","stream":true,"input":"hi"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+
+	result, err := svc.ForwardAsResponses(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Stream)
+	require.Equal(t, 2, result.Usage.InputTokens)
+	require.Equal(t, 2, result.Usage.OutputTokens)
+
+	out := rec.Body.String()
+	require.Contains(t, out, "event: response.created")
+	require.Contains(t, out, `"type":"response.output_text.delta"`)
+	require.Contains(t, out, `"delta":"hel"`)
+	require.Contains(t, out, `"delta":"lo"`)
+	require.Contains(t, out, "event: response.completed")
+	require.NotContains(t, out, "chat.completion.chunk")
+	require.NotContains(t, out, "data: [DONE]")
+}
+
 func TestGeminiForwardAsChatCompletions_FunctionNamedWebSearchStaysClientSide(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

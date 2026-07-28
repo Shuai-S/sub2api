@@ -513,7 +513,15 @@ func (s *RateLimitService) PreCheckUsage(ctx context.Context, account *Account, 
 // PreCheckUsageBatch performs quota precheck for multiple accounts in one request.
 // Returned map value=false means the account should be skipped.
 func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*Account, requestedModel string) (map[int64]bool, error) {
+	result, _, err := s.PreCheckUsageBatchWithSnapshots(ctx, accounts, requestedModel)
+	return result, err
+}
+
+// PreCheckUsageBatchWithSnapshots returns the existing hard precheck decision
+// together with best-effort read-only quota data for adaptive scheduling.
+func (s *RateLimitService) PreCheckUsageBatchWithSnapshots(ctx context.Context, accounts []*Account, requestedModel string) (map[int64]bool, map[int64]GeminiAdaptiveQuotaSnapshot, error) {
 	result := make(map[int64]bool, len(accounts))
+	snapshots := make(map[int64]GeminiAdaptiveQuotaSnapshot, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
 			continue
@@ -522,20 +530,20 @@ func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*A
 	}
 
 	if len(accounts) == 0 || requestedModel == "" {
-		return result, nil
+		return result, snapshots, nil
 	}
 	if s.usageRepo == nil || s.geminiQuotaService == nil {
-		return result, nil
+		return result, snapshots, nil
 	}
 
-	modelClass := geminiModelClassFromName(requestedModel)
 	now := time.Now()
 	dailyStart := geminiDailyWindowStart(now)
 	minuteStart := now.Truncate(time.Minute)
 
 	type quotaAccount struct {
-		account *Account
-		quota   GeminiQuota
+		account    *Account
+		quota      GeminiQuota
+		modelClass geminiModelClass
 	}
 	quotaAccounts := make([]quotaAccount, 0, len(accounts))
 	for _, account := range accounts {
@@ -546,20 +554,35 @@ func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*A
 		if !ok {
 			continue
 		}
+		modelClass := geminiModelClassFromName(account.GetMappedModel(requestedModel))
+		dailyLimit := geminiDailyLimit(quota, modelClass)
+		minuteLimit := geminiMinuteLimit(quota, modelClass)
+		snapshots[account.ID] = GeminiAdaptiveQuotaSnapshot{
+			Scope: GeminiAdaptiveQuotaScope{
+				Daily:  geminiAdaptiveQuotaBucket(quota.SharedRPD, dailyLimit, modelClass),
+				Minute: geminiAdaptiveQuotaBucket(quota.SharedRPM, minuteLimit, modelClass),
+			},
+			DailyLimit:    dailyLimit,
+			DailyResetAt:  geminiDailyResetTime(now),
+			MinuteLimit:   minuteLimit,
+			MinuteResetAt: minuteStart.Add(time.Minute),
+			DataAvailable: true,
+		}
 		quotaAccounts = append(quotaAccounts, quotaAccount{
-			account: account,
-			quota:   quota,
+			account:    account,
+			quota:      quota,
+			modelClass: modelClass,
 		})
 	}
 	if len(quotaAccounts) == 0 {
-		return result, nil
+		return result, snapshots, nil
 	}
 
 	// 1) Daily precheck (cached + batch DB fallback)
 	dailyTotalsByID := make(map[int64]GeminiUsageTotals, len(quotaAccounts))
 	dailyMissIDs := make([]int64, 0, len(quotaAccounts))
 	for _, item := range quotaAccounts {
-		limit := geminiDailyLimit(item.quota, modelClass)
+		limit := geminiDailyLimit(item.quota, item.modelClass)
 		if limit <= 0 {
 			continue
 		}
@@ -573,7 +596,7 @@ func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*A
 	if len(dailyMissIDs) > 0 {
 		totalsBatch, err := s.getGeminiUsageTotalsBatch(ctx, dailyMissIDs, dailyStart, now)
 		if err != nil {
-			return result, err
+			return result, snapshots, err
 		}
 		for _, accountID := range dailyMissIDs {
 			totals := totalsBatch[accountID]
@@ -582,17 +605,21 @@ func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*A
 		}
 	}
 	for _, item := range quotaAccounts {
-		limit := geminiDailyLimit(item.quota, modelClass)
+		limit := geminiDailyLimit(item.quota, item.modelClass)
 		if limit <= 0 {
 			continue
 		}
 		accountID := item.account.ID
-		used := geminiUsedRequests(item.quota, modelClass, dailyTotalsByID[accountID], true)
+		used := geminiUsedRequests(item.quota, item.modelClass, dailyTotalsByID[accountID], true)
+		snapshot := snapshots[accountID]
+		snapshot.DailyUsed = used
 		if used >= limit {
 			resetAt := geminiDailyResetTime(now)
 			slog.Info("gemini_precheck_daily_quota_reached_batch", "account_id", accountID, "used", used, "limit", limit, "reset_at", resetAt)
 			result[accountID] = false
+			snapshot.HardRejected = true
 		}
+		snapshots[accountID] = snapshot
 	}
 
 	// 2) Minute precheck (batch DB)
@@ -602,18 +629,18 @@ func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*A
 		if !result[accountID] {
 			continue
 		}
-		if geminiMinuteLimit(item.quota, modelClass) <= 0 {
+		if geminiMinuteLimit(item.quota, item.modelClass) <= 0 {
 			continue
 		}
 		minuteIDs = append(minuteIDs, accountID)
 	}
 	if len(minuteIDs) == 0 {
-		return result, nil
+		return result, snapshots, nil
 	}
 
 	minuteTotalsByID, err := s.getGeminiUsageTotalsBatch(ctx, minuteIDs, minuteStart, now)
 	if err != nil {
-		return result, err
+		return result, snapshots, err
 	}
 	for _, item := range quotaAccounts {
 		accountID := item.account.ID
@@ -621,20 +648,40 @@ func (s *RateLimitService) PreCheckUsageBatch(ctx context.Context, accounts []*A
 			continue
 		}
 
-		limit := geminiMinuteLimit(item.quota, modelClass)
+		limit := geminiMinuteLimit(item.quota, item.modelClass)
 		if limit <= 0 {
 			continue
 		}
 
-		used := geminiUsedRequests(item.quota, modelClass, minuteTotalsByID[accountID], false)
+		used := geminiUsedRequests(item.quota, item.modelClass, minuteTotalsByID[accountID], false)
+		snapshot := snapshots[accountID]
+		snapshot.MinuteUsed = used
 		if used >= limit {
 			resetAt := minuteStart.Add(time.Minute)
 			slog.Info("gemini_precheck_minute_quota_reached_batch", "account_id", accountID, "used", used, "limit", limit, "reset_at", resetAt)
 			result[accountID] = false
+			snapshot.HardRejected = true
 		}
+		snapshots[accountID] = snapshot
 	}
 
-	return result, nil
+	return result, snapshots, nil
+}
+
+func geminiAdaptiveQuotaBucket(sharedLimit, selectedLimit int64, modelClass geminiModelClass) GeminiAdaptiveQuotaBucket {
+	if sharedLimit > 0 {
+		return GeminiQuotaBucketShared
+	}
+	if selectedLimit < 0 {
+		return GeminiQuotaBucketUnlimited
+	}
+	if selectedLimit == 0 {
+		return GeminiQuotaBucketUnknown
+	}
+	if modelClass == geminiModelFlash {
+		return GeminiQuotaBucketFlash
+	}
+	return GeminiQuotaBucketPro
 }
 
 func (s *RateLimitService) getGeminiUsageTotalsBatch(ctx context.Context, accountIDs []int64, start, end time.Time) (map[int64]GeminiUsageTotals, error) {

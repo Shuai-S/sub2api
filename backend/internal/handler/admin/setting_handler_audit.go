@@ -467,6 +467,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.OpenAIAdaptiveScheduler != after.OpenAIAdaptiveScheduler {
 		changed = append(changed, "openai_adaptive_scheduler")
 	}
+	if before.GeminiAdaptiveScheduler != after.GeminiAdaptiveScheduler {
+		changed = append(changed, "gemini_adaptive_scheduler")
+	}
 	if before.OpenAIAdvancedSchedulerStickyWeightedEnabled != after.OpenAIAdvancedSchedulerStickyWeightedEnabled {
 		changed = append(changed, "openai_advanced_scheduler_sticky_weighted_enabled")
 	}

@@ -157,11 +157,22 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	if groupPlatform == service.PlatformGemini && selectionSessionHash != "" {
 		selectionSessionHash = "gemini:" + selectionSessionHash
 	}
+	var sessionBoundAccountID int64
+	if groupPlatform == service.PlatformGemini {
+		c.Request = c.Request.WithContext(service.WithGeminiAdaptiveRequestHint(c.Request.Context(), "generateContent", reqStream))
+		if selectionSessionHash != "" {
+			sessionBoundAccountID, _ = h.gatewayService.GetCachedSessionAccountID(c.Request.Context(), apiKey.GroupID, selectionSessionHash)
+			if sessionBoundAccountID > 0 {
+				ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, derefGroupID(apiKey.GroupID), h.metadataBridgeEnabled())
+				c.Request = c.Request.WithContext(ctx)
+			}
+		}
+	}
 
 	// 3. Account selection + failover loop
-	fs := NewFailoverState(h.maxAccountSwitches, false)
+	fs := NewFailoverState(h.maxAccountSwitches, sessionBoundAccountID > 0)
 	if groupPlatform == service.PlatformGemini {
-		fs = NewFailoverState(h.maxAccountSwitchesGemini, false)
+		fs = NewFailoverState(h.maxAccountSwitchesGemini, sessionBoundAccountID > 0)
 	}
 
 	for {
@@ -199,6 +210,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		if selection.PendingGeminiMigration != nil {
+			defer h.gatewayService.AbortGeminiStickyMigration(c.Request.Context(), selection.PendingGeminiMigration)
+		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		// 4. Acquire account concurrency slot
@@ -222,16 +236,13 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}
+			if groupPlatform == service.PlatformGemini && selection.PendingGeminiMigration == nil {
+				if bindErr := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, selectionSessionHash, account.ID); bindErr != nil {
+					reqLog.Warn("gateway.cc.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(bindErr))
+				}
+			}
 		}
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
-
-		if groupPlatform == service.PlatformGemini && account.Platform != service.PlatformGemini {
-			if accountReleaseFunc != nil {
-				accountReleaseFunc()
-			}
-			fs.FailedAccountIDs[account.ID] = struct{}{}
-			continue
-		}
 
 		// 5. Forward request
 		writerSizeBeforeForward := c.Writer.Size()
@@ -240,6 +251,8 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
+		requestCtx := c.Request.Context()
+		migrationWriter, restoreWriter := installGeminiStickyMigrationWriter(c, h.gatewayService, selection.PendingGeminiMigration)
 		setActualUpstreamEndpoint(c, "")
 		if account.Platform == service.PlatformGemini {
 			if h.geminiCompatService == nil {
@@ -249,7 +262,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				}
 				return
 			}
-			result, err = h.geminiCompatService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody)
+			result, err = h.geminiCompatService.ForwardAsChatCompletions(requestCtx, c, account, forwardBody)
 		} else if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
@@ -259,17 +272,28 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				return
 			}
 			setActualUpstreamEndpoint(c, EndpointAntigravityGenerateContent)
-			result, err = h.antigravityGatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, parsedReq)
+			result, err = h.antigravityGatewayService.ForwardAsChatCompletions(requestCtx, c, account, forwardBody, parsedReq)
 		} else {
-			result, err = h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, parsedReq)
+			result, err = h.gatewayService.ForwardAsChatCompletions(requestCtx, c, account, forwardBody, parsedReq)
 		}
+		restoreWriter()
+		result, err = finishGeminiStickyMigration(requestCtx, h.gatewayService, selection.PendingGeminiMigration, migrationWriter, result, err)
 
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
-		h.gatewayService.ReportAnthropicAdaptiveResult(c.Request.Context(), account, reqModel, result, err)
+		h.gatewayService.ReportAnthropicAdaptiveResult(requestCtx, account, reqModel, result, err)
+		h.gatewayService.ReportGeminiAdaptiveResult(requestCtx, account, reqModel, "generateContent", result, err)
 
 		if err != nil {
+			if migration := selection.PendingGeminiMigration; migration != nil && (migrationWriter == nil || !migrationWriter.Committed()) {
+				sessionBoundAccountID = migration.ExpectedAccountID
+				if migration.DeleteSourceOnFailure {
+					sessionBoundAccountID = 0
+				}
+				ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, derefGroupID(apiKey.GroupID), h.metadataBridgeEnabled())
+				c.Request = c.Request.WithContext(ctx)
+			}
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {

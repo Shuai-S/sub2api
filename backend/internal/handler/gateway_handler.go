@@ -277,6 +277,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	if platform == service.PlatformGemini && sessionHash != "" {
 		sessionKey = "gemini:" + sessionHash
 	}
+	if platform == service.PlatformGemini {
+		c.Request = c.Request.WithContext(service.WithGeminiAdaptiveRequestHint(c.Request.Context(), "generateContent", reqStream))
+	}
 
 	// 查询粘性会话绑定的账号 ID
 	var sessionBoundAccountID int64
@@ -352,6 +355,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 			account := selection.Account
+			if selection.PendingGeminiMigration != nil {
+				defer h.gatewayService.AbortGeminiStickyMigration(c.Request.Context(), selection.PendingGeminiMigration)
+			}
 			setOpsSelectedAccount(c, account.ID, account.Platform)
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
@@ -421,7 +427,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				// Slot acquired: no longer waiting in queue.
 				releaseWait()
-				if !selection.PreserveStickyBinding {
+				if selection.PendingGeminiMigration == nil && !selection.PreserveStickyBinding {
 					if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
 						reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					}
@@ -432,12 +438,17 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 			// 转发请求 - 根据账号平台分流
 			var result *service.ForwardResult
+			attemptBody := body
+			if selection.PendingGeminiMigration != nil {
+				attemptBody = service.CleanClaudeToolUseSignatures(body)
+			}
 			requestCtx := c.Request.Context()
 			if fs.SwitchCount > 0 {
 				requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 			}
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
+			migrationWriter, restoreWriter := installGeminiStickyMigrationWriter(c, h.gatewayService, selection.PendingGeminiMigration)
 			if account.Platform == service.PlatformAntigravity {
 				result, err = h.antigravityGatewayService.ForwardGemini(
 					requestCtx,
@@ -446,17 +457,28 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					reqModel,
 					"generateContent",
 					reqStream,
-					body,
+					attemptBody,
 					hasBoundSession,
 					service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
 				)
 			} else {
-				result, err = h.geminiCompatService.Forward(requestCtx, c, account, body)
+				result, err = h.geminiCompatService.Forward(requestCtx, c, account, attemptBody)
 			}
+			restoreWriter()
+			result, err = finishGeminiStickyMigration(requestCtx, h.gatewayService, selection.PendingGeminiMigration, migrationWriter, result, err)
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
+			h.gatewayService.ReportGeminiAdaptiveResult(requestCtx, account, reqModel, "generateContent", result, err)
 			if err != nil {
+				if migration := selection.PendingGeminiMigration; migration != nil && (migrationWriter == nil || !migrationWriter.Committed()) {
+					sessionBoundAccountID = migration.ExpectedAccountID
+					if migration.DeleteSourceOnFailure {
+						sessionBoundAccountID = 0
+					}
+					ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, derefGroupID(apiKey.GroupID), h.metadataBridgeEnabled())
+					c.Request = c.Request.WithContext(ctx)
+				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
@@ -644,6 +666,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 			account := selection.Account
+			if selection.PendingGeminiMigration != nil {
+				defer h.gatewayService.AbortGeminiStickyMigration(c.Request.Context(), selection.PendingGeminiMigration)
+			}
 			setOpsSelectedAccount(c, account.ID, account.Platform)
 
 			// [DEBUG-STICKY] 打印账号选择结果
@@ -727,7 +752,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					zap.String("session_key", sessionKey),
 					zap.Int64("account_id", account.ID),
 				)
-				if !selection.PreserveStickyBinding {
+				if selection.PendingGeminiMigration == nil && !selection.PreserveStickyBinding {
 					if err := h.gatewayService.BindStickySession(c.Request.Context(), currentAPIKey.GroupID, sessionKey, account.ID); err != nil {
 						reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					}
@@ -815,11 +840,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
+			migrationWriter, restoreWriter := installGeminiStickyMigrationWriter(c, h.gatewayService, selection.PendingGeminiMigration)
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
 			} else {
 				result, err = h.gatewayService.Forward(requestCtx, c, account, attemptParsedReq)
 			}
+			restoreWriter()
+			result, err = finishGeminiStickyMigration(requestCtx, h.gatewayService, selection.PendingGeminiMigration, migrationWriter, result, err)
 
 			// 兜底释放串行锁（正常情况已通过回调提前释放）
 			if queueRelease != nil {
@@ -832,7 +860,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				accountReleaseFunc()
 			}
 			h.gatewayService.ReportAnthropicAdaptiveResult(c.Request.Context(), account, reqModel, result, err)
+			h.gatewayService.ReportGeminiAdaptiveResult(requestCtx, account, reqModel, "generateContent", result, err)
 			if err != nil {
+				if migration := selection.PendingGeminiMigration; migration != nil && (migrationWriter == nil || !migrationWriter.Committed()) {
+					sessionBoundAccountID = migration.ExpectedAccountID
+					if migration.DeleteSourceOnFailure {
+						sessionBoundAccountID = 0
+					}
+					ctx := service.WithPrefetchedStickySession(c.Request.Context(), sessionBoundAccountID, derefGroupID(currentAPIKey.GroupID), h.metadataBridgeEnabled())
+					c.Request = c.Request.WithContext(ctx)
+				}
 				// Beta policy block: return 400 immediately, no failover
 				var betaBlockedErr *service.BetaBlockedError
 				if errors.As(err, &betaBlockedErr) {
