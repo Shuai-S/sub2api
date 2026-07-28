@@ -212,10 +212,18 @@ func TestGeminiForwardAsResponses_APIKeyReturnsResponsesFormat(t *testing.T) {
 	require.Equal(t, "completed", got["status"])
 	require.Equal(t, "gemini-2.5-flash", got["model"])
 	require.NotContains(t, got, "choices")
-	output := got["output"].([]any)
-	require.Equal(t, "message", output[0].(map[string]any)["type"])
-	content := output[0].(map[string]any)["content"].([]any)
-	require.Equal(t, "hello from gemini", content[0].(map[string]any)["text"])
+	output, ok := got["output"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, output)
+	message, ok := output[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "message", message["type"])
+	content, ok := message["content"].([]any)
+	require.True(t, ok)
+	require.NotEmpty(t, content)
+	part, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "hello from gemini", part["text"])
 }
 
 func TestGeminiForwardAsResponses_RestoresCustomToolCall(t *testing.T) {

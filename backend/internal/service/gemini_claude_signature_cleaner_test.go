@@ -24,10 +24,18 @@ func TestCleanClaudeToolUseSignaturesOnlyRemovesToolUseSignatures(t *testing.T) 
 	var decoded map[string]any
 	require.NoError(t, json.Unmarshal(cleaned, &decoded))
 	require.Equal(t, "request-signature", decoded["signature"])
-	messages := decoded["messages"].([]any)
-	content := messages[0].(map[string]any)["content"].([]any)
-	require.NotContains(t, content[0].(map[string]any), "signature")
-	require.Equal(t, "text-signature", content[1].(map[string]any)["signature"])
+	messages, ok := decoded["messages"].([]any)
+	require.True(t, ok)
+	message, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	content, ok := message["content"].([]any)
+	require.True(t, ok)
+	toolUse, ok := content[0].(map[string]any)
+	require.True(t, ok)
+	text, ok := content[1].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, toolUse, "signature")
+	require.Equal(t, "text-signature", text["signature"])
 }
 
 func TestCleanClaudeToolUseSignaturesLeavesUnparseableOrUnchangedBodiesAlone(t *testing.T) {

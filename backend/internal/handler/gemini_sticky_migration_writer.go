@@ -67,7 +67,7 @@ func (w *geminiStickyMigrationWriter) WriteHeader(code int) {
 	if code < http.StatusBadRequest {
 		if err := w.commit(); err != nil {
 			w.ResponseWriter.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.ResponseWriter.WriteString(fmt.Sprintf("Gemini session migration failed: %v", err))
+			_, _ = fmt.Fprintf(w.ResponseWriter, "Gemini session migration failed: %v", err)
 			return
 		}
 	}
@@ -75,7 +75,7 @@ func (w *geminiStickyMigrationWriter) WriteHeader(code int) {
 }
 
 func (w *geminiStickyMigrationWriter) WriteHeaderNow() {
-	status := w.ResponseWriter.Status()
+	status := w.Status()
 	if status == 0 {
 		status = http.StatusOK
 	}
@@ -92,7 +92,7 @@ func (w *geminiStickyMigrationWriter) Write(data []byte) (int, error) {
 	if err := w.CommitError(); err != nil {
 		return 0, err
 	}
-	if status := w.ResponseWriter.Status(); status == 0 || status < http.StatusBadRequest {
+	if status := w.Status(); status == 0 || status < http.StatusBadRequest {
 		if err := w.commit(); err != nil {
 			return 0, err
 		}
@@ -104,7 +104,7 @@ func (w *geminiStickyMigrationWriter) WriteString(data string) (int, error) {
 	if err := w.CommitError(); err != nil {
 		return 0, err
 	}
-	if status := w.ResponseWriter.Status(); status == 0 || status < http.StatusBadRequest {
+	if status := w.Status(); status == 0 || status < http.StatusBadRequest {
 		if err := w.commit(); err != nil {
 			return 0, err
 		}
@@ -113,7 +113,7 @@ func (w *geminiStickyMigrationWriter) WriteString(data string) (int, error) {
 }
 
 func (w *geminiStickyMigrationWriter) Flush() {
-	status := w.ResponseWriter.Status()
+	status := w.Status()
 	if status >= http.StatusBadRequest || w.commit() == nil {
 		w.ResponseWriter.Flush()
 	}

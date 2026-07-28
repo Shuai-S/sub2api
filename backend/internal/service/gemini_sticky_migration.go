@@ -188,7 +188,7 @@ func (s *GatewayService) CommitGeminiStickyMigration(ctx context.Context, migrat
 			append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID),
 				"reason", "cache_unavailable")...,
 		)
-		return fmt.Errorf("Gemini session migration cache is unavailable")
+		return fmt.Errorf("gemini session migration cache is unavailable")
 	}
 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
