@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/tidwall/gjson"
@@ -26,12 +27,13 @@ import (
 )
 
 type anthropicPassthroughForwardInput struct {
-	Body          []byte
-	Parsed        *ParsedRequest
-	RequestModel  string
-	OriginalModel string
-	RequestStream bool
-	StartTime     time.Time
+	Body            []byte
+	Parsed          *ParsedRequest
+	RequestModel    string
+	OriginalModel   string
+	RequestStream   bool
+	StartTime       time.Time
+	MimicClaudeCode bool
 }
 
 func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
@@ -96,7 +98,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	retryStart := time.Now()
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, input.RequestStream)
-		upstreamReq, wireBody, err := s.buildUpstreamRequestAnthropicAPIKeyPassthrough(upstreamCtx, c, account, input.Body, token)
+		upstreamReq, wireBody, err := s.buildUpstreamRequestAnthropicAPIKeyPassthroughWithMimicry(upstreamCtx, c, account, input.Body, token, input.MimicClaudeCode, input.RequestStream)
 		releaseUpstreamCtx()
 		if err != nil {
 			return nil, err
@@ -303,6 +305,18 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	body []byte,
 	token string,
 ) (*http.Request, []byte, error) {
+	return s.buildUpstreamRequestAnthropicAPIKeyPassthroughWithMimicry(ctx, c, account, body, token, false, false)
+}
+
+func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthroughWithMimicry(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	token string,
+	mimicClaudeCode bool,
+	reqStream bool,
+) (*http.Request, []byte, error) {
 	targetURL := claudeAPIURL
 	baseURL := account.GetBaseURL()
 	if baseURL != "" {
@@ -317,7 +331,9 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	// 依此决定是否保留 body 中的 context_management。避免“客户端 body 带字段但
 	// header 忘记带 beta token”的客户端 bug 在透传场景下让上游 400。
 	clientBeta := ""
-	if c != nil && c.Request != nil {
+	if mimicClaudeCode {
+		clientBeta = claude.APIKeyBetaHeader
+	} else if c != nil && c.Request != nil {
 		clientBeta = getHeaderRaw(c.Request.Header, "anthropic-beta")
 	}
 	// 账号覆写了 anthropic-beta 时，覆写值即最终上游值：净化以覆写值为准
@@ -333,7 +349,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		return nil, nil, err
 	}
 
-	if c != nil && c.Request != nil {
+	if !mimicClaudeCode && c != nil && c.Request != nil {
 		for key, values := range c.Request.Header {
 			lowerKey := strings.ToLower(strings.TrimSpace(key))
 			if !allowedHeaders[lowerKey] {
@@ -358,6 +374,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	}
 	if getHeaderRaw(req.Header, "anthropic-version") == "" {
 		setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
+	}
+	if mimicClaudeCode {
+		applyClaudeCodeMimicHeaders(req, reqStream)
+		deleteHeaderAllForms(req.Header, "anthropic-beta")
+		setHeaderRaw(req.Header, "anthropic-beta", clientBeta)
 	}
 
 	// 账号级请求头覆写（最终生效，覆盖上面所有来源的同名头）

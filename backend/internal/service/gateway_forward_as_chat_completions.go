@@ -96,10 +96,18 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	// 否则会被 Anthropic 判为第三方应用并扣 extra usage。
 	// 见 applyClaudeCodeOAuthMimicryToBody 的 godoc。
 	isClaudeCode := false
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+	shouldMimicClaudeCode := (account.IsOAuth() || account.IsClaudeCodeUpstreamMimicryEnabled()) && !isClaudeCode
 
 	if shouldMimicClaudeCode {
-		anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
+		if account.IsClaudeCodeUpstreamMimicryEnabled() {
+			var sessionContext *SessionContext
+			if parsed != nil {
+				sessionContext = parsed.SessionContext
+			}
+			anthropicBody = s.applyClaudeCodeUpstreamMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel, sessionContext)
+		} else {
+			anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
+		}
 	}
 
 	// 7. Enforce cache_control block limit

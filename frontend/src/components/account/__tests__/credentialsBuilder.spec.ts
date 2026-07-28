@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   ANTIGRAVITY_PROJECT_ID_CREDENTIAL_KEY,
+  CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
   applyAntigravityProjectID,
+  applyClaudeCodeUpstreamMimicry,
   applyHeaderOverride,
   applyInterceptWarmup,
   applyPlanType,
@@ -19,6 +21,30 @@ import {
   splitHeaderOverridesObject,
   validateHeaderOverrideRows
 } from '../credentialsBuilder'
+
+describe('applyClaudeCodeUpstreamMimicry', () => {
+  it('stores true when enabled', () => {
+    const credentials: Record<string, unknown> = { api_key: 'sk-test' }
+    applyClaudeCodeUpstreamMimicry(credentials, true, 'create')
+    expect(credentials[CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY]).toBe(true)
+  })
+
+  it('does not add a disabled switch while creating', () => {
+    const credentials: Record<string, unknown> = { api_key: 'sk-test' }
+    applyClaudeCodeUpstreamMimicry(credentials, false, 'create')
+    expect(CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY in credentials).toBe(false)
+  })
+
+  it('removes the switch when disabled while editing', () => {
+    const credentials: Record<string, unknown> = {
+      api_key: 'sk-test',
+      [CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY]: true
+    }
+    applyClaudeCodeUpstreamMimicry(credentials, false, 'edit')
+    expect(CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY in credentials).toBe(false)
+    expect(credentials.api_key).toBe('sk-test')
+  })
+})
 
 describe('applyInterceptWarmup', () => {
   it('create + enabled=true: should set intercept_warmup_requests to true', () => {

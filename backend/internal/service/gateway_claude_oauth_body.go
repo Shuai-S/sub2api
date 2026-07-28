@@ -320,6 +320,25 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 	return out, modelID
 }
 
+// normalizeClaudeAPIKeyMimicryRequestBody reuses the Claude Code payload
+// normalization without applying OAuth-only model aliases. API Key accounts may
+// point at compatible upstreams with their own model IDs, so the caller's model
+// value must remain byte-for-byte equivalent as a JSON string.
+func normalizeClaudeAPIKeyMimicryRequestBody(body []byte, modelID string, opts claudeOAuthNormalizeOptions) []byte {
+	originalModel := gjson.GetBytes(body, "model")
+	out, _ := normalizeClaudeOAuthRequestBody(body, modelID, opts)
+	if !originalModel.Exists() || originalModel.Type != gjson.String {
+		return out
+	}
+	if currentModel := gjson.GetBytes(out, "model"); currentModel.Type == gjson.String && currentModel.String() == originalModel.String() {
+		return out
+	}
+	if restored, ok := setJSONValueBytes(out, "model", originalModel.String()); ok {
+		return restored
+	}
+	return out
+}
+
 func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
 	if parsed == nil || account == nil {
 		return ""
@@ -431,6 +450,125 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 	}
 
 	return body
+}
+
+// applyClaudeCodeUpstreamMimicryToBody rewrites non-Claude-Code traffic sent
+// through an Anthropic API Key account into the shape expected by a
+// Claude-Code-only compatible upstream. Unlike OAuth mimicry, this is controlled
+// solely by the account switch and always installs the validator-compatible
+// default system blocks.
+func (s *GatewayService) applyClaudeCodeUpstreamMimicryToBody(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	systemRaw any,
+	model string,
+	sessionContext *SessionContext,
+) []byte {
+	if account == nil || !account.IsClaudeCodeUpstreamMimicryEnabled() || len(body) == 0 {
+		return body
+	}
+
+	body = rewriteSystemForNonClaudeCodeWithPromptBlocks(body, normalizeSystemParam(systemRaw), "", "")
+	body = normalizeClaudeAPIKeyMimicryRequestBody(body, model, claudeOAuthNormalizeOptions{})
+	body = ensureValidClaudeCodeMimicMetadata(body, buildClaudeCodeUpstreamMetadataUserID(account, c, sessionContext, body))
+	body = s.rewriteMessageCacheControlIfEnabled(ctx, body)
+
+	if rw := buildToolNameRewriteFromBody(body); rw != nil {
+		body = applyToolNameRewriteToBody(body, rw)
+		if c != nil {
+			c.Set(toolNameRewriteKey, rw)
+		}
+	} else {
+		body = applyToolsLastCacheBreakpoint(body)
+	}
+	return body
+}
+
+// applyClaudeCodeUpstreamMimicryToCountTokensBody keeps the caller's system
+// instructions intact so the upstream token count still describes the original
+// request, while normalizing the remaining Claude Code identity fields.
+func (s *GatewayService) applyClaudeCodeUpstreamMimicryToCountTokensBody(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	model string,
+	sessionContext *SessionContext,
+) []byte {
+	if account == nil || !account.IsClaudeCodeUpstreamMimicryEnabled() || len(body) == 0 {
+		return body
+	}
+
+	body = normalizeClaudeAPIKeyMimicryRequestBody(body, model, claudeOAuthNormalizeOptions{stripSystemCacheControl: true})
+	body = ensureValidClaudeCodeMimicMetadata(body, buildClaudeCodeUpstreamMetadataUserID(account, c, sessionContext, body))
+	body = s.rewriteMessageCacheControlIfEnabled(ctx, body)
+	if rw := buildToolNameRewriteFromBody(body); rw != nil {
+		body = applyToolNameRewriteToBody(body, rw)
+	} else {
+		body = applyToolsLastCacheBreakpoint(body)
+	}
+	return body
+}
+
+func buildClaudeCodeUpstreamMetadataUserID(account *Account, c *gin.Context, sessionContext *SessionContext, body []byte) string {
+	if account == nil {
+		return ""
+	}
+	if existing := gjson.GetBytes(body, "metadata.user_id").String(); ParseMetadataUserID(existing) != nil {
+		return existing
+	}
+
+	if sessionContext == nil && c != nil {
+		sessionContext = &SessionContext{
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.GetHeader("User-Agent"),
+		}
+	}
+	discriminator := sessionContextDiscriminator(sessionContext)
+	deviceHash := sha256.Sum256([]byte("claude-code-upstream-device::" + strconv.FormatInt(account.ID, 10) + "::" + discriminator))
+	sessionID := generateSessionUUID(buildStableSessionSeed(account.ID, discriminator, extractFirstUserText(body)))
+	return FormatMetadataUserID(fmt.Sprintf("%x", deviceHash[:]), "", sessionID, claude.CLICurrentVersion)
+}
+
+func ensureValidClaudeCodeMimicMetadata(body []byte, userID string) []byte {
+	if userID == "" {
+		return body
+	}
+	if existing := gjson.GetBytes(body, "metadata.user_id").String(); ParseMetadataUserID(existing) != nil {
+		return body
+	}
+
+	metadata := gjson.GetBytes(body, "metadata")
+	if metadata.Exists() && strings.HasPrefix(strings.TrimSpace(metadata.Raw), "{") {
+		if out, ok := setJSONValueBytes(body, "metadata.user_id", userID); ok {
+			return out
+		}
+		return body
+	}
+	raw, err := marshalAnthropicMetadata(userID)
+	if err != nil {
+		return body
+	}
+	if out, ok := setJSONRawBytes(body, "metadata", raw); ok {
+		return out
+	}
+	return body
+}
+
+func isClaudeCodeRequestForMimicry(ctx context.Context, c *gin.Context, body []byte, metadataUserID string) bool {
+	userAgent := ""
+	if c != nil {
+		userAgent = c.GetHeader("User-Agent")
+	}
+	if IsClaudeCodeClient(ctx) || isClaudeCodeClient(userAgent, metadataUserID) {
+		return true
+	}
+	// Relays may replace the original UA while preserving the two body identity
+	// signals emitted by Claude Code. Treat those requests as already native so
+	// their system prompt and cache prefix are left untouched.
+	return metadataUserID != "" && systemHasBillingAttributionBlock(body)
 }
 
 // buildOAuthMetadataUserIDFromBody 是 buildOAuthMetadataUserID 的变体，

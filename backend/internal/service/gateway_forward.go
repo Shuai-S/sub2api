@@ -101,6 +101,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
 		passthroughBody := parsed.Body.Bytes()
 		passthroughModel := parsed.Model
+		isClaudeCode := isClaudeCodeRequestForMimicry(ctx, c, passthroughBody, parsed.MetadataUserID)
+		shouldMimicClaudeCode := account.IsClaudeCodeUpstreamMimicryEnabled() && !isClaudeCode
 		if passthroughModel != "" {
 			if mappedModel := account.GetMappedModel(passthroughModel); mappedModel != passthroughModel {
 				passthroughBody = s.replaceModelInBody(passthroughBody, mappedModel)
@@ -108,13 +110,18 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				passthroughModel = mappedModel
 			}
 		}
+		if shouldMimicClaudeCode {
+			systemRaw, _ := parsed.SystemValue()
+			passthroughBody = s.applyClaudeCodeUpstreamMimicryToBody(ctx, c, account, passthroughBody, systemRaw, passthroughModel, parsed.SessionContext)
+		}
 		return s.forwardAnthropicAPIKeyPassthroughWithInput(ctx, c, account, anthropicPassthroughForwardInput{
-			Body:          passthroughBody,
-			Parsed:        parsed,
-			RequestModel:  passthroughModel,
-			OriginalModel: parsed.Model,
-			RequestStream: parsed.Stream,
-			StartTime:     startTime,
+			Body:            passthroughBody,
+			Parsed:          parsed,
+			RequestModel:    passthroughModel,
+			OriginalModel:   parsed.Model,
+			RequestStream:   parsed.Stream,
+			StartTime:       startTime,
+			MimicClaudeCode: shouldMimicClaudeCode,
 		})
 	}
 
@@ -165,80 +172,75 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// 最低缓存门槛，导致系统级缓存失效）。
 	//
 	// 对于非 Claude Code 的第三方客户端（opencode 等），仍然走完整 mimicry。
-	var clientUserAgent string
-	if c != nil {
-		clientUserAgent = c.GetHeader("User-Agent")
-	}
-	isClaudeCode := IsClaudeCodeClient(ctx) || isClaudeCodeClient(clientUserAgent, parsed.MetadataUserID)
+	isClaudeCode := isClaudeCodeRequestForMimicry(ctx, c, body, parsed.MetadataUserID)
 
-	// 补充判定：上游 API 网关（如 new-api）转发真实 Claude Code 流量时，
-	// UA 会变成 Go-http-client 但 body 保留了完整的 Claude Code 特征
-	// （billing attribution block + metadata.user_id）。此时如果仍走 mimicry
-	// 重写 system prompt，会破坏 Anthropic prompt cache 的前缀匹配——
-	// 导致 messages 级缓存永远 miss、cache_creation 每轮全量重写。
-	// 通过检查 body 中的 billing attribution block 来识别被代理的真实 CC 流量。
-	if !isClaudeCode && parsed.MetadataUserID != "" {
-		isClaudeCode = systemHasBillingAttributionBlock(body)
-	}
-
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+	shouldMimicClaudeCode := (account.IsOAuth() || account.IsClaudeCodeUpstreamMimicryEnabled()) && !isClaudeCode
 
 	if shouldMimicClaudeCode {
-		// 与 Parrot 对齐：OAuth 账号无条件重写 system（即使客户端已发了 Claude Code
-		// 风格的 system prompt）。原因：第三方工具（opencode 等）会发 "You are Claude
-		// Code..." system prompt 但缺少 billing attribution block，导致 Anthropic
-		// 检测到"有 CC prompt 但无 billing block"的不一致而判为 third-party。
-		// Parrot 的 transform_request 从不检查客户端 system 内容，直接覆盖。
-		systemRewritten := false
-		systemRaw, _ := parsed.SystemValue()
-		systemPromptInjectionEnabled, systemPrompt, systemPromptBlocks := s.claudeOAuthSystemPromptInjectionSettings(ctx)
-		if systemPromptInjectionEnabled {
-			if err := replaceBody(rewriteSystemForNonClaudeCodeWithPromptBlocks(body, systemRaw, systemPrompt, systemPromptBlocks)); err != nil {
+		if account.IsClaudeCodeUpstreamMimicryEnabled() {
+			systemRaw, _ := parsed.SystemValue()
+			if err := replaceBody(s.applyClaudeCodeUpstreamMimicryToBody(ctx, c, account, body, systemRaw, reqModel, parsed.SessionContext)); err != nil {
 				return nil, err
 			}
-			systemRewritten = true
-		}
+		} else {
+			// 与 Parrot 对齐：OAuth 账号无条件重写 system（即使客户端已发了 Claude Code
+			// 风格的 system prompt）。原因：第三方工具（opencode 等）会发 "You are Claude
+			// Code..." system prompt 但缺少 billing attribution block，导致 Anthropic
+			// 检测到"有 CC prompt 但无 billing block"的不一致而判为 third-party。
+			// Parrot 的 transform_request 从不检查客户端 system 内容，直接覆盖。
+			systemRewritten := false
+			systemRaw, _ := parsed.SystemValue()
+			systemPromptInjectionEnabled, systemPrompt, systemPromptBlocks := s.claudeOAuthSystemPromptInjectionSettings(ctx)
+			if systemPromptInjectionEnabled {
+				if err := replaceBody(rewriteSystemForNonClaudeCodeWithPromptBlocks(body, systemRaw, systemPrompt, systemPromptBlocks)); err != nil {
+					return nil, err
+				}
+				systemRewritten = true
+			}
 
-		// system 被重写时保留 CC prompt 的 cache_control: ephemeral（匹配真实 Claude Code 行为）；
-		// 未重写时（注入开关关闭）剥离客户端 cache_control，与原有行为一致。
-		// 两种情况下 enforceCacheControlLimit 都会兜底处理上限。
-		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
-		if s.identityService != nil && c != nil {
-			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
-			if err == nil && fp != nil {
-				// metadata 透传开启时跳过 metadata 注入
-				_, mimicMPT, _ := s.settingService.GetGatewayForwardingSettings(ctx)
-				if !mimicMPT {
-					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
-						normalizeOpts.injectMetadata = true
-						normalizeOpts.metadataUserID = metadataUserID
+			// system 被重写时保留 CC prompt 的 cache_control: ephemeral（匹配真实 Claude Code 行为）；
+			// 未重写时（注入开关关闭）剥离客户端 cache_control，与原有行为一致。
+			// 两种情况下 enforceCacheControlLimit 都会兜底处理上限。
+			normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
+			if s.identityService != nil && c != nil {
+				fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
+				if err == nil && fp != nil {
+					// metadata 透传开启时跳过 metadata 注入
+					_, mimicMPT, _ := s.settingService.GetGatewayForwardingSettings(ctx)
+					if !mimicMPT {
+						if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
+							normalizeOpts.injectMetadata = true
+							normalizeOpts.metadataUserID = metadataUserID
+						}
 					}
 				}
 			}
-		}
 
-		var normalizedBody []byte
-		normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
-		if err := replaceBody(normalizedBody); err != nil {
-			return nil, err
-		}
-
-		// D/E/F: 可选 messages cache 策略 + 工具名混淆 + tools[-1] 断点
-		// 与 forward_as_chat_completions / forward_as_responses 路径对齐，
-		// 原生 /v1/messages 路径也走同一套可配置字段级改写。
-		if err := replaceBody(s.rewriteMessageCacheControlIfEnabled(ctx, body)); err != nil {
-			return nil, err
-		}
-		if rw := buildToolNameRewriteFromBody(body); rw != nil {
-			if err := replaceBody(applyToolNameRewriteToBody(body, rw)); err != nil {
+			var normalizedBody []byte
+			normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
+			if err := replaceBody(normalizedBody); err != nil {
 				return nil, err
 			}
-			if c != nil {
-				c.Set(toolNameRewriteKey, rw)
-			}
-		} else {
-			if err := replaceBody(applyToolsLastCacheBreakpoint(body)); err != nil {
+		}
+
+		if !account.IsClaudeCodeUpstreamMimicryEnabled() {
+			// D/E/F: 可选 messages cache 策略 + 工具名混淆 + tools[-1] 断点
+			// 与 forward_as_chat_completions / forward_as_responses 路径对齐，
+			// 原生 /v1/messages 路径也走同一套可配置字段级改写。
+			if err := replaceBody(s.rewriteMessageCacheControlIfEnabled(ctx, body)); err != nil {
 				return nil, err
+			}
+			if rw := buildToolNameRewriteFromBody(body); rw != nil {
+				if err := replaceBody(applyToolNameRewriteToBody(body, rw)); err != nil {
+					return nil, err
+				}
+				if c != nil {
+					c.Set(toolNameRewriteKey, rw)
+				}
+			} else {
+				if err := replaceBody(applyToolsLastCacheBreakpoint(body)); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}

@@ -947,6 +947,28 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('api_key')
   })
 
+  it('loads and disables Claude Code upstream mimicry for an Anthropic API key account', async () => {
+    const account = buildAccount()
+    account.name = 'Anthropic relay'
+    account.platform = 'anthropic'
+    account.credentials = {
+      api_key: 'sk-upstream',
+      base_url: 'https://relay.example.com',
+      claude_code_upstream_mimicry_enabled: true
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="claude-code-upstream-mimicry-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(
+      'claude_code_upstream_mimicry_enabled'
+    )
+  })
+
   it('allows saving apikey account against legacy backend without credentials_status', async () => {
     // 新前端 + 旧后端：credentials_status 缺失，但 credentials.api_key 仍是明文，应允许保存
     const account = buildAccount()

@@ -1577,6 +1577,27 @@
           </div>
         </div>
 
+        <!-- Anthropic API Key: rewrite non-Claude-Code traffic for a restricted upstream -->
+        <div
+          v-if="form.platform === 'anthropic'"
+          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div class="min-w-0">
+              <label class="input-label mb-0">
+                {{ t('admin.accounts.claudeCodeUpstreamMimicry.title') }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.claudeCodeUpstreamMimicry.hint') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="claudeCodeUpstreamMimicryEnabled"
+              data-testid="claude-code-upstream-mimicry-toggle"
+              :aria-label="t('admin.accounts.claudeCodeUpstreamMimicry.title')"
+            />
+          </div>
+        </div>
       </div>
 
       <!-- Bedrock credentials (only for Anthropic Bedrock type) -->
@@ -3602,6 +3623,7 @@ import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import {
   applyAntigravityProjectID,
+  applyClaudeCodeUpstreamMimicry,
   applyHeaderOverride,
   applyInterceptWarmup,
   isHeaderOverrideCapable,
@@ -3802,6 +3824,7 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
+const claudeCodeUpstreamMimicryEnabled = ref(false)
 
 // Grok OAuth：自定义上游地址（base_url 仅改写转发端点，OAuth 授权/刷新不受影响）
 const grokOAuthCustomBaseUrlEnabled = ref(false)
@@ -4305,6 +4328,7 @@ watch(
       anthropicPassthroughEnabled.value = false
       anthropicAPIKeyAuthScheme.value = 'x_api_key'
       webSearchEmulationMode.value = 'default'
+      claudeCodeUpstreamMimicryEnabled.value = false
     }
     // 请求头覆写为平台相关配置（常用头集合不同），切换平台时清空，
     // 避免上一平台的配置行被提交到新平台账号
@@ -4334,6 +4358,7 @@ watch(
       anthropicPassthroughEnabled.value = false
       anthropicAPIKeyAuthScheme.value = 'x_api_key'
       webSearchEmulationMode.value = 'default'
+      claudeCodeUpstreamMimicryEnabled.value = false
     }
   }
 )
@@ -4716,6 +4741,7 @@ const resetForm = () => {
   customErrorCodeInput.value = null
   headerOverrideEnabled.value = false
   headerOverrideRows.value = []
+  claudeCodeUpstreamMimicryEnabled.value = false
   grokOAuthCustomBaseUrlEnabled.value = false
   grokOAuthBaseUrl.value = ''
   interceptWarmupRequests.value = false
@@ -5177,6 +5203,9 @@ const handleSubmit = async () => {
       }
     }
     applyHeaderOverride(credentials, headerOverrideEnabled.value, headerOverrideRows.value, 'create')
+  }
+  if (form.platform === 'anthropic') {
+    applyClaudeCodeUpstreamMimicry(credentials, claudeCodeUpstreamMimicryEnabled.value, 'create')
   }
 
   applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')

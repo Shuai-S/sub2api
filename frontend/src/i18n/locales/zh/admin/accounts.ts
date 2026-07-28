@@ -723,6 +723,10 @@ export default {
       errorCodeExists: '该错误码已被选中',
       interceptWarmupRequests: '拦截预热请求',
       interceptWarmupRequestsDesc: '启用后，标题生成等预热请求将返回 mock 响应，不消耗上游 token',
+      claudeCodeUpstreamMimicry: {
+        title: '向上游伪装 Claude Code',
+        hint: '将非 Claude Code 客户端请求改写为 Claude Code 请求，用于接入启用了 Claude Code 客户端限制的兼容上游。'
+      },
       headerOverride: {
         title: '请求头覆写',
         hint: '转发时用配置值覆盖同名请求头（不区分大小写）',

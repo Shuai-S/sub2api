@@ -25,13 +25,20 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
 		passthroughBody := parsed.Body.Bytes()
-		if reqModel := parsed.Model; reqModel != "" {
-			if mappedModel := account.GetMappedModel(reqModel); mappedModel != reqModel {
+		passthroughModel := parsed.Model
+		isClaudeCode := isClaudeCodeRequestForMimicry(ctx, c, passthroughBody, parsed.MetadataUserID)
+		shouldMimicClaudeCode := account.IsClaudeCodeUpstreamMimicryEnabled() && !isClaudeCode
+		if passthroughModel != "" {
+			if mappedModel := account.GetMappedModel(passthroughModel); mappedModel != passthroughModel {
 				passthroughBody = s.replaceModelInBody(passthroughBody, mappedModel)
-				logger.LegacyPrintf("service.gateway", "CountTokens passthrough model mapping: %s -> %s (account: %s)", reqModel, mappedModel, account.Name)
+				logger.LegacyPrintf("service.gateway", "CountTokens passthrough model mapping: %s -> %s (account: %s)", passthroughModel, mappedModel, account.Name)
+				passthroughModel = mappedModel
 			}
 		}
-		return s.forwardCountTokensAnthropicAPIKeyPassthrough(ctx, c, account, passthroughBody)
+		if shouldMimicClaudeCode {
+			passthroughBody = s.applyClaudeCodeUpstreamMimicryToCountTokensBody(ctx, c, account, passthroughBody, passthroughModel, parsed.SessionContext)
+		}
+		return s.forwardCountTokensAnthropicAPIKeyPassthrough(ctx, c, account, passthroughBody, shouldMimicClaudeCode)
 	}
 
 	// Bedrock 不支持 count_tokens 端点
@@ -55,27 +62,33 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return err
 	}
 
-	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
-	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT
+	isClaudeCodeCT := isClaudeCodeRequestForMimicry(ctx, c, body, parsed.MetadataUserID)
+	shouldMimicClaudeCode := (account.IsOAuth() || account.IsClaudeCodeUpstreamMimicryEnabled()) && !isClaudeCodeCT
 
 	if shouldMimicClaudeCode {
-		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
-		var normalizedBody []byte
-		normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
-		if err := replaceBody(normalizedBody); err != nil {
-			return err
-		}
-
-		if err := replaceBody(s.rewriteMessageCacheControlIfEnabled(ctx, body)); err != nil {
-			return err
-		}
-		if rw := buildToolNameRewriteFromBody(body); rw != nil {
-			if err := replaceBody(applyToolNameRewriteToBody(body, rw)); err != nil {
+		if account.IsClaudeCodeUpstreamMimicryEnabled() {
+			if err := replaceBody(s.applyClaudeCodeUpstreamMimicryToCountTokensBody(ctx, c, account, body, reqModel, parsed.SessionContext)); err != nil {
 				return err
 			}
 		} else {
-			if err := replaceBody(applyToolsLastCacheBreakpoint(body)); err != nil {
+			normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
+			var normalizedBody []byte
+			normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
+			if err := replaceBody(normalizedBody); err != nil {
 				return err
+			}
+
+			if err := replaceBody(s.rewriteMessageCacheControlIfEnabled(ctx, body)); err != nil {
+				return err
+			}
+			if rw := buildToolNameRewriteFromBody(body); rw != nil {
+				if err := replaceBody(applyToolNameRewriteToBody(body, rw)); err != nil {
+					return err
+				}
+			} else {
+				if err := replaceBody(applyToolsLastCacheBreakpoint(body)); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -244,7 +257,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	return nil
 }
 
-func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx context.Context, c *gin.Context, account *Account, body []byte) error {
+func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx context.Context, c *gin.Context, account *Account, body []byte, mimicClaudeCode bool) error {
 	token, tokenType, err := s.GetAccessToken(ctx, account)
 	if err != nil {
 		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to get access token")
@@ -255,7 +268,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		return fmt.Errorf("anthropic api key passthrough requires apikey token, got: %s", tokenType)
 	}
 
-	upstreamReq, err := s.buildCountTokensRequestAnthropicAPIKeyPassthrough(ctx, c, account, body, token)
+	upstreamReq, err := s.buildCountTokensRequestAnthropicAPIKeyPassthroughWithMimicry(ctx, c, account, body, token, mimicClaudeCode)
 	if err != nil {
 		s.countTokensError(c, http.StatusInternalServerError, "api_error", "Failed to build request")
 		return err
@@ -366,6 +379,17 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	body []byte,
 	token string,
 ) (*http.Request, error) {
+	return s.buildCountTokensRequestAnthropicAPIKeyPassthroughWithMimicry(ctx, c, account, body, token, false)
+}
+
+func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthroughWithMimicry(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	token string,
+	mimicClaudeCode bool,
+) (*http.Request, error) {
 	targetURL := claudeAPICountTokensURL
 	baseURL := account.GetBaseURL()
 	if baseURL != "" {
@@ -379,7 +403,9 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 
 	// 同 buildUpstreamRequestAnthropicAPIKeyPassthrough：能力维度 sanitize。
 	clientBeta := ""
-	if c != nil && c.Request != nil {
+	if mimicClaudeCode {
+		clientBeta = claude.APIKeyBetaHeader + "," + claude.BetaTokenCounting
+	} else if c != nil && c.Request != nil {
 		clientBeta = getHeaderRaw(c.Request.Header, "anthropic-beta")
 	}
 	// 账号覆写了 anthropic-beta 时，覆写值即最终上游值：净化以覆写值为准
@@ -395,7 +421,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 		return nil, err
 	}
 
-	if c != nil && c.Request != nil {
+	if !mimicClaudeCode && c != nil && c.Request != nil {
 		for key, values := range c.Request.Header {
 			lowerKey := strings.ToLower(strings.TrimSpace(key))
 			if !allowedHeaders[lowerKey] {
@@ -419,6 +445,11 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	}
 	if req.Header.Get("anthropic-version") == "" {
 		req.Header.Set("anthropic-version", "2023-06-01")
+	}
+	if mimicClaudeCode {
+		applyClaudeCodeMimicHeaders(req, false)
+		deleteHeaderAllForms(req.Header, "anthropic-beta")
+		setHeaderRaw(req.Header, "anthropic-beta", clientBeta)
 	}
 
 	// 账号级请求头覆写（最终生效，覆盖上面所有来源的同名头）
@@ -516,12 +547,14 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	// 白名单透传 headers（恢复真实 wire casing）
-	for key, values := range clientHeaders {
-		lowerKey := strings.ToLower(key)
-		if allowedHeaders[lowerKey] {
-			wireKey := resolveWireCasing(key)
-			for _, v := range values {
-				addHeaderRaw(req.Header, wireKey, v)
+	if !mimicClaudeCode {
+		for key, values := range clientHeaders {
+			lowerKey := strings.ToLower(key)
+			if allowedHeaders[lowerKey] {
+				wireKey := resolveWireCasing(key)
+				for _, v := range values {
+					addHeaderRaw(req.Header, wireKey, v)
+				}
 			}
 		}
 	}
@@ -542,8 +575,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		applyClaudeOAuthHeaderDefaults(req)
 	}
 
-	// OAuth + mimic Claude Code：强制注入 CLI 指纹 header
-	if tokenType == "oauth" && mimicClaudeCode {
+	// Mimic Claude Code：强制注入 CLI 指纹 header
+	if mimicClaudeCode {
 		applyClaudeCodeMimicHeaders(req, false)
 	}
 

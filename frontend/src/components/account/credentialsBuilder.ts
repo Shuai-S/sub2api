@@ -261,6 +261,23 @@ export function applyHeaderOverride(
   }
 }
 
+// ========== Anthropic API Key 向上游伪装 Claude Code ==========
+
+export const CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY =
+  'claude_code_upstream_mimicry_enabled'
+
+export function applyClaudeCodeUpstreamMimicry(
+  credentials: Record<string, unknown>,
+  enabled: boolean,
+  mode: 'create' | 'edit'
+): void {
+  if (enabled) {
+    credentials[CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY] = true
+  } else if (mode === 'edit') {
+    delete credentials[CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY]
+  }
+}
+
 // ===== OpenAI plan_type (ChatGPT 订阅档位) 手动覆盖 =====
 
 export interface PlanTypeOption {
