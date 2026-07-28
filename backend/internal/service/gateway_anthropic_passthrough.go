@@ -377,6 +377,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthroughWithMimic
 	}
 	if mimicClaudeCode {
 		applyClaudeCodeMimicHeaders(req, reqStream)
+		applyClaudeCodeMimicSessionHeader(req, body)
 		deleteHeaderAllForms(req.Header, "anthropic-beta")
 		setHeaderRaw(req.Header, "anthropic-beta", clientBeta)
 	}

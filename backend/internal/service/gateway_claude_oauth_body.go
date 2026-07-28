@@ -470,9 +470,12 @@ func (s *GatewayService) applyClaudeCodeUpstreamMimicryToBody(
 		return body
 	}
 
-	body = rewriteSystemForNonClaudeCodeWithPromptBlocks(body, normalizeSystemParam(systemRaw), "", "")
-	body = normalizeClaudeAPIKeyMimicryRequestBody(body, model, claudeOAuthNormalizeOptions{})
-	body = ensureValidClaudeCodeMimicMetadata(body, buildClaudeCodeUpstreamMetadataUserID(account, c, sessionContext, body))
+	body = applyClaudeCodeUpstreamMimicryCore(
+		body,
+		systemRaw,
+		model,
+		buildClaudeCodeUpstreamMetadataUserID(account, c, sessionContext, body),
+	)
 	body = s.rewriteMessageCacheControlIfEnabled(ctx, body)
 
 	if rw := buildToolNameRewriteFromBody(body); rw != nil {
@@ -484,6 +487,17 @@ func (s *GatewayService) applyClaudeCodeUpstreamMimicryToBody(
 		body = applyToolsLastCacheBreakpoint(body)
 	}
 	return body
+}
+
+// applyClaudeCodeUpstreamMimicryCore contains the deterministic body rewrite
+// shared by live forwarding and account connection tests.
+func applyClaudeCodeUpstreamMimicryCore(body []byte, systemRaw any, model, metadataUserID string) []byte {
+	if len(body) == 0 {
+		return body
+	}
+	body = rewriteSystemForNonClaudeCodeWithPromptBlocks(body, normalizeSystemParam(systemRaw), "", "")
+	body = normalizeClaudeAPIKeyMimicryRequestBody(body, model, claudeOAuthNormalizeOptions{})
+	return ensureValidClaudeCodeMimicMetadata(body, metadataUserID)
 }
 
 // applyClaudeCodeUpstreamMimicryToCountTokensBody keeps the caller's system
@@ -558,17 +572,13 @@ func ensureValidClaudeCodeMimicMetadata(body []byte, userID string) []byte {
 }
 
 func isClaudeCodeRequestForMimicry(ctx context.Context, c *gin.Context, body []byte, metadataUserID string) bool {
-	userAgent := ""
-	if c != nil {
-		userAgent = c.GetHeader("User-Agent")
-	}
-	if IsClaudeCodeClient(ctx) || isClaudeCodeClient(userAgent, metadataUserID) {
-		return true
-	}
-	// Relays may replace the original UA while preserving the two body identity
-	// signals emitted by Claude Code. Treat those requests as already native so
-	// their system prompt and cache prefix are left untouched.
-	return metadataUserID != "" && systemHasBillingAttributionBlock(body)
+	_ = ctx
+	_ = c
+	// Header-only identity is insufficient for deciding whether body mimicry may
+	// be skipped. Relays and third-party clients can preserve a claude-cli UA and
+	// metadata while omitting the billing attribution required by stricter
+	// upstream routers. The two stable body signals also survive UA replacement.
+	return ParseMetadataUserID(metadataUserID) != nil && systemHasBillingAttributionBlock(body)
 }
 
 // buildOAuthMetadataUserIDFromBody 是 buildOAuthMetadataUserID 的变体，

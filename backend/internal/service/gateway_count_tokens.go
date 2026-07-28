@@ -448,6 +448,7 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthroughWithMi
 	}
 	if mimicClaudeCode {
 		applyClaudeCodeMimicHeaders(req, false)
+		applyClaudeCodeMimicSessionHeader(req, body)
 		deleteHeaderAllForms(req.Header, "anthropic-beta")
 		setHeaderRaw(req.Header, "anthropic-beta", clientBeta)
 	}
@@ -578,6 +579,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// Mimic Claude Code：强制注入 CLI 指纹 header
 	if mimicClaudeCode {
 		applyClaudeCodeMimicHeaders(req, false)
+		applyClaudeCodeMimicSessionHeader(req, body)
 	}
 
 	// 写入最终 anthropic-beta header（Del 一次避免白名单透传值残留）

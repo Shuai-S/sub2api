@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,9 +88,11 @@ func TestClaudeCodeUpstreamMimicryBodyAndHeadersPassValidator(t *testing.T) {
 	)
 
 	metadataUserID := gjson.GetBytes(mimicked, "metadata.user_id").String()
-	require.NotNil(t, ParseMetadataUserID(metadataUserID))
+	parsedMetadata := ParseMetadataUserID(metadataUserID)
+	require.NotNil(t, parsedMetadata)
 	require.Contains(t, gjson.GetBytes(mimicked, "messages.0.content.0.text").String(), "Keep this project instruction")
 	require.True(t, systemHasBillingAttributionBlock(mimicked))
+	require.Len(t, gjson.GetBytes(mimicked, "system").Array(), 3)
 
 	req, wireBody, err := svc.buildUpstreamRequest(
 		context.Background(), c, account, mimicked, "sk-upstream", "apikey",
@@ -103,6 +106,8 @@ func TestClaudeCodeUpstreamMimicryBodyAndHeadersPassValidator(t *testing.T) {
 	require.Equal(t, claude.APIKeyBetaHeader, getHeaderRaw(req.Header, "anthropic-beta"))
 	require.NotContains(t, getHeaderRaw(req.Header, "anthropic-beta"), claude.BetaOAuth)
 	require.NotContains(t, getHeaderRaw(req.Header, "anthropic-beta"), "client-beta-should-not-pass")
+	require.Equal(t, parsedMetadata.SessionID, getHeaderRaw(req.Header, "x-claude-code-session-id"))
+	require.NotEmpty(t, getHeaderRaw(req.Header, "x-client-request-id"))
 
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(wireBody, &payload))
@@ -167,29 +172,58 @@ func TestClaudeCodeUpstreamMimicryPreservesAPIKeyModel(t *testing.T) {
 }
 
 func TestClaudeCodeUpstreamMimicryLeavesExistingClaudeCodeBodyUntouched(t *testing.T) {
-	svc := newClaudeCodeUpstreamMimicryService()
-	account := newClaudeCodeUpstreamMimicryAccount()
 	c := newClaudeCodeUpstreamMimicryContext()
-	body := []byte(`{"model":"claude-sonnet-4-6","system":"project instruction","messages":[{"role":"user","content":"hello"}],"max_tokens":128}`)
-	mimicked := svc.applyClaudeCodeUpstreamMimicryToBody(
-		context.Background(), c, account, body, json.RawMessage(`"project instruction"`),
-		"claude-sonnet-4-6", &SessionContext{ClientIP: "203.0.113.11", APIKeyID: 99},
+	metadataUserID := FormatMetadataUserID(
+		strings.Repeat("b", 64), "", "22222222-2222-4222-8222-222222222222", claude.CLICurrentVersion,
 	)
-	metadataUserID := gjson.GetBytes(mimicked, "metadata.user_id").String()
-	require.True(t, isClaudeCodeRequestForMimicry(context.Background(), c, mimicked, metadataUserID))
+	billingText, err := buildBillingAttributionText([]byte(`{"messages":[{"role":"user","content":"hello"}]}`), claude.CLICurrentVersion)
+	require.NoError(t, err)
+	body, err := json.Marshal(map[string]any{
+		"model": "claude-sonnet-4-6",
+		"metadata": map[string]any{
+			"user_id": metadataUserID,
+		},
+		"system": []map[string]any{
+			{"type": "text", "text": billingText},
+			{"type": "text", "text": "Client-owned Claude Code system", "cache_control": map[string]string{"type": "ephemeral"}},
+		},
+		"messages":   []map[string]any{{"role": "user", "content": "hello"}},
+		"max_tokens": 128,
+	})
+	require.NoError(t, err)
+	require.True(t, isClaudeCodeRequestForMimicry(context.Background(), c, body, metadataUserID))
 
-	forwardBody := mimicked
-	if !isClaudeCodeRequestForMimicry(context.Background(), c, mimicked, metadataUserID) {
-		forwardBody = svc.applyClaudeCodeUpstreamMimicryToBody(context.Background(), c, account, mimicked, nil, "claude-sonnet-4-6", nil)
+	forwardBody := body
+	if !isClaudeCodeRequestForMimicry(context.Background(), c, body, metadataUserID) {
+		forwardBody = newClaudeCodeUpstreamMimicryService().applyClaudeCodeUpstreamMimicryToBody(
+			context.Background(), c, newClaudeCodeUpstreamMimicryAccount(), body, nil, "claude-sonnet-4-6", nil,
+		)
 	}
-	require.Equal(t, mimicked, forwardBody)
+	require.Equal(t, body, forwardBody)
+}
+
+func TestClaudeCodeUpstreamMimicryDoesNotTrustHeadersWithoutBillingAttribution(t *testing.T) {
+	c := newClaudeCodeUpstreamMimicryContext()
+	c.Request.Header.Set("User-Agent", "claude-cli/"+claude.CLICurrentVersion+" (external, cli)")
+	metadataUserID := FormatMetadataUserID(
+		strings.Repeat("c", 64), "", "33333333-3333-4333-8333-333333333333", claude.CLICurrentVersion,
+	)
+	body := []byte(`{"model":"claude-sonnet-4-6","metadata":{"user_id":` + strconvQuote(metadataUserID) + `},"system":[{"type":"text","text":"Claude Code-like but incomplete"}],"messages":[{"role":"user","content":"hello"}],"max_tokens":128}`)
+
+	require.False(t, isClaudeCodeRequestForMimicry(context.Background(), c, body, metadataUserID))
 }
 
 func TestClaudeCodeUpstreamMimicryPassthroughBuilders(t *testing.T) {
 	svc := newClaudeCodeUpstreamMimicryService()
 	account := newClaudeCodeUpstreamMimicryAccount()
 	c := newClaudeCodeUpstreamMimicryContext()
-	body := []byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hello"}],"max_tokens":128}`)
+	metadataUserID := FormatMetadataUserID(
+		strings.Repeat("d", 64), "", "44444444-4444-4444-8444-444444444444", claude.CLICurrentVersion,
+	)
+	body := applyClaudeCodeUpstreamMimicryCore(
+		[]byte(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hello"}],"max_tokens":128}`),
+		nil, "claude-sonnet-4-6", metadataUserID,
+	)
 
 	req, _, err := svc.buildUpstreamRequestAnthropicAPIKeyPassthroughWithMimicry(
 		context.Background(), c, account, body, "sk-upstream", true, false,
@@ -198,6 +232,8 @@ func TestClaudeCodeUpstreamMimicryPassthroughBuilders(t *testing.T) {
 	require.Regexp(t, `^claude-cli/`, req.Header.Get("User-Agent"))
 	require.Equal(t, "cli", getHeaderRaw(req.Header, "x-app"))
 	require.Equal(t, claude.APIKeyBetaHeader, getHeaderRaw(req.Header, "anthropic-beta"))
+	require.Equal(t, "44444444-4444-4444-8444-444444444444", getHeaderRaw(req.Header, "x-claude-code-session-id"))
+	require.NotEmpty(t, getHeaderRaw(req.Header, "x-client-request-id"))
 
 	countReq, err := svc.buildCountTokensRequestAnthropicAPIKeyPassthroughWithMimicry(
 		context.Background(), c, account, body, "sk-upstream", true,
@@ -206,4 +242,37 @@ func TestClaudeCodeUpstreamMimicryPassthroughBuilders(t *testing.T) {
 	require.Regexp(t, `^claude-cli/`, countReq.Header.Get("User-Agent"))
 	require.Contains(t, getHeaderRaw(countReq.Header, "anthropic-beta"), claude.BetaTokenCounting)
 	require.NotContains(t, getHeaderRaw(countReq.Header, "anthropic-beta"), claude.BetaOAuth)
+	require.Equal(t, "44444444-4444-4444-8444-444444444444", getHeaderRaw(countReq.Header, "x-claude-code-session-id"))
+	require.NotEmpty(t, getHeaderRaw(countReq.Header, "x-client-request-id"))
+}
+
+func TestClaudeAccountConnectionMimicryUsesFullBodyAndDynamicHeaders(t *testing.T) {
+	upstream := &anthropicHTTPUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"message_stop\"}\n\n")),
+	}}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+		cfg: &config.Config{
+			Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
+		},
+	}
+	c := newClaudeCodeUpstreamMimicryContext()
+
+	require.NoError(t, svc.testClaudeAccountConnection(c, newClaudeCodeUpstreamMimicryAccount(), "claude-sonnet-4-6"))
+	require.NotNil(t, upstream.lastReq)
+	require.True(t, systemHasBillingAttributionBlock(upstream.lastBody))
+	require.Len(t, gjson.GetBytes(upstream.lastBody, "system").Array(), 3)
+	metadata := ParseMetadataUserID(gjson.GetBytes(upstream.lastBody, "metadata.user_id").String())
+	require.NotNil(t, metadata)
+	require.Equal(t, metadata.SessionID, getHeaderRaw(upstream.lastReq.Header, "x-claude-code-session-id"))
+	require.NotEmpty(t, getHeaderRaw(upstream.lastReq.Header, "x-client-request-id"))
+}
+
+func TestClaudeCodeCredentialScopeErrorRecognizesRuntimeResolverRejection(t *testing.T) {
+	require.True(t, isClaudeCodeCredentialScopeError(
+		`runtimeadapter: public model "claude-opus-4-7" requires a genuine Claude Code request; no candidate pool accepts non-cc traffic`,
+	))
+	require.False(t, isClaudeCodeCredentialScopeError("upstream temporarily unavailable"))
 }

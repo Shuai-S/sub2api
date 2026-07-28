@@ -271,6 +271,13 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
 	payloadBytes, _ := json.Marshal(payload)
+	if account.IsClaudeCodeUpstreamMimicryEnabled() {
+		metadataUserID := ""
+		if metadata, ok := payload["metadata"].(map[string]string); ok {
+			metadataUserID = metadata["user_id"]
+		}
+		payloadBytes = applyClaudeCodeUpstreamMimicryCore(payloadBytes, nil, testModelID, metadataUserID)
+	}
 
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -284,9 +291,15 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// Apply Claude Code client headers
-	for key, value := range claude.DefaultHeaders {
-		req.Header.Set(key, value)
+	// Apply Claude Code client headers. Mimicry-enabled API key tests use the
+	// same dynamic request and session identifiers as live forwarding.
+	if account.IsClaudeCodeUpstreamMimicryEnabled() {
+		applyClaudeCodeMimicHeaders(req, true)
+		applyClaudeCodeMimicSessionHeader(req, payloadBytes)
+	} else {
+		for key, value := range claude.DefaultHeaders {
+			req.Header.Set(key, value)
+		}
 	}
 
 	// Set authentication header

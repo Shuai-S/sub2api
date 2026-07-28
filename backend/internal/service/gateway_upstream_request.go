@@ -165,6 +165,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// （user-agent/x-stainless-*/x-app/Accept/x-stainless-helper-method/x-client-request-id）
 	if mimicClaudeCode {
 		applyClaudeCodeMimicHeaders(req, reqStream)
+		applyClaudeCodeMimicSessionHeader(req, body)
 	}
 
 	// 写入最终 anthropic-beta header
@@ -881,6 +882,16 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 	// 上游会以此作为会话/请求指纹的一部分，缺失或重复都可能触发第三方判定。
 	if getHeaderRaw(req.Header, "x-client-request-id") == "" {
 		setHeaderRaw(req.Header, "x-client-request-id", uuid.NewString())
+	}
+}
+
+func applyClaudeCodeMimicSessionHeader(req *http.Request, body []byte) {
+	if req == nil || len(body) == 0 {
+		return
+	}
+	userID := gjson.GetBytes(body, "metadata.user_id").String()
+	if parsed := ParseMetadataUserID(userID); parsed != nil && parsed.SessionID != "" {
+		setHeaderRaw(req.Header, "X-Claude-Code-Session-Id", parsed.SessionID)
 	}
 }
 

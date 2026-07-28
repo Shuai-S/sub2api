@@ -930,7 +930,9 @@ func TestGatewayService_AnthropicOAuthRealClaudeCodeHaiku_PreservesClientHeaders
 		"123e4567-e89b-42d3-a456-426614174000",
 		claude.CLICurrentVersion,
 	)
-	body := []byte(`{"model":"claude-haiku-4-5-20251001","metadata":{"user_id":` + strconvQuote(metadataUserID) + `},"system":[{"type":"text","text":"Client-owned Claude Code system","cache_control":{"type":"ephemeral"}}],"context_management":{"edits":[{"type":"clear_thinking_20251015","keep":"all"}]},"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+	billingText, err := buildBillingAttributionText([]byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`), claude.CLICurrentVersion)
+	require.NoError(t, err)
+	body := []byte(`{"model":"claude-haiku-4-5-20251001","metadata":{"user_id":` + strconvQuote(metadataUserID) + `},"system":[{"type":"text","text":` + strconvQuote(billingText) + `},{"type":"text","text":"Client-owned Claude Code system","cache_control":{"type":"ephemeral"}}],"context_management":{"edits":[{"type":"clear_thinking_20251015","keep":"all"}]},"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
 	parsed, err := ParseGatewayRequest(NewRequestBodyRef(body), PlatformAnthropic)
 	require.NoError(t, err)
 
@@ -977,7 +979,7 @@ func TestGatewayService_AnthropicOAuthRealClaudeCodeHaiku_PreservesClientHeaders
 	require.Equal(t, gjson.GetBytes(body, "messages").Raw, gjson.GetBytes(upstream.lastBody, "messages").Raw)
 	require.Equal(t, metadataUserID, gjson.GetBytes(upstream.lastBody, "metadata.user_id").String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "context_management").Exists())
-	require.NotContains(t, string(upstream.lastBody), "x-anthropic-billing-header:")
+	require.Contains(t, string(upstream.lastBody), "x-anthropic-billing-header:")
 }
 
 func TestGatewayService_AnthropicOAuth_SystemPromptInjectionCanBeDisabled(t *testing.T) {

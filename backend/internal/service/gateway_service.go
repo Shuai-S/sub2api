@@ -341,6 +341,8 @@ func buildClaudeMimicDebugLine(req *http.Request, body []byte, account *Account,
 		"content-type",
 		"accept",
 		"x-stainless-helper-method",
+		"x-claude-code-session-id",
+		"x-client-request-id",
 	}
 
 	h := make([]string, 0, len(interesting))
@@ -393,8 +395,11 @@ func isClaudeCodeCredentialScopeError(msg string) bool {
 	if m == "" {
 		return false
 	}
-	return strings.Contains(m, "only authorized for use with claude code") &&
+	legacyScopeError := strings.Contains(m, "only authorized for use with claude code") &&
 		strings.Contains(m, "cannot be used for other api requests")
+	runtimeResolveError := strings.Contains(m, "requires a genuine claude code request") &&
+		strings.Contains(m, "non-cc traffic")
+	return legacyScopeError || runtimeResolveError
 }
 
 // sseDataRe matches SSE data lines with optional whitespace after colon.
