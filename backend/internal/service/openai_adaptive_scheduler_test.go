@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -114,6 +116,7 @@ func TestOpenAIAdaptiveFailureSkipsRequestPolicyRejections(t *testing.T) {
 		"Request blocked by content policy",
 		"Your request was rejected by the safety system",
 		"moderation_blocked: request rejected",
+		"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program.",
 	} {
 		require.False(t, openAIAdaptiveFailureHealthSample(errors.New(message)), message)
 	}
@@ -121,7 +124,38 @@ func TestOpenAIAdaptiveFailureSkipsRequestPolicyRejections(t *testing.T) {
 		StatusCode:   http.StatusBadGateway,
 		ResponseBody: []byte(`{"error":{"code":"safety_error","message":"request rejected by policy"}}`),
 	}))
+	require.False(t, openAIAdaptiveFailureHealthSample(&UpstreamFailoverError{
+		StatusCode:   http.StatusForbidden,
+		ResponseBody: []byte(`{"error":{"message":"This content was flagged for possible cybersecurity risk. Join the Trusted Access for Cyber program."}}`),
+	}))
 	require.True(t, openAIAdaptiveFailureHealthSample(errors.New("upstream response failed: server is overloaded")))
+}
+
+func TestOpenAIAdaptiveDiagnosticDecisionLogsMeasuredLatency(t *testing.T) {
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 1
+	scheduler := &adaptiveOpenAIAccountScheduler{}
+	scheduler.logEnforceDiagnosticDecision(
+		context.Background(),
+		OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.1"},
+		cfg,
+		OpenAIAccountScheduleDecision{Layer: openAIAccountScheduleLayerAdaptive},
+		nil,
+		nil,
+		"selected",
+		nil,
+		time.Now().Add(-20*time.Millisecond),
+	)
+
+	require.Regexp(t, `latency_ms=[1-9][0-9]*`, output.String())
 }
 
 func TestOpenAIAdaptiveFailureCooldownDistinguishesUserAndAccountConcurrency(t *testing.T) {

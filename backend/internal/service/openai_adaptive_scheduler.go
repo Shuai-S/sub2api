@@ -213,7 +213,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		} else if selection == nil || selection.Account == nil {
 			outcome = "previous_response_empty"
 		}
-		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, outcome, err)
+		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, outcome, err, start)
 		return selection, decision, err
 	}
 	selection, escapedSticky, err := s.selectByAdaptiveSticky(ctx, req, cfg)
@@ -225,7 +225,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		decision.StickySessionHit = true
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
-		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, "session_sticky", nil)
+		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, "session_sticky", nil, start)
 		return selection, decision, nil
 	}
 	if escapedSticky {
@@ -238,7 +238,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 	decision.TopK = topK
 	decision.LoadSkew = loadSkew
 	if err != nil {
-		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, nil, diagnosticCandidates, "fallback", err)
+		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, nil, diagnosticCandidates, "fallback", err, start)
 		s.logDiagnosticResult(ctx, cfg, OpenAIAccountScheduleReport{
 			AccountID:      0,
 			Success:        false,
@@ -256,10 +256,10 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 	if selection != nil && selection.Account != nil {
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
-		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "selected", nil)
+		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "selected", nil, start)
 		return selection, decision, nil
 	}
-	s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "empty_selection", nil)
+	s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "empty_selection", nil, start)
 	return selection, decision, nil
 }
 
@@ -1062,9 +1062,13 @@ func (s *adaptiveOpenAIAccountScheduler) logEnforceDiagnosticDecision(
 	candidates []openAIAdaptiveDiagnosticCandidate,
 	outcome string,
 	err error,
+	startedAt time.Time,
 ) {
 	if !shouldLogOpenAIAdaptiveDiagnostic(ctx, req, cfg) {
 		return
+	}
+	if !startedAt.IsZero() {
+		decision.LatencyMs = time.Since(startedAt).Milliseconds()
 	}
 	selectedAccountID := decision.SelectedAccountID
 	selectedAccountType := decision.SelectedAccountType

@@ -249,6 +249,8 @@ func isOpenAIAdaptiveRequestPolicyFailure(message string) bool {
 		"safety violation",
 		"safety system",
 		"high-risk cyber",
+		"flagged for possible cybersecurity risk",
+		"trusted access for cyber",
 	} {
 		if strings.Contains(lower, marker) {
 			return true
