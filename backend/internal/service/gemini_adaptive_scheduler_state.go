@@ -1,10 +1,14 @@
 package service
 
 import (
+	"context"
+	"log/slog"
 	"math"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 const geminiAdaptiveStateLocalMergeLimit = 20
@@ -115,7 +119,7 @@ func (s *geminiAdaptiveStateStore) effectiveCapacity(account *Account, settings 
 	return capacity
 }
 
-func (s *geminiAdaptiveStateStore) observeLoad(account *Account, load *AccountLoadInfo, now time.Time, settings GeminiAdaptiveSchedulerSettings) geminiAdaptiveAccountState {
+func (s *geminiAdaptiveStateStore) observeLoad(ctx context.Context, account *Account, load *AccountLoadInfo, now time.Time, settings GeminiAdaptiveSchedulerSettings) geminiAdaptiveAccountState {
 	if account == nil {
 		return geminiAdaptiveAccountState{}
 	}
@@ -145,27 +149,52 @@ func (s *geminiAdaptiveStateStore) observeLoad(account *Account, load *AccountLo
 		}
 	}
 	if loadHigh && state.PathSuccessEMA >= settings.GeminiAdaptiveSchedulerCapacitySuccessThreshold && state.RecentCapacityFailures == 0 && state.ConsecutiveSuccess >= max(1, state.EstimatedCapacity) {
+		previousEstimatedCapacity := state.EstimatedCapacity
 		state.EstimatedCapacity = min(account.Concurrency, state.EstimatedCapacity+settings.GeminiAdaptiveSchedulerCapacityIncreaseStep)
 		state.ConsecutiveSuccess = 0
 		changed = true
+		currentConcurrency, waitingCount, loadRate := 0, 0, 0
+		if load != nil {
+			currentConcurrency = load.CurrentConcurrency
+			waitingCount = load.WaitingCount
+			loadRate = load.LoadRate
+		}
+		slog.Info("gemini_adaptive_scheduler_capacity_changed",
+			"request_id", contextStringValue(ctx, ctxkey.RequestID),
+			"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+			"account_id", account.ID,
+			"direction", "increase",
+			"trigger", "capacity_probe",
+			"configured_capacity", account.Concurrency,
+			"previous_capacity", previousEstimatedCapacity,
+			"estimated_capacity", state.EstimatedCapacity,
+			"current_concurrency", currentConcurrency,
+			"waiting_count", waitingCount,
+			"load_rate", loadRate,
+			"path_success_ema", state.PathSuccessEMA,
+			"recent_capacity_samples", state.RecentCapacitySamples,
+			"recent_capacity_failures", state.RecentCapacityFailures,
+		)
 	}
 	return cloneGeminiAdaptiveAccountState(state)
 }
 
 type GeminiAdaptiveScheduleReport struct {
-	Account        *Account
-	RequestedModel string
-	MappedModel    string
-	Stream         bool
-	Action         string
-	Success        bool
-	PathSample     bool
-	ModelSample    bool
-	CapacitySample bool
-	Synthetic      bool
-	FirstTokenMs   *int
-	DurationMs     int64
-	TerminalReason string
+	Account           *Account
+	RequestedModel    string
+	MappedModel       string
+	UpstreamRequestID string
+	Stream            bool
+	Action            string
+	Success           bool
+	PathSample        bool
+	ModelSample       bool
+	CapacitySample    bool
+	Synthetic         bool
+	FirstTokenMs      *int
+	DurationMs        int64
+	TerminalReason    string
+	ctx               context.Context
 }
 
 func (s *geminiAdaptiveStateStore) report(report GeminiAdaptiveScheduleReport, now time.Time, settings GeminiAdaptiveSchedulerSettings) (capacityIncreased bool, capacityDecreased bool) {
@@ -230,15 +259,38 @@ func (s *geminiAdaptiveStateStore) report(report GeminiAdaptiveScheduleReport, n
 				if state.ConsecutiveCapacityFailure >= settings.GeminiAdaptiveSchedulerCapacityFailureThreshold*settings.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier {
 					factor = settings.GeminiAdaptiveSchedulerShrinkFactorHard
 				}
-				next := int(math.Floor(float64(state.EstimatedCapacity) * factor))
+				previousEstimatedCapacity := state.EstimatedCapacity
+				next := int(math.Floor(float64(previousEstimatedCapacity) * factor))
 				minCapacity := min(settings.GeminiAdaptiveSchedulerMinCapacity, report.Account.Concurrency)
 				if next < minCapacity {
 					next = minCapacity
 				}
-				if next < state.EstimatedCapacity {
+				if next < previousEstimatedCapacity {
 					state.EstimatedCapacity = next
 					state.CooldownUntil = now.Add(time.Duration(settings.GeminiAdaptiveSchedulerCooldownSeconds) * time.Second)
 					capacityDecreased = true
+					failureRate := float64(0)
+					if state.RecentCapacitySamples > 0 {
+						failureRate = float64(state.RecentCapacityFailures) / float64(state.RecentCapacitySamples)
+					}
+					slog.Info("gemini_adaptive_scheduler_capacity_changed",
+						"request_id", contextStringValue(report.ctx, ctxkey.RequestID),
+						"client_request_id", contextStringValue(report.ctx, ctxkey.ClientRequestID),
+						"account_id", report.Account.ID,
+						"direction", "decrease",
+						"trigger", report.TerminalReason,
+						"model", report.RequestedModel,
+						"model_family", geminiAdaptiveModelFamily(firstNonEmpty(report.MappedModel, report.RequestedModel), report.Action),
+						"configured_capacity", report.Account.Concurrency,
+						"previous_capacity", previousEstimatedCapacity,
+						"estimated_capacity", state.EstimatedCapacity,
+						"shrink_factor", factor,
+						"recent_capacity_samples", state.RecentCapacitySamples,
+						"recent_capacity_failures", state.RecentCapacityFailures,
+						"capacity_failure_rate", failureRate,
+						"consecutive_capacity_failure", state.ConsecutiveCapacityFailure,
+						"cooldown_until", state.CooldownUntil,
+					)
 				}
 			}
 		}

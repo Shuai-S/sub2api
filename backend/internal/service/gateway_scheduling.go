@@ -252,7 +252,17 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		allowed, snapshots, quotaErr := s.rateLimitService.PreCheckUsageBatchWithSnapshots(ctx, quotaAccounts, requestedModel)
 		if quotaErr != nil {
 			s.geminiAdaptiveScheduler.quotaSnapshotErrors.Add(1)
-			slog.Warn("gemini_adaptive_quota_snapshot_failed", "error", quotaErr)
+			fields := []any{
+				"request_id", contextStringValue(ctx, ctxkey.RequestID),
+				"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+				"mode", geminiAdaptiveMode,
+				"model", requestedModel,
+				"group_id", derefGroupID(groupID),
+				"session", shortSessionHash(sessionHash),
+				"account_count", len(quotaAccounts),
+			}
+			fields = append(fields, geminiAdaptiveErrorLogFields(quotaErr)...)
+			slog.Warn("gemini_adaptive_quota_snapshot_failed", fields...)
 		} else {
 			geminiQuotaAllowed = allowed
 			geminiQuotaSnapshots = snapshots
@@ -651,6 +661,18 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 							}
 							s.markAnthropicAdaptiveStickyHit(anthropicAdaptiveMode)
 							s.markGeminiAdaptiveStickyHit(geminiAdaptiveMode)
+							if geminiAdaptiveMode != "" {
+								s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
+									Mode:            geminiAdaptiveMode,
+									Scope:           "sticky",
+									Outcome:         "slot_acquired",
+									RequestedModel:  requestedModel,
+									GroupID:         groupID,
+									SessionHash:     sessionHash,
+									SelectedAccount: account,
+									Sticky:          true,
+								})
+							}
 							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
 						}
 					} else {
@@ -662,6 +684,16 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 								if !s.checkAndRegisterSession(ctx, account, sessionHash) {
 									return nil, ErrNoAvailableAccounts
 								}
+								s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
+									Mode:            geminiAdaptiveMode,
+									Scope:           "sticky",
+									Outcome:         "wait_plan",
+									RequestedModel:  requestedModel,
+									GroupID:         groupID,
+									SessionHash:     sessionHash,
+									SelectedAccount: account,
+									Sticky:          true,
+								})
 								return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 									AccountID:      accountID,
 									MaxConcurrency: stickyCapacity,
@@ -777,6 +809,17 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	if len(candidates) == 0 {
+		if geminiAdaptiveMode != "" {
+			s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
+				Mode:           geminiAdaptiveMode,
+				Scope:          "load_balance",
+				Outcome:        "no_eligible_candidates",
+				RequestedModel: requestedModel,
+				GroupID:        groupID,
+				SessionHash:    sessionHash,
+				Force:          true,
+			})
+		}
 		return nil, ErrNoAvailableAccounts
 	}
 
@@ -792,6 +835,20 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	var adaptiveNormalDecision *AnthropicAdaptiveDecision
 	var geminiAdaptiveNormalDecision *GeminiAdaptiveDecision
 	if err != nil {
+		if geminiAdaptiveMode != "" {
+			fields := []any{
+				"request_id", contextStringValue(ctx, ctxkey.RequestID),
+				"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+				"mode", geminiAdaptiveMode,
+				"scope", "load_balance",
+				"model", requestedModel,
+				"group_id", derefGroupID(groupID),
+				"session", shortSessionHash(sessionHash),
+				"candidate_count", len(candidates),
+			}
+			fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
+			slog.Warn("gemini_adaptive_load_snapshot_failed", fields...)
+		}
 		bindLegacySticky := geminiAdaptiveMode != GeminiAdaptiveSchedulerModeEnforce
 		capacityFor := func(account *Account) int {
 			if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
@@ -805,6 +862,19 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, candidates, groupID, sessionHash, preferOAuth, bindLegacySticky, capacityFor); legacyErr != nil {
 			return nil, legacyErr
 		} else if ok {
+			if geminiAdaptiveMode != "" {
+				s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
+					Mode:            geminiAdaptiveMode,
+					Scope:           "load_balance",
+					Outcome:         "legacy_fallback_slot_acquired",
+					RequestedModel:  requestedModel,
+					GroupID:         groupID,
+					SessionHash:     sessionHash,
+					SelectedAccount: result.Account,
+					Force:           true,
+					Err:             err,
+				})
+			}
 			if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && sessionHash != "" {
 				return s.prepareGeminiStickyMigration(ctx, result, groupID, sessionHash, stickyAccountID, stickyAccountID > 0 && !preserveStickyBinding)
 			}
@@ -829,7 +899,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		adaptiveNormalDecision = decision
 		geminiBaseline := append([]accountWithLoad(nil), available...)
 		sortGeminiAdaptiveBaseline(geminiBaseline, preferOAuth)
-		geminiOrder, geminiCapacities, geminiDecision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, geminiBaseline, geminiQuotaSnapshots)
+		geminiOrder, geminiCapacities, geminiDecision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "load_balance", groupID, sessionHash, geminiBaseline, geminiQuotaSnapshots)
 		geminiAdaptiveNormalDecision = geminiDecision
 		if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && len(geminiOrder) > 0 {
 			adaptiveOrder = geminiOrder
@@ -854,6 +924,18 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				if selectionErr != nil {
 					result.ReleaseFunc()
 					return nil, selectionErr
+				}
+				if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
+					s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
+						Mode:            geminiAdaptiveMode,
+						Scope:           "load_balance",
+						Outcome:         "slot_acquired",
+						RequestedModel:  requestedModel,
+						GroupID:         groupID,
+						SessionHash:     sessionHash,
+						Decision:        geminiAdaptiveNormalDecision,
+						SelectedAccount: selected.account,
+					})
 				}
 				if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && sessionHash != "" {
 					return s.prepareGeminiStickyMigration(ctx, selection, groupID, sessionHash, stickyAccountID, stickyAccountID > 0 && !preserveStickyBinding)
@@ -890,7 +972,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 							s.logAnthropicAdaptiveShadowDecision(adaptiveNormalDecision, selected.account.ID, "load_balance", false)
 						}
 						if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeShadow {
-							s.logGeminiAdaptiveShadowDecision(geminiAdaptiveNormalDecision, selected.account.ID, "load_balance", false, geminiAdaptiveSettings)
+							s.logGeminiAdaptiveShadowDecision(ctx, geminiAdaptiveNormalDecision, selected.account, requestedModel, groupID, sessionHash, "load_balance", false, geminiAdaptiveSettings)
 						}
 						return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
 					}
@@ -944,7 +1026,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 			fallbackWithLoad = append(fallbackWithLoad, accountWithLoad{account: acc, loadInfo: loadInfo})
 		}
-		ordered, capacities, decision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, fallbackWithLoad, geminiQuotaSnapshots)
+		ordered, capacities, decision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "fallback", groupID, sessionHash, fallbackWithLoad, geminiQuotaSnapshots)
 		geminiAdaptiveFallbackDecision = decision
 		fallbackCapacities = capacities
 		if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && len(ordered) > 0 {
@@ -973,7 +1055,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			if decision == nil {
 				decision = geminiAdaptiveFallbackDecision
 			}
-			s.logGeminiAdaptiveShadowDecision(decision, acc.ID, "load_balance", false, geminiAdaptiveSettings)
+			s.logGeminiAdaptiveShadowDecision(ctx, decision, acc, requestedModel, groupID, sessionHash, "fallback", false, geminiAdaptiveSettings)
 		}
 		maxConcurrency := acc.Concurrency
 		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce || geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
@@ -993,6 +1075,22 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		})
 		if selection != nil {
 			selection.PreserveStickyBinding = preserveStickyBinding
+		}
+		if selection != nil && geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
+			decision := geminiAdaptiveNormalDecision
+			if decision == nil {
+				decision = geminiAdaptiveFallbackDecision
+			}
+			s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
+				Mode:            geminiAdaptiveMode,
+				Scope:           "fallback",
+				Outcome:         "wait_plan",
+				RequestedModel:  requestedModel,
+				GroupID:         groupID,
+				SessionHash:     sessionHash,
+				Decision:        decision,
+				SelectedAccount: acc,
+			})
 		}
 		if selectionErr == nil && selection != nil && geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && sessionHash != "" {
 			return s.prepareGeminiStickyMigration(ctx, selection, groupID, sessionHash, stickyAccountID, stickyAccountID > 0 && !preserveStickyBinding)

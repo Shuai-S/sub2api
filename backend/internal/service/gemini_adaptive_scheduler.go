@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"log/slog"
-	"math/rand/v2"
 	"sync/atomic"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 type GeminiAdaptiveMetricsSnapshot struct {
@@ -84,7 +85,14 @@ func (s *GatewayService) geminiAdaptiveMode(ctx context.Context, platform string
 	}
 	settings, err := s.settingService.GetGeminiAdaptiveSchedulerSettings(ctx)
 	if err != nil {
-		slog.Warn("gemini_adaptive_settings_read_failed", "error", err)
+		fields := []any{
+			"request_id", contextStringValue(ctx, ctxkey.RequestID),
+			"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+			"platform", platform,
+			"account_count", len(accounts),
+		}
+		fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
+		slog.Warn("gemini_adaptive_settings_read_failed", fields...)
 		return "", defaults
 	}
 	if !settings.GeminiAdaptiveSchedulerEnabled {
@@ -103,10 +111,11 @@ func (s *GatewayService) geminiAdaptiveCapacity(mode string, settings GeminiAdap
 	return s.geminiAdaptiveScheduler.state.effectiveCapacity(account, settings)
 }
 
-func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, requestedModel string, candidates []accountWithLoad, quota map[int64]GeminiAdaptiveQuotaSnapshot) ([]accountWithLoad, map[int64]int, *GeminiAdaptiveDecision) {
+func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, requestedModel, scope string, groupID *int64, sessionHash string, candidates []accountWithLoad, quota map[int64]GeminiAdaptiveQuotaSnapshot) ([]accountWithLoad, map[int64]int, *GeminiAdaptiveDecision) {
 	if mode == "" || s == nil || s.geminiAdaptiveScheduler == nil || len(candidates) == 0 {
 		return candidates, nil, nil
 	}
+	startedAt := time.Now()
 	hint := geminiAdaptiveHintFromContext(ctx)
 	inputs := make([]GeminiAdaptiveCandidateInput, 0, len(candidates))
 	baseline := make([]int64, 0, len(candidates))
@@ -124,12 +133,38 @@ func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, s
 		Candidates:     inputs,
 		BaselineOrder:  baseline,
 		Settings:       &settings,
+		ctx:            ctx,
 	})
+	decision.BuildLatencyMs = time.Since(startedAt).Milliseconds()
 	if err != nil || len(decision.Order) == 0 {
 		s.geminiAdaptiveScheduler.fallbackTotal.Add(1)
 		if err != nil {
 			decision.FallbackReason = "build_order_error"
+			fields := []any{
+				"request_id", contextStringValue(ctx, ctxkey.RequestID),
+				"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+				"mode", mode,
+				"scope", scope,
+				"model", requestedModel,
+				"group_id", derefGroupID(groupID),
+				"session", shortSessionHash(sessionHash),
+			}
+			fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
+			slog.Warn("gemini_adaptive_scheduler_fallback", fields...)
+		} else if decision.FallbackReason == "" {
+			decision.FallbackReason = "empty_order"
 		}
+		s.logGeminiAdaptiveDiagnosticDecision(ctx, settings, geminiAdaptiveDecisionLog{
+			Mode:           mode,
+			Scope:          scope,
+			Outcome:        "fallback",
+			RequestedModel: requestedModel,
+			GroupID:        groupID,
+			SessionHash:    sessionHash,
+			Decision:       &decision,
+			Force:          true,
+			Err:            err,
+		})
 		return candidates, nil, &decision
 	}
 	capacities := make(map[int64]int, len(decision.Order))
@@ -152,27 +187,30 @@ func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, s
 	return candidates, capacities, &decision
 }
 
-func (s *GatewayService) logGeminiAdaptiveShadowDecision(decision *GeminiAdaptiveDecision, baselineAccountID int64, scope string, stickyWouldMigrate bool, settings GeminiAdaptiveSchedulerSettings) {
+func (s *GatewayService) logGeminiAdaptiveShadowDecision(ctx context.Context, decision *GeminiAdaptiveDecision, baselineAccount *Account, requestedModel string, groupID *int64, sessionHash, scope string, stickyWouldMigrate bool, settings GeminiAdaptiveSchedulerSettings) {
 	if decision == nil || s == nil || s.geminiAdaptiveScheduler == nil {
 		return
+	}
+	baselineAccountID := int64(0)
+	if baselineAccount != nil {
+		baselineAccountID = baselineAccount.ID
 	}
 	diverged := decision.SelectedAccountID > 0 && baselineAccountID > 0 && decision.SelectedAccountID != baselineAccountID
 	if diverged {
 		s.geminiAdaptiveScheduler.shadowDivergeTotal.Add(1)
 	}
-	if !settings.GeminiAdaptiveSchedulerDiagnosticLogEnabled || (!diverged && rand.Float64() > settings.GeminiAdaptiveSchedulerDiagnosticLogSampleRate) {
-		return
-	}
-	slog.Info("gemini_adaptive_shadow_decision",
-		"baseline_account_id", baselineAccountID,
-		"adaptive_account_id", decision.SelectedAccountID,
-		"shadow_diverged", diverged,
-		"sticky_would_migrate", stickyWouldMigrate,
-		"scope", scope,
-		"candidate_count", decision.CandidateCount,
-		"top_k", decision.TopK,
-		"fallback_reason", decision.FallbackReason,
-	)
+	s.logGeminiAdaptiveDiagnosticDecision(ctx, settings, geminiAdaptiveDecisionLog{
+		Mode:               GeminiAdaptiveSchedulerModeShadow,
+		Scope:              scope,
+		Outcome:            "baseline_selected",
+		RequestedModel:     requestedModel,
+		GroupID:            groupID,
+		SessionHash:        sessionHash,
+		Decision:           decision,
+		SelectedAccount:    baselineAccount,
+		StickyWouldMigrate: stickyWouldMigrate,
+		Force:              diverged,
+	})
 }
 
 func (s *GatewayService) markGeminiAdaptiveStickyHit(mode string) {

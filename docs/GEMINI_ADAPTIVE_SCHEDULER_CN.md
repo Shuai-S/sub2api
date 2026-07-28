@@ -848,6 +848,43 @@ backend/internal/handler/admin/ops_gemini_adaptive_learning_handler.go
 接口只读状态和实时负载，不能调用 `observeLoad`、写样本或推进容量。支持 `group_id`、
 `account_type`、`oauth_type`、`tier`、`model`、状态、排序和分页过滤。
 
+## 诊断日志
+
+开启 `gemini_adaptive_scheduler_diagnostic_log_enabled` 后，调度器使用结构化日志记录一次请求的
+选择和反馈。正常事件按照 `diagnostic_log_sample_rate` 采样；采样种子优先使用
+`request_id + client_request_id`，因此同一请求的决策和结果能够稳定地同时命中采样。
+
+主要事件：
+
+| 事件 | 说明 |
+|---|---|
+| `gemini_adaptive_scheduler_diagnostic_decision` | Enforce 选择、等待计划、回退与 Sticky 命中 |
+| `gemini_adaptive_shadow_decision` | Shadow baseline 与 adaptive 首选对比；分歧事件不受采样率限制 |
+| `gemini_adaptive_scheduler_diagnostic_result` | 上游结果分类及学习状态更新后的快照 |
+| `gemini_adaptive_scheduler_capacity_changed` | 容量探测上调或并发错误触发下调，不采样 |
+| `gemini_adaptive_quota_snapshot_failed` | Gemini 配额快照批量读取失败，不采样 |
+| `gemini_adaptive_load_snapshot_failed` | 并发负载快照失败并退回 legacy 顺序，不采样 |
+| `gemini_adaptive_sticky_migration_*` | lease 竞争、准备、复用、重试、提交和中止，不采样 |
+| `gemini_adaptive_state_restore_*` / `gemini_adaptive_state_*flush*` | Redis 恢复与周期持久化结果 |
+
+决策日志包含 `mode`、`scope`、`outcome`、model/action/stream、group、截断后的 session hash、
+baseline/adaptive/最终账号、候选数量、TopK、构建耗时和 fallback 原因。`candidates` 最多记录前
+5 个候选，包含：
+
+- 账号平台、类型、priority、配置/学习容量、当前并发、等待数和负载率。
+- 总分及 Reliability、Quota、Capacity、Latency、Cost、Exploration 六个分项。
+- Daily/Minute 配额桶、用量、上限和 reset 时间。
+- Path/模型族 EMA、样本数、连续失败和 cooldown。
+
+结果日志包含上游 request ID、账号切换次数/尝试序号、terminal reason、三类学习 sample 标志、
+首字状态、耗时、更新前后容量、模型族 EMA、近期样本与 cooldown。会影响学习状态的失败、容量变化和构建回退在诊断开关开启时强制记录；
+普通成功仍按采样率记录。容量变化、迁移状态跃迁和基础设施错误即使关闭诊断开关也保留低频
+运维日志。
+
+日志不得记录完整 session、上游响应体或 migration lease token。错误摘要经过凭据脱敏并限制为
+1024 字节。排障时先按 `request_id` 查询 decision/result，再按 `account_id` 查询容量变化和 Sticky
+迁移事件。
+
 建议指标：
 
 ```text

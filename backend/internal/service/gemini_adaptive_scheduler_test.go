@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
 )
 
@@ -223,10 +225,12 @@ func TestClassifyGeminiAdaptiveResultOnlyExplicitConcurrencyShrinksCapacity(t *t
 }
 
 func TestGeminiAdaptiveCapacityShrinksAndProbesBackUp(t *testing.T) {
+	output := captureGeminiAdaptiveLogs(t)
 	store := newGeminiAdaptiveStateStore()
 	account := &Account{ID: 1, Platform: PlatformGemini, Concurrency: 10}
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	capacityCtx := context.WithValue(context.Background(), ctxkey.RequestID, "capacity-request")
 
 	store.mu.Lock()
 	state := store.ensureLocked(account, now, settings)
@@ -241,6 +245,7 @@ func TestGeminiAdaptiveCapacityShrinksAndProbesBackUp(t *testing.T) {
 		Account:        account,
 		CapacitySample: true,
 		TerminalReason: "concurrency_limit",
+		ctx:            capacityCtx,
 	}, now, settings)
 
 	require.True(t, decreased)
@@ -254,12 +259,18 @@ func TestGeminiAdaptiveCapacityShrinksAndProbesBackUp(t *testing.T) {
 	state.RecentCapacityFailures = 0
 	store.mu.Unlock()
 
-	observed := store.observeLoad(account, &AccountLoadInfo{
+	observed := store.observeLoad(capacityCtx, account, &AccountLoadInfo{
 		AccountID:          account.ID,
 		CurrentConcurrency: 8,
 	}, probeAt, settings)
 
 	require.Equal(t, 9, observed.EstimatedCapacity)
+	require.Equal(t, 2, strings.Count(output.String(), "gemini_adaptive_scheduler_capacity_changed"))
+	require.Contains(t, output.String(), "direction=decrease")
+	require.Contains(t, output.String(), "direction=increase")
+	require.Contains(t, output.String(), "previous_capacity=10")
+	require.Contains(t, output.String(), "previous_capacity=8")
+	require.Equal(t, 2, strings.Count(output.String(), "request_id=capacity-request"))
 }
 
 func geminiAdaptiveCandidateIDs(candidates []GeminiAdaptiveCandidate) []int64 {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"math"
 	"math/rand/v2"
 	"sort"
@@ -62,18 +63,23 @@ type GeminiAdaptiveScheduleRequest struct {
 	Candidates     []GeminiAdaptiveCandidateInput
 	BaselineOrder  []int64
 	Settings       *GeminiAdaptiveSchedulerSettings
+	ctx            context.Context
 }
 
 type GeminiAdaptiveDecision struct {
-	Order             []GeminiAdaptiveCandidate
-	SelectedAccountID int64
-	CandidateCount    int
-	TopK              int
-	FallbackReason    string
+	Order               []GeminiAdaptiveCandidate
+	SelectedAccountID   int64
+	BaselineAccountID   int64
+	InputCandidateCount int
+	CandidateCount      int
+	HardRejectedCount   int
+	TopK                int
+	BuildLatencyMs      int64
+	FallbackReason      string
 }
 
 func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) (GeminiAdaptiveDecision, error) {
-	decision := GeminiAdaptiveDecision{}
+	decision := GeminiAdaptiveDecision{InputCandidateCount: len(req.Candidates)}
 	if s == nil || s.state == nil || len(req.Candidates) == 0 {
 		decision.FallbackReason = "no_candidates"
 		return decision, nil
@@ -86,7 +92,11 @@ func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) 
 	allByID := make(map[int64]GeminiAdaptiveCandidate, len(req.Candidates))
 	geminiCandidates := make([]GeminiAdaptiveCandidate, 0, len(req.Candidates))
 	for _, input := range req.Candidates {
-		if input.Account == nil || input.Quota.HardRejected {
+		if input.Account == nil {
+			continue
+		}
+		if input.Quota.HardRejected {
+			decision.HardRejectedCount++
 			continue
 		}
 		load := input.Load
@@ -100,11 +110,17 @@ func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) 
 			EffectiveCapacity: input.Account.Concurrency,
 		}
 		if input.Account.Platform == PlatformGemini {
-			candidate.state = s.state.observeLoad(input.Account, load, now, settings)
+			candidate.state = s.state.observeLoad(req.ctx, input.Account, load, now, settings)
 			candidate.EffectiveCapacity = s.state.effectiveCapacity(input.Account, settings)
 			geminiCandidates = append(geminiCandidates, candidate)
 		}
 		allByID[input.Account.ID] = candidate
+	}
+	for _, accountID := range req.BaselineOrder {
+		if _, ok := allByID[accountID]; ok {
+			decision.BaselineAccountID = accountID
+			break
+		}
 	}
 	decision.CandidateCount = len(geminiCandidates)
 	if len(geminiCandidates) == 0 {

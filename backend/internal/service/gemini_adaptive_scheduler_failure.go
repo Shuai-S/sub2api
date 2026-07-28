@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 func (s *GatewayService) ReportGeminiAdaptiveResult(ctx context.Context, account *Account, requestedModel, action string, result *ForwardResult, err error) {
@@ -12,22 +15,43 @@ func (s *GatewayService) ReportGeminiAdaptiveResult(ctx context.Context, account
 		return
 	}
 	settings, settingsErr := s.settingService.GetGeminiAdaptiveSchedulerSettings(ctx)
-	if settingsErr != nil || !settings.GeminiAdaptiveSchedulerEnabled {
+	if settingsErr != nil {
+		fields := []any{
+			"request_id", contextStringValue(ctx, ctxkey.RequestID),
+			"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+			"account_id", account.ID,
+			"model", requestedModel,
+			"action", action,
+		}
+		fields = append(fields, geminiAdaptiveErrorLogFields(settingsErr)...)
+		slog.Warn("gemini_adaptive_result_settings_read_failed", fields...)
+		return
+	}
+	if !settings.GeminiAdaptiveSchedulerEnabled {
 		return
 	}
 	report := classifyGeminiAdaptiveResult(ctx, account, requestedModel, action, result, err)
+	before := s.geminiAdaptiveScheduler.state.snapshot(account, settings)
 	if report.Synthetic || (!report.PathSample && !report.ModelSample && !report.CapacitySample) {
+		s.logGeminiAdaptiveDiagnosticResult(ctx, settings, report, before, before, false, false, err)
 		return
 	}
-	_, decreased := s.geminiAdaptiveScheduler.state.report(report, s.geminiAdaptiveScheduler.now(), settings)
+	increased, decreased := s.geminiAdaptiveScheduler.state.report(report, s.geminiAdaptiveScheduler.now(), settings)
 	if decreased {
 		s.geminiAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}
+	after := s.geminiAdaptiveScheduler.state.snapshot(account, settings)
+	s.logGeminiAdaptiveDiagnosticResult(ctx, settings, report, before, after, increased, decreased, err)
 }
 
 func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, requestedModel, action string, result *ForwardResult, err error) GeminiAdaptiveScheduleReport {
-	report := GeminiAdaptiveScheduleReport{Account: account, RequestedModel: requestedModel, Action: action}
+	hint := geminiAdaptiveHintFromContext(ctx)
+	if strings.TrimSpace(action) == "" {
+		action = hint.Action
+	}
+	report := GeminiAdaptiveScheduleReport{Account: account, RequestedModel: requestedModel, Action: action, Stream: hint.Stream, ctx: ctx}
 	if result != nil {
+		report.UpstreamRequestID = result.RequestID
 		report.MappedModel = result.UpstreamModel
 		report.Stream = result.Stream
 		report.FirstTokenMs = result.FirstTokenMs

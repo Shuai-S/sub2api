@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 const (
@@ -27,6 +30,10 @@ func (s *GatewayService) prepareGeminiStickyMigration(ctx context.Context, selec
 	}
 	cache, ok := s.cache.(GeminiSessionMigrationCache)
 	if !ok || cache == nil {
+		slog.Warn("gemini_adaptive_sticky_migration_prepare_failed",
+			append(geminiStickyMigrationLogFields(ctx, derefGroupID(groupID), sessionHash, expectedAccountID, selection.Account.ID),
+				"reason", "cache_unavailable")...,
+		)
 		if selection.ReleaseFunc != nil {
 			selection.ReleaseFunc()
 		}
@@ -34,6 +41,9 @@ func (s *GatewayService) prepareGeminiStickyMigration(ctx context.Context, selec
 	}
 	token, err := randomHexString(16)
 	if err != nil {
+		fields := append(geminiStickyMigrationLogFields(ctx, derefGroupID(groupID), sessionHash, expectedAccountID, selection.Account.ID), "reason", "token_generation_failed")
+		fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
+		slog.Warn("gemini_adaptive_sticky_migration_prepare_failed", fields...)
 		if selection.ReleaseFunc != nil {
 			selection.ReleaseFunc()
 		}
@@ -42,14 +52,23 @@ func (s *GatewayService) prepareGeminiStickyMigration(ctx context.Context, selec
 	resolvedGroupID := derefGroupID(groupID)
 	acquired, err := cache.TryAcquireSessionMigrationLease(ctx, resolvedGroupID, sessionHash, token, geminiSessionMigrationLeaseTTL)
 	if err != nil {
+		fields := append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID), "reason", "lease_acquire_failed")
+		fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
+		slog.Warn("gemini_adaptive_sticky_migration_prepare_failed", fields...)
 		if selection.ReleaseFunc != nil {
 			selection.ReleaseFunc()
 		}
 		return nil, fmt.Errorf("acquire Gemini session migration lease: %w", err)
 	}
 	if !acquired {
+		slog.Info("gemini_adaptive_sticky_migration_lease_contended",
+			geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID)...,
+		)
 		currentAccountID, leaseAcquired, waitErr := s.waitForGeminiSessionMigration(ctx, cache, resolvedGroupID, sessionHash, expectedAccountID, token)
 		if waitErr != nil {
+			fields := append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID), "reason", "lease_wait_failed")
+			fields = append(fields, geminiAdaptiveErrorLogFields(waitErr)...)
+			slog.Warn("gemini_adaptive_sticky_migration_prepare_failed", fields...)
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
@@ -57,15 +76,27 @@ func (s *GatewayService) prepareGeminiStickyMigration(ctx context.Context, selec
 		}
 		if currentAccountID != expectedAccountID {
 			if currentAccountID == selection.Account.ID {
+				slog.Info("gemini_adaptive_sticky_migration_reused",
+					append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID),
+						"current_account_id", currentAccountID)...,
+				)
 				selection.PreserveStickyBinding = true
 				return selection, nil
 			}
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
+			slog.Info("gemini_adaptive_sticky_migration_retry",
+				append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID),
+					"current_account_id", currentAccountID)...,
+			)
 			return nil, &geminiStickyMigrationRetryError{GroupID: resolvedGroupID, AccountID: currentAccountID}
 		}
 		if !leaseAcquired {
+			slog.Warn("gemini_adaptive_sticky_migration_prepare_failed",
+				append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID),
+					"reason", "lease_still_contended")...,
+			)
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
@@ -76,12 +107,20 @@ func (s *GatewayService) prepareGeminiStickyMigration(ctx context.Context, selec
 	if currentAccountID != expectedAccountID {
 		_, _ = cache.ReleaseSessionMigrationLease(ctx, resolvedGroupID, sessionHash, token)
 		if currentAccountID == selection.Account.ID {
+			slog.Info("gemini_adaptive_sticky_migration_reused",
+				append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID),
+					"current_account_id", currentAccountID)...,
+			)
 			selection.PreserveStickyBinding = true
 			return selection, nil
 		}
 		if selection.ReleaseFunc != nil {
 			selection.ReleaseFunc()
 		}
+		slog.Info("gemini_adaptive_sticky_migration_retry",
+			append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID),
+				"current_account_id", currentAccountID)...,
+		)
 		return nil, &geminiStickyMigrationRetryError{GroupID: resolvedGroupID, AccountID: currentAccountID}
 	}
 	selection.PreserveStickyBinding = true
@@ -94,6 +133,11 @@ func (s *GatewayService) prepareGeminiStickyMigration(ctx context.Context, selec
 		LeaseToken:               token,
 		DeleteSourceOnFailure:    deleteSourceOnFailure && expectedAccountID > 0,
 	}
+	slog.Info("gemini_adaptive_sticky_migration_prepared",
+		append(geminiStickyMigrationLogFields(ctx, resolvedGroupID, sessionHash, expectedAccountID, selection.Account.ID),
+			"delete_source_on_failure", selection.PendingGeminiMigration.DeleteSourceOnFailure,
+			"lease_ttl_ms", geminiSessionMigrationLeaseTTL.Milliseconds())...,
+	)
 	return selection, nil
 }
 
@@ -140,23 +184,42 @@ func (s *GatewayService) CommitGeminiStickyMigration(ctx context.Context, migrat
 	}
 	cache, ok := s.cache.(GeminiSessionMigrationCache)
 	if !ok || cache == nil {
+		slog.Warn("gemini_adaptive_sticky_migration_commit_failed",
+			append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID),
+				"reason", "cache_unavailable")...,
+		)
 		return fmt.Errorf("Gemini session migration cache is unavailable")
 	}
 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	defer func() {
-		_, _ = cache.ReleaseSessionMigrationLease(cacheCtx, migration.GroupID, migration.SessionKey, migration.LeaseToken)
+		_, releaseErr := cache.ReleaseSessionMigrationLease(cacheCtx, migration.GroupID, migration.SessionKey, migration.LeaseToken)
+		if releaseErr != nil {
+			fields := append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID), "reason", "lease_release_failed")
+			fields = append(fields, geminiAdaptiveErrorLogFields(releaseErr)...)
+			slog.Warn("gemini_adaptive_sticky_migration_commit_cleanup_failed", fields...)
+		}
 	}()
 	swapped, err := cache.CompareAndSwapSessionAccountID(cacheCtx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID, migration.LeaseToken, stickySessionTTL)
 	if err != nil {
+		fields := append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID), "reason", "cas_failed")
+		fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
+		slog.Warn("gemini_adaptive_sticky_migration_commit_failed", fields...)
 		return fmt.Errorf("commit Gemini sticky migration: %w", err)
 	}
 	if !swapped {
+		slog.Warn("gemini_adaptive_sticky_migration_commit_failed",
+			append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID),
+				"reason", "binding_or_lease_changed")...,
+		)
 		return fmt.Errorf("commit Gemini sticky migration: binding or lease changed")
 	}
 	if s.geminiAdaptiveScheduler != nil {
 		s.geminiAdaptiveScheduler.stickyMigrateTotal.Add(1)
 	}
+	slog.Info("gemini_adaptive_sticky_migration_committed",
+		geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID)...,
+	)
 	return nil
 }
 
@@ -166,12 +229,45 @@ func (s *GatewayService) AbortGeminiStickyMigration(ctx context.Context, migrati
 	}
 	cache, ok := s.cache.(GeminiSessionMigrationCache)
 	if !ok || cache == nil {
+		slog.Warn("gemini_adaptive_sticky_migration_abort_failed",
+			append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID),
+				"reason", "cache_unavailable")...,
+		)
 		return
 	}
 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
+	deleted := false
 	if migration.DeleteSourceOnFailure {
-		_, _ = cache.CompareAndDeleteSessionAccountID(cacheCtx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.LeaseToken)
+		var deleteErr error
+		deleted, deleteErr = cache.CompareAndDeleteSessionAccountID(cacheCtx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.LeaseToken)
+		if deleteErr != nil {
+			fields := append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID), "reason", "source_delete_failed")
+			fields = append(fields, geminiAdaptiveErrorLogFields(deleteErr)...)
+			slog.Warn("gemini_adaptive_sticky_migration_abort_failed", fields...)
+		}
 	}
-	_, _ = cache.ReleaseSessionMigrationLease(cacheCtx, migration.GroupID, migration.SessionKey, migration.LeaseToken)
+	released, releaseErr := cache.ReleaseSessionMigrationLease(cacheCtx, migration.GroupID, migration.SessionKey, migration.LeaseToken)
+	if releaseErr != nil {
+		fields := append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID), "reason", "lease_release_failed")
+		fields = append(fields, geminiAdaptiveErrorLogFields(releaseErr)...)
+		slog.Warn("gemini_adaptive_sticky_migration_abort_failed", fields...)
+	}
+	slog.Info("gemini_adaptive_sticky_migration_aborted",
+		append(geminiStickyMigrationLogFields(ctx, migration.GroupID, migration.SessionKey, migration.ExpectedAccountID, migration.ToAccountID),
+			"delete_source_on_failure", migration.DeleteSourceOnFailure,
+			"source_deleted", deleted,
+			"lease_released", released)...,
+	)
+}
+
+func geminiStickyMigrationLogFields(ctx context.Context, groupID int64, sessionHash string, fromAccountID, toAccountID int64) []any {
+	return []any{
+		"request_id", contextStringValue(ctx, ctxkey.RequestID),
+		"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+		"group_id", groupID,
+		"session", shortSessionHash(sessionHash),
+		"from_account_id", fromAccountID,
+		"to_account_id", toAccountID,
+	}
 }

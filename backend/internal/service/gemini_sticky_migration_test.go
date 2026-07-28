@@ -86,6 +86,7 @@ func (c *geminiStickyMigrationCacheStub) ReleaseSessionMigrationLease(_ context.
 }
 
 func TestGeminiStickyMigrationPrepareAndCommitUsesLeaseAndCAS(t *testing.T) {
+	output := captureGeminiAdaptiveLogs(t)
 	cache := &geminiStickyMigrationCacheStub{
 		bindings:       map[string]int64{"session": 101},
 		acquireResults: []bool{true},
@@ -116,6 +117,9 @@ func TestGeminiStickyMigrationPrepareAndCommitUsesLeaseAndCAS(t *testing.T) {
 
 	require.NoError(t, svc.CommitGeminiStickyMigration(context.Background(), prepared.PendingGeminiMigration))
 	require.Equal(t, 1, cache.swapCalls, "a completed migration must be idempotent")
+	require.Contains(t, output.String(), "gemini_adaptive_sticky_migration_prepared")
+	require.Contains(t, output.String(), "gemini_adaptive_sticky_migration_committed")
+	require.NotContains(t, output.String(), prepared.PendingGeminiMigration.LeaseToken)
 }
 
 func TestGeminiStickyMigrationLeaseCompetitionUsesCompletedBinding(t *testing.T) {
