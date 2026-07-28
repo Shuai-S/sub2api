@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"sort"
+	"time"
 )
 
 type AnthropicAdaptiveCandidate struct {
@@ -24,6 +25,7 @@ type AnthropicAdaptiveDecision struct {
 	TopK              int
 	SelectedAccountID int64
 	FallbackReason    string
+	BuildLatencyMs    int64
 }
 
 type AnthropicAdaptiveScheduleRequest struct {
@@ -32,8 +34,12 @@ type AnthropicAdaptiveScheduleRequest struct {
 	Settings       *AnthropicAdaptiveSchedulerSettings
 }
 
-func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleRequest) AnthropicAdaptiveDecision {
-	decision := AnthropicAdaptiveDecision{CandidateCount: len(req.Candidates)}
+func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleRequest) (decision AnthropicAdaptiveDecision) {
+	startedAt := time.Now()
+	decision = AnthropicAdaptiveDecision{CandidateCount: len(req.Candidates)}
+	defer func() {
+		decision.BuildLatencyMs = time.Since(startedAt).Milliseconds()
+	}()
 	if s == nil || s.state == nil || len(req.Candidates) == 0 {
 		decision.FallbackReason = "no_candidates"
 		return decision

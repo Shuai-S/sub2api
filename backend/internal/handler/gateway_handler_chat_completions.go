@@ -179,7 +179,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		if c.Request.Context().Err() != nil {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selectionCtx := c.Request.Context()
+		selectionCtx = service.WithAccountSwitchCount(selectionCtx, fs.SwitchCount, h.metadataBridgeEnabled())
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(selectionCtx, apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, groupPlatform)
@@ -251,7 +253,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
-		requestCtx := c.Request.Context()
+		requestCtx := selectionCtx
 		migrationWriter, restoreWriter := installGeminiStickyMigrationWriter(c, h.gatewayService, selection.PendingGeminiMigration)
 		setActualUpstreamEndpoint(c, "")
 		if account.Platform == service.PlatformGemini {

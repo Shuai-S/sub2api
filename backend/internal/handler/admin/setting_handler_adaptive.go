@@ -8,6 +8,8 @@ import (
 
 type AnthropicAdaptiveSchedulerSettingsUpdateRequest struct {
 	AnthropicAdaptiveSchedulerEnabled                     *bool    `json:"anthropic_adaptive_scheduler_enabled"`
+	AnthropicAdaptiveSchedulerDiagnosticLogEnabled        *bool    `json:"anthropic_adaptive_scheduler_diagnostic_log_enabled"`
+	AnthropicAdaptiveSchedulerDiagnosticLogSampleRate     *float64 `json:"anthropic_adaptive_scheduler_diagnostic_log_sample_rate"`
 	AnthropicAdaptiveSchedulerMode                        *string  `json:"anthropic_adaptive_scheduler_mode"`
 	AnthropicAdaptiveSchedulerTopK                        *int     `json:"anthropic_adaptive_scheduler_top_k"`
 	AnthropicAdaptiveSchedulerSoftmaxTemperature          *float64 `json:"anthropic_adaptive_scheduler_softmax_temperature"`
@@ -38,6 +40,12 @@ func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveS
 	settings := previous
 	if req.AnthropicAdaptiveSchedulerEnabled != nil {
 		settings.AnthropicAdaptiveSchedulerEnabled = *req.AnthropicAdaptiveSchedulerEnabled
+	}
+	if req.AnthropicAdaptiveSchedulerDiagnosticLogEnabled != nil {
+		settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled = *req.AnthropicAdaptiveSchedulerDiagnosticLogEnabled
+	}
+	if req.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate != nil {
+		settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate = *req.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate
 	}
 	if req.AnthropicAdaptiveSchedulerMode != nil {
 		settings.AnthropicAdaptiveSchedulerMode = strings.TrimSpace(*req.AnthropicAdaptiveSchedulerMode)

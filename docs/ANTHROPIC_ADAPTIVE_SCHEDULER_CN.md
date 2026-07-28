@@ -237,7 +237,7 @@ type AnthropicAdaptiveDecision struct {
     BaselineAccountID  int64
     ShadowDiverged     bool
     FallbackReason     string
-    LatencyMs          int64
+    BuildLatencyMs     int64
 }
 
 type AnthropicAdaptiveScheduleReport struct {
@@ -487,6 +487,8 @@ Adaptive 不再次写 `RateLimitResetAt` 或 `OverloadUntil`。
 | Key | 默认值 | 说明 |
 | --- | --- | --- |
 | `anthropic_adaptive_scheduler_enabled` | `false` | 总开关 |
+| `anthropic_adaptive_scheduler_diagnostic_log_enabled` | `false` | 结构化诊断日志开关；需要与总开关同时开启 |
+| `anthropic_adaptive_scheduler_diagnostic_log_sample_rate` | `0.05` | 成功调度诊断采样率，范围 `0` 到 `1` |
 | `anthropic_adaptive_scheduler_mode` | `shadow` | `shadow` / `enforce` |
 | `anthropic_adaptive_scheduler_top_k` | `8` | 每个优先级层进入 Softmax 的候选数 |
 | `anthropic_adaptive_scheduler_softmax_temperature` | `0.35` | Top K 内选择温度 |
@@ -594,7 +596,53 @@ Anthropic 自适应调度
 
 关闭时模式控件置灰。无需展示容量、权重、EMA 和 Softmax 参数。
 
-## Shadow 日志与指标
+## 调度诊断日志与排查
+
+详细诊断日志使用独立开关。只开启
+`anthropic_adaptive_scheduler_enabled` 会启用调度和学习，但不会输出详细的
+`anthropic_adaptive_scheduler_diagnostic_*` 事件；还必须开启
+`anthropic_adaptive_scheduler_diagnostic_log_enabled`。成功事件按
+`anthropic_adaptive_scheduler_diagnostic_log_sample_rate` 采样，失败、旁路和容量下降等关键事件
+可以强制记录。日志不记录请求正文、账号名称或账号凭据。
+
+主要事件：
+
+| 事件 | 用途 |
+| --- | --- |
+| `anthropic_adaptive_scheduler_diagnostic_decision` | 记录 Sticky/baseline/Adaptive 的选择关系、最终账号、候选得分、冷却状态和调度耗时 |
+| `anthropic_adaptive_scheduler_diagnostic_result` | 记录一次真实上游尝试的成功或失败、错误归因、TTFT、EMA 和容量变化 |
+| `anthropic_adaptive_scheduler_diagnostic_bypass` | 记录自适应调度为什么没有执行，例如负载快照失败或候选中混入 Antigravity |
+| `anthropic_adaptive_shadow_decision` | 保留 Shadow 模式下 baseline 与 Adaptive 决策差异的兼容日志 |
+
+一次客户端请求可能先后尝试多个账号。使用 `request_id` 串联同一请求，结合以下字段判断
+“命中几次、成功几次、切换几次”：
+
+- `account_switch_count`：当前尝试前已经发生的真实账号切换次数。
+- `account_switch_count_source=context`：来自 Handler failover 状态，可信度最高；
+  `excluded_ids` 是候选排除数量的兜底估算，`unavailable` 表示没有可靠来源。
+- `attempt_number = account_switch_count + 1`：当前是第几次账号尝试。
+- `selected_account_id`：实际选中的账号；`adaptive_account_id` 是 Adaptive 建议账号。
+- `sticky_selected`、`selection_matches_sticky`：实际是否命中 Sticky。
+- `sticky_would_bypass`：Shadow 保留了 Sticky 等待行为，但 Enforce 会绕过满载 Sticky。
+- `selected_cooldown_status` / `cooldown_status`：`active` 表示账号正在冷却。冷却只暂停升容，
+  不禁止 Sticky 或 Adaptive 选择；账号仍有 `effective_capacity` 时仍可能被命中。
+
+耗时字段的口径：
+
+- `build_latency_ms`：只统计 Adaptive 构建候选、评分和排序的耗时。
+- `latency_ms`：从本次账号调度入口开始，到最终选择、等待计划或旁路结果产生为止的真实耗时。
+- `duration_ms`：真实上游请求耗时，记录在 result 事件中，不是调度耗时。
+
+Anthropic Adaptive 目前只接管候选全部为原生 Anthropic 账号的请求。候选中混入
+Antigravity 时继续走原有 baseline，以避免改变跨平台调度语义，并记录
+`reason=mixed_platform_candidates` 的 bypass 事件。没有原生 Anthropic 候选时记录
+`reason=no_native_candidates`。
+
+内容安全、Cyber Policy、Trusted Access 等请求内容策略错误统一归为
+`terminal_reason=request_policy`，即使上游错误携带 `HealthSample=true` 也不会更新账号健康或容量；
+可通过 result 事件中的 `health_sample=false`、`capacity_sample=false` 验证。
+
+### Shadow 兼容日志
 
 Shadow 日志：
 

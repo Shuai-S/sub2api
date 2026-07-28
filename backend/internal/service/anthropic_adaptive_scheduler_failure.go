@@ -16,13 +16,17 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 		return
 	}
 	report := classifyAnthropicAdaptiveResult(ctx, account, requestedModel, result, err)
-	if !report.HealthSample && !report.CapacitySample && !report.Success {
-		return
+	before := s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
+	after := before
+	decreased := false
+	if report.HealthSample || report.CapacitySample || report.Success {
+		_, decreased = s.anthropicAdaptiveScheduler.state.report(report, s.anthropicAdaptiveScheduler.now(), settings)
+		after = s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
 	}
-	_, decreased := s.anthropicAdaptiveScheduler.state.report(report, s.anthropicAdaptiveScheduler.now(), settings)
 	if decreased {
 		s.anthropicAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}
+	s.logAnthropicAdaptiveDiagnosticResult(ctx, settings, report, before, after, decreased, err)
 }
 
 func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requestedModel string, result *ForwardResult, err error) AnthropicAdaptiveScheduleReport {
@@ -30,15 +34,30 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 		Account:        account,
 		RequestedModel: requestedModel,
 	}
+	if result != nil {
+		report.MappedModel = result.UpstreamModel
+		report.UpstreamRequestID = result.RequestID
+		report.Stream = result.Stream
+		report.Synthetic = result.Synthetic
+		report.FirstTokenMs = result.FirstTokenMs
+		report.DurationMs = result.Duration.Milliseconds()
+	}
 	if err == nil {
-		if result == nil || result.ClientDisconnect || ctx.Err() != nil {
+		if ctx.Err() != nil {
+			report.TerminalReason = "client_cancelled"
+			return report
+		}
+		if result == nil {
+			report.TerminalReason = "missing_result"
+			return report
+		}
+		if result.ClientDisconnect {
+			report.TerminalReason = "client_disconnect"
 			return report
 		}
 		report.Success = true
 		report.HealthSample = true
 		report.CapacitySample = account != nil && account.Concurrency > 0
-		report.FirstTokenMs = result.FirstTokenMs
-		report.DurationMs = result.Duration.Milliseconds()
 		report.TerminalReason = "success"
 		return report
 	}
@@ -50,9 +69,20 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 		report.TerminalReason = "local_queue"
 		return report
 	}
+	if isAnthropicAdaptiveRequestPolicyFailure(nil, err) {
+		report.TerminalReason = "request_policy"
+		return report
+	}
 
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
+		// UpstreamFailoverError.Error does not include ResponseBody. Inspect the
+		// structured payload before scope and health overrides so request policy
+		// failures cannot be attributed to the selected account.
+		if isAnthropicAdaptiveRequestPolicyFailure(failoverErr, err) {
+			report.TerminalReason = "request_policy"
+			return report
+		}
 		if failoverErr.FailureKind == UpstreamFailureKindCapabilityMismatch || failoverErr.Scope == GatewayFailureScopeRequest || failoverErr.Scope == GatewayFailureScopeProvider {
 			report.TerminalReason = "non_account_failure"
 			return report
@@ -110,6 +140,17 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 	report.HealthSample = true
 	report.TerminalReason = "transport_error"
 	return report
+}
+
+func isAnthropicAdaptiveRequestPolicyFailure(failoverErr *UpstreamFailoverError, err error) bool {
+	parts := make([]string, 0, 4)
+	if failoverErr != nil {
+		parts = append(parts, string(failoverErr.ResponseBody), failoverErr.ClientMessage, string(failoverErr.Reason))
+	}
+	if err != nil {
+		parts = append(parts, err.Error())
+	}
+	return isOpenAIAdaptiveRequestPolicyFailure(strings.Join(parts, " "))
 }
 
 func isAnthropicAdaptiveLocalQueueFailure(err error) bool {

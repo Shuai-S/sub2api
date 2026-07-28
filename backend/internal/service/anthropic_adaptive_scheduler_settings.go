@@ -20,6 +20,8 @@ const (
 	anthropicAdaptiveSchedulerSettingPrefix = "anthropic_adaptive_scheduler_"
 
 	SettingKeyAnthropicAdaptiveSchedulerEnabled                     = anthropicAdaptiveSchedulerSettingPrefix + "enabled"
+	SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled        = anthropicAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
+	SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate     = anthropicAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
 	SettingKeyAnthropicAdaptiveSchedulerMode                        = anthropicAdaptiveSchedulerSettingPrefix + "mode"
 	SettingKeyAnthropicAdaptiveSchedulerTopK                        = anthropicAdaptiveSchedulerSettingPrefix + "top_k"
 	SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature          = anthropicAdaptiveSchedulerSettingPrefix + "softmax_temperature"
@@ -51,6 +53,8 @@ const (
 
 type AnthropicAdaptiveSchedulerSettings struct {
 	AnthropicAdaptiveSchedulerEnabled                     bool    `json:"anthropic_adaptive_scheduler_enabled"`
+	AnthropicAdaptiveSchedulerDiagnosticLogEnabled        bool    `json:"anthropic_adaptive_scheduler_diagnostic_log_enabled"`
+	AnthropicAdaptiveSchedulerDiagnosticLogSampleRate     float64 `json:"anthropic_adaptive_scheduler_diagnostic_log_sample_rate"`
 	AnthropicAdaptiveSchedulerMode                        string  `json:"anthropic_adaptive_scheduler_mode"`
 	AnthropicAdaptiveSchedulerTopK                        int     `json:"anthropic_adaptive_scheduler_top_k"`
 	AnthropicAdaptiveSchedulerSoftmaxTemperature          float64 `json:"anthropic_adaptive_scheduler_softmax_temperature"`
@@ -89,6 +93,8 @@ var anthropicAdaptiveSchedulerSettingGeneration atomic.Uint64
 func DefaultAnthropicAdaptiveSchedulerSettings() AnthropicAdaptiveSchedulerSettings {
 	return AnthropicAdaptiveSchedulerSettings{
 		AnthropicAdaptiveSchedulerEnabled:                     false,
+		AnthropicAdaptiveSchedulerDiagnosticLogEnabled:        false,
+		AnthropicAdaptiveSchedulerDiagnosticLogSampleRate:     0.05,
 		AnthropicAdaptiveSchedulerMode:                        AnthropicAdaptiveSchedulerModeShadow,
 		AnthropicAdaptiveSchedulerTopK:                        8,
 		AnthropicAdaptiveSchedulerSoftmaxTemperature:          0.35,
@@ -119,6 +125,7 @@ func DefaultAnthropicAdaptiveSchedulerSettings() AnthropicAdaptiveSchedulerSetti
 func NormalizeAnthropicAdaptiveSchedulerSettings(settings AnthropicAdaptiveSchedulerSettings) AnthropicAdaptiveSchedulerSettings {
 	defaults := DefaultAnthropicAdaptiveSchedulerSettings()
 	settings.AnthropicAdaptiveSchedulerMode = normalizeAnthropicAdaptiveSchedulerMode(settings.AnthropicAdaptiveSchedulerMode)
+	settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate = clampFloat(settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate, 0, 1, defaults.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate)
 	settings.AnthropicAdaptiveSchedulerTopK = clampInt(settings.AnthropicAdaptiveSchedulerTopK, 1, 100, defaults.AnthropicAdaptiveSchedulerTopK)
 	settings.AnthropicAdaptiveSchedulerSoftmaxTemperature = clampFloat(settings.AnthropicAdaptiveSchedulerSoftmaxTemperature, 0.01, 10, defaults.AnthropicAdaptiveSchedulerSoftmaxTemperature)
 	settings.AnthropicAdaptiveSchedulerInitialReliability = clampFloat(settings.AnthropicAdaptiveSchedulerInitialReliability, 0, 1, defaults.AnthropicAdaptiveSchedulerInitialReliability)
@@ -172,6 +179,8 @@ func normalizeAnthropicAdaptiveSchedulerMode(mode string) string {
 func parseAnthropicAdaptiveSchedulerSettings(values map[string]string) AnthropicAdaptiveSchedulerSettings {
 	settings := DefaultAnthropicAdaptiveSchedulerSettings()
 	settings.AnthropicAdaptiveSchedulerEnabled = parseBoolSetting(values, SettingKeyAnthropicAdaptiveSchedulerEnabled, settings.AnthropicAdaptiveSchedulerEnabled)
+	settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled = parseBoolSetting(values, SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled, settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled)
+	settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate, settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate)
 	settings.AnthropicAdaptiveSchedulerMode = firstNonEmpty(values[SettingKeyAnthropicAdaptiveSchedulerMode], settings.AnthropicAdaptiveSchedulerMode)
 	settings.AnthropicAdaptiveSchedulerTopK = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerTopK, settings.AnthropicAdaptiveSchedulerTopK)
 	settings.AnthropicAdaptiveSchedulerSoftmaxTemperature = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature, settings.AnthropicAdaptiveSchedulerSoftmaxTemperature)
@@ -203,6 +212,8 @@ func anthropicAdaptiveSchedulerSettingsToMap(settings AnthropicAdaptiveScheduler
 	settings = NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 	return map[string]string{
 		SettingKeyAnthropicAdaptiveSchedulerEnabled:                     strconv.FormatBool(settings.AnthropicAdaptiveSchedulerEnabled),
+		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled:        strconv.FormatBool(settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled),
+		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate:     formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate),
 		SettingKeyAnthropicAdaptiveSchedulerMode:                        settings.AnthropicAdaptiveSchedulerMode,
 		SettingKeyAnthropicAdaptiveSchedulerTopK:                        strconv.Itoa(settings.AnthropicAdaptiveSchedulerTopK),
 		SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature:          formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerSoftmaxTemperature),
@@ -248,6 +259,8 @@ func (s *SettingService) GetAnthropicAdaptiveSchedulerSettings(ctx context.Conte
 		defer cancel()
 		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
 			SettingKeyAnthropicAdaptiveSchedulerEnabled,
+			SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled,
+			SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate,
 			SettingKeyAnthropicAdaptiveSchedulerMode,
 			SettingKeyAnthropicAdaptiveSchedulerTopK,
 			SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature,

@@ -67,6 +67,8 @@ func (f *AnthropicAdaptiveSchedulerLearningFilter) IsTopNMode() bool {
 }
 
 type AnthropicAdaptiveSchedulerLearningSettingsSnapshot struct {
+	DiagnosticLogEnabled        bool    `json:"diagnostic_log_enabled"`
+	DiagnosticLogSampleRate     float64 `json:"diagnostic_log_sample_rate"`
 	TopK                        int     `json:"top_k"`
 	SoftmaxTemperature          float64 `json:"softmax_temperature"`
 	WeightReliability           float64 `json:"weight_reliability"`
@@ -861,6 +863,8 @@ func anthropicAdaptiveLearningSettingsSnapshot(
 	cfg AnthropicAdaptiveSchedulerSettings,
 ) AnthropicAdaptiveSchedulerLearningSettingsSnapshot {
 	return AnthropicAdaptiveSchedulerLearningSettingsSnapshot{
+		DiagnosticLogEnabled:        cfg.AnthropicAdaptiveSchedulerDiagnosticLogEnabled,
+		DiagnosticLogSampleRate:     cfg.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate,
 		TopK:                        cfg.AnthropicAdaptiveSchedulerTopK,
 		SoftmaxTemperature:          cfg.AnthropicAdaptiveSchedulerSoftmaxTemperature,
 		WeightReliability:           cfg.AnthropicAdaptiveSchedulerWeightReliability,

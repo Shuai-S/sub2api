@@ -395,6 +395,8 @@ export type OpsAnthropicAdaptiveLearningStatus =
   | 'healthy'
 
 export interface OpsAnthropicAdaptiveLearningSettingsSnapshot {
+  diagnostic_log_enabled: boolean
+  diagnostic_log_sample_rate: number
   top_k: number
   softmax_temperature: number
   weight_reliability: number

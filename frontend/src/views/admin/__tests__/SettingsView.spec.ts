@@ -507,6 +507,8 @@ const baseSettingsResponse = {
   openai_advanced_scheduler_effective_weight_previous_response: "5",
   openai_advanced_scheduler_effective_weight_session_sticky: "3",
   anthropic_adaptive_scheduler_enabled: false,
+  anthropic_adaptive_scheduler_diagnostic_log_enabled: false,
+  anthropic_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
   anthropic_adaptive_scheduler_mode: "shadow",
   balance_low_notify_enabled: false,
   balance_low_notify_threshold: 0,
@@ -939,10 +941,12 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("loads and saves Anthropic adaptive scheduler mode", async () => {
+  it("loads and saves Anthropic adaptive scheduler settings", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       anthropic_adaptive_scheduler_enabled: true,
+      anthropic_adaptive_scheduler_diagnostic_log_enabled: true,
+      anthropic_adaptive_scheduler_diagnostic_log_sample_rate: 0.25,
       anthropic_adaptive_scheduler_mode: "shadow",
       anthropic_adaptive_scheduler_top_k: 4,
       anthropic_adaptive_scheduler_softmax_temperature: 0.2,
@@ -956,6 +960,19 @@ describe("admin SettingsView payment visible method controls", () => {
       '[data-testid="anthropic-adaptive-scheduler-toggle"]',
     );
     expect((toggle.element as HTMLInputElement).checked).toBe(true);
+    expect(
+      (
+        wrapper.get('[data-testid="anthropic-adaptive-diagnostic-log-toggle"]')
+          .element as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(
+      (
+        wrapper.get(
+          '[data-testid="anthropic-adaptive-scheduler-diagnostic-log-sample-rate"]',
+        ).element as HTMLInputElement
+      ).value,
+    ).toBe("0.25");
     const topKInput = wrapper.get(
       '[data-testid="anthropic-adaptive-scheduler-top-k"]',
     );
@@ -964,7 +981,7 @@ describe("admin SettingsView payment visible method controls", () => {
       wrapper
         .get('[data-testid="anthropic-adaptive-scheduler-parameters"]')
         .findAll("svg.cursor-help"),
-    ).toHaveLength(23);
+    ).toHaveLength(24);
     await topKInput.setValue("6");
     await wrapper
       .get('[data-testid="anthropic-adaptive-mode-enforce"]')
@@ -975,6 +992,8 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         anthropic_adaptive_scheduler_enabled: true,
+        anthropic_adaptive_scheduler_diagnostic_log_enabled: true,
+        anthropic_adaptive_scheduler_diagnostic_log_sample_rate: 0.25,
         anthropic_adaptive_scheduler_mode: "enforce",
         anthropic_adaptive_scheduler_top_k: 6,
         anthropic_adaptive_scheduler_softmax_temperature: 0.2,

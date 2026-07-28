@@ -642,6 +642,8 @@ export interface SystemSettings {
   openai_advanced_scheduler_effective_weight_previous_response?: string;
   openai_advanced_scheduler_effective_weight_session_sticky?: string;
   anthropic_adaptive_scheduler_enabled?: boolean;
+  anthropic_adaptive_scheduler_diagnostic_log_enabled?: boolean;
+  anthropic_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   anthropic_adaptive_scheduler_mode?: string;
   anthropic_adaptive_scheduler_top_k?: number;
   anthropic_adaptive_scheduler_softmax_temperature?: number;
@@ -1011,6 +1013,8 @@ export interface UpdateSettingsRequest {
   openai_advanced_scheduler_weight_previous_response?: string;
   openai_advanced_scheduler_weight_session_sticky?: string;
   anthropic_adaptive_scheduler_enabled?: boolean;
+  anthropic_adaptive_scheduler_diagnostic_log_enabled?: boolean;
+  anthropic_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   anthropic_adaptive_scheduler_mode?: string;
   anthropic_adaptive_scheduler_top_k?: number;
   anthropic_adaptive_scheduler_softmax_temperature?: number;

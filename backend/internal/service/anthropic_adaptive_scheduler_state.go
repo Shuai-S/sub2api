@@ -148,14 +148,18 @@ func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *Accoun
 }
 
 type AnthropicAdaptiveScheduleReport struct {
-	Account        *Account
-	RequestedModel string
-	Success        bool
-	HealthSample   bool
-	CapacitySample bool
-	FirstTokenMs   *int
-	DurationMs     int64
-	TerminalReason string
+	Account           *Account
+	RequestedModel    string
+	UpstreamRequestID string
+	MappedModel       string
+	Stream            bool
+	Synthetic         bool
+	Success           bool
+	HealthSample      bool
+	CapacitySample    bool
+	FirstTokenMs      *int
+	DurationMs        int64
+	TerminalReason    string
 }
 
 func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleReport, now time.Time, settings AnthropicAdaptiveSchedulerSettings) (capacityIncreased bool, capacityDecreased bool) {

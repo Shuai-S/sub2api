@@ -110,6 +110,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 }
 
 func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*AccountSelectionResult, error) {
+	adaptiveSchedulingStartedAt := time.Now()
 	// 调试日志：记录调度入口参数
 	excludedIDsList := make([]int64, 0, len(excludedIDs))
 	for id := range excludedIDs {
@@ -173,6 +174,67 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	if s.concurrencyService == nil || !cfg.LoadBatchEnabled {
+		logLegacySelection := func(account *Account, selection *AccountSelectionResult, outcome string, selectionErr error) {
+			if account == nil && selection != nil {
+				account = selection.Account
+			}
+			if account == nil || account.Platform != PlatformAnthropic {
+				return
+			}
+			resolution := s.anthropicAdaptiveMode(ctx, PlatformAnthropic, []Account{*account})
+			configuredMode := resolution.Mode
+			bypassReason := ""
+			switch resolution.BypassReason {
+			case "settings_read_failed", "scheduler_unavailable":
+				bypassReason = resolution.BypassReason
+			default:
+				if configuredMode != "" {
+					bypassReason = "load_batch_unavailable"
+				}
+			}
+			if bypassReason != "" {
+				s.logAnthropicAdaptiveDiagnosticBypass(ctx, resolution.Settings, anthropicAdaptiveBypassLog{
+					Reason:               bypassReason,
+					Mode:                 configuredMode,
+					Scope:                "legacy",
+					RequestedModel:       requestedModel,
+					Platform:             PlatformAnthropic,
+					GroupID:              groupID,
+					SessionHash:          sessionHash,
+					StickyAccountID:      stickyAccountID,
+					AccountCount:         1,
+					NativeCandidateCount: 1,
+					LoadBatchEnabled:     cfg.LoadBatchEnabled,
+					HasConcurrency:       s.concurrencyService != nil,
+					Force:                true,
+					Err:                  resolution.Err,
+					StartedAt:            adaptiveSchedulingStartedAt,
+				})
+			}
+			if configuredMode == "" {
+				return
+			}
+			var selected *Account
+			if selection != nil {
+				selected = selection.Account
+			}
+			s.logAnthropicAdaptiveDecision(ctx, resolution.Settings, anthropicAdaptiveDecisionLog{
+				Mode:            configuredMode,
+				Scope:           "legacy",
+				Outcome:         outcome,
+				RequestedModel:  requestedModel,
+				Platform:        PlatformAnthropic,
+				GroupID:         groupID,
+				SessionHash:     sessionHash,
+				StickyAccountID: stickyAccountID,
+				SelectedAccount: selected,
+				Sticky:          selected != nil && selected.ID == stickyAccountID,
+				Force:           true,
+				Err:             selectionErr,
+				StartedAt:       adaptiveSchedulingStartedAt,
+				ExcludedCount:   len(excludedIDs),
+			})
+		}
 		// 复制排除列表，用于会话限制拒绝时的重试
 		localExcluded := make(map[int64]struct{})
 		for k, v := range excludedIDs {
@@ -193,7 +255,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					localExcluded[account.ID] = struct{}{} // 排除此账号
 					continue                               // 重新选择
 				}
-				return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+				selection, selectionErr := s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+				if selectionErr != nil {
+					result.ReleaseFunc()
+				}
+				logLegacySelection(account, selection, "slot_acquired", selectionErr)
+				return selection, selectionErr
 			}
 
 			// 对于等待计划的情况，也需要先检查会话限制
@@ -205,20 +272,24 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
 				waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
 				if waitingCount < cfg.StickySessionMaxWaiting {
-					return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+					selection, selectionErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 						AccountID:      account.ID,
 						MaxConcurrency: account.Concurrency,
 						Timeout:        cfg.StickySessionWaitTimeout,
 						MaxWaiting:     cfg.StickySessionMaxWaiting,
 					})
+					logLegacySelection(account, selection, "sticky_wait_plan", selectionErr)
+					return selection, selectionErr
 				}
 			}
-			return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+			selection, selectionErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 				AccountID:      account.ID,
 				MaxConcurrency: account.Concurrency,
 				Timeout:        cfg.FallbackWaitTimeout,
 				MaxWaiting:     cfg.FallbackMaxWaiting,
 			})
+			logLegacySelection(account, selection, "fallback_wait_plan", selectionErr)
+			return selection, selectionErr
 		}
 	}
 
@@ -235,10 +306,65 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	if err != nil {
 		return nil, err
 	}
+	anthropicAdaptiveResolution := s.anthropicAdaptiveMode(ctx, platform, accounts)
+	anthropicAdaptiveMode := anthropicAdaptiveResolution.Mode
+	anthropicAdaptiveSettings := anthropicAdaptiveResolution.Settings
+	if anthropicAdaptiveResolution.BypassReason != "" && anthropicAdaptiveResolution.BypassReason != "disabled" && anthropicAdaptiveResolution.BypassReason != "non_anthropic_platform" {
+		s.logAnthropicAdaptiveDiagnosticBypass(ctx, anthropicAdaptiveSettings, anthropicAdaptiveBypassLog{
+			Reason:               anthropicAdaptiveResolution.BypassReason,
+			Mode:                 anthropicAdaptiveMode,
+			Scope:                "selection",
+			RequestedModel:       requestedModel,
+			Platform:             platform,
+			GroupID:              groupID,
+			SessionHash:          sessionHash,
+			StickyAccountID:      stickyAccountID,
+			AccountCount:         len(accounts),
+			NativeCandidateCount: anthropicAdaptiveResolution.NativeCandidateCount,
+			MixedCandidateCount:  anthropicAdaptiveResolution.MixedCandidateCount,
+			LoadBatchEnabled:     cfg.LoadBatchEnabled,
+			HasConcurrency:       s.concurrencyService != nil,
+			Force:                anthropicAdaptiveResolution.BypassReason == "no_native_candidates",
+			Err:                  anthropicAdaptiveResolution.Err,
+			StartedAt:            adaptiveSchedulingStartedAt,
+		})
+	}
 	if len(accounts) == 0 {
 		return nil, ErrNoAvailableAccounts
 	}
-	anthropicAdaptiveMode, anthropicAdaptiveSettings := s.anthropicAdaptiveMode(ctx, platform, accounts)
+	logAnthropicSelection := func(
+		scope string,
+		outcome string,
+		decision *AnthropicAdaptiveDecision,
+		selectedAccount *Account,
+		sticky bool,
+		stickyWouldBypass bool,
+		force bool,
+		selectionErr error,
+	) {
+		if anthropicAdaptiveMode == "" {
+			return
+		}
+		s.logAnthropicAdaptiveDecision(ctx, anthropicAdaptiveSettings, anthropicAdaptiveDecisionLog{
+			Mode:              anthropicAdaptiveMode,
+			Scope:             scope,
+			Outcome:           outcome,
+			RequestedModel:    requestedModel,
+			Platform:          platform,
+			GroupID:           groupID,
+			SessionHash:       sessionHash,
+			StickyAccountID:   stickyAccountID,
+			Decision:          decision,
+			SelectedAccount:   selectedAccount,
+			Sticky:            sticky,
+			StickyWouldBypass: stickyWouldBypass,
+			Force:             force,
+			Err:               selectionErr,
+			StartedAt:         adaptiveSchedulingStartedAt,
+			ExcludedCount:     len(excludedIDs),
+		})
+	}
+	anthropicStickyWouldBypass := false
 	geminiAdaptiveMode, geminiAdaptiveSettings := s.geminiAdaptiveMode(ctx, platform, accounts)
 	geminiQuotaAllowed := make(map[int64]bool)
 	geminiQuotaSnapshots := make(map[int64]GeminiAdaptiveQuotaSnapshot)
@@ -417,18 +543,25 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 										logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
 									}
 									s.markAnthropicAdaptiveStickyHit(anthropicAdaptiveMode)
-									return s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil)
+									selection, selectionErr := s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil)
+									var selected *Account
+									if selection != nil {
+										selected = selection.Account
+									}
+									if selectionErr != nil {
+										result.ReleaseFunc()
+									}
+									logAnthropicSelection("model_route_sticky", "slot_acquired", nil, selected, true, false, selectionErr != nil, selectionErr)
+									return selection, selectionErr
 								}
 							}
 
 							if stickyCacheMissReason == "" {
+								anthropicStickyWouldBypass = anthropicAdaptiveMode != ""
 								if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
 									preserveStickyBinding = true
 									stickyCacheMissReason = "adaptive_capacity_full"
 								} else {
-									if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
-										s.logAnthropicAdaptiveStickyWouldBypass(stickyAccountID, "model_route")
-									}
 									waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
 									if waitingCount < cfg.StickySessionMaxWaiting {
 										// 会话数量限制检查（等待计划也需要占用会话配额）
@@ -439,12 +572,18 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 											// 必须走 newSelectionResult 以 hydrate 账号凭证：
 											// 调度快照中的账号是精简版（OAuth token 等被剥离），
 											// 直接返回会导致后续转发缺少凭证而鉴权失败。
-											return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
+											selection, selectionErr := s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
 												AccountID:      stickyAccountID,
 												MaxConcurrency: stickyCapacity,
 												Timeout:        cfg.StickySessionWaitTimeout,
 												MaxWaiting:     cfg.StickySessionMaxWaiting,
 											})
+											var selected *Account
+											if selection != nil {
+												selected = selection.Account
+											}
+											logAnthropicSelection("model_route_sticky", "wait_plan", nil, selected, true, true, selectionErr != nil, selectionErr)
+											return selection, selectionErr
 										}
 									} else {
 										stickyCacheMissReason = "wait_queue_full"
@@ -484,7 +623,28 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					MaxConcurrency: acc.EffectiveLoadFactor(),
 				})
 			}
-			routingLoadMap, _ := s.concurrencyService.GetAccountsLoadBatch(ctx, routingLoads)
+			routingLoadMap, routingLoadErr := s.concurrencyService.GetAccountsLoadBatch(ctx, routingLoads)
+			routingAdaptiveMode := anthropicAdaptiveMode
+			if routingLoadErr != nil && anthropicAdaptiveMode != "" {
+				s.logAnthropicAdaptiveDiagnosticBypass(ctx, anthropicAdaptiveSettings, anthropicAdaptiveBypassLog{
+					Reason:               "load_snapshot_failed",
+					Mode:                 anthropicAdaptiveMode,
+					Scope:                "model_route",
+					RequestedModel:       requestedModel,
+					Platform:             platform,
+					GroupID:              groupID,
+					SessionHash:          sessionHash,
+					StickyAccountID:      stickyAccountID,
+					AccountCount:         len(routingCandidates),
+					NativeCandidateCount: len(routingCandidates),
+					LoadBatchEnabled:     cfg.LoadBatchEnabled,
+					HasConcurrency:       s.concurrencyService != nil,
+					Force:                true,
+					Err:                  routingLoadErr,
+					StartedAt:            adaptiveSchedulingStartedAt,
+				})
+				routingAdaptiveMode = ""
+			}
 
 			// 3. 按负载感知排序
 			var routingAvailable []accountWithLoad
@@ -499,8 +659,8 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			if len(routingAvailable) > 0 {
-				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, routingAvailable)
-				if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveRoutingOrder) > 0 {
+				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(routingAdaptiveMode, anthropicAdaptiveSettings, requestedModel, routingAvailable)
+				if routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveRoutingOrder) > 0 {
 					routingAvailable = adaptiveRoutingOrder
 				} else {
 					// baseline 排序：优先级 > 负载率 > 最后使用时间
@@ -529,7 +689,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				// 4. 尝试获取槽位
 				for _, item := range routingAvailable {
 					maxConcurrency := item.account.Concurrency
-					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+					if routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
 						maxConcurrency = adaptiveRoutingCapacities[item.account.ID]
 					}
 					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, maxConcurrency)
@@ -545,10 +705,18 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 						if s.debugModelRoutingEnabled() {
 							logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 						}
-						if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
-							s.logAnthropicAdaptiveShadowDecision(adaptiveRoutingDecision, item.account.ID, "model_route", false)
+						selection, selectionErr := s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil)
+						var selected *Account
+						if selection != nil {
+							selected = selection.Account
 						}
-						return s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil)
+						logErr := routingLoadErr
+						if selectionErr != nil {
+							logErr = selectionErr
+							result.ReleaseFunc()
+						}
+						logAnthropicSelection("model_route", "slot_acquired", adaptiveRoutingDecision, selected, false, anthropicStickyWouldBypass, logErr != nil, logErr)
+						return selection, selectionErr
 					}
 				}
 
@@ -561,13 +729,10 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					if s.debugModelRoutingEnabled() {
 						logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed wait: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 					}
-					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
-						s.logAnthropicAdaptiveShadowDecision(adaptiveRoutingDecision, item.account.ID, "model_route", false)
-					}
 					maxConcurrency := item.account.Concurrency
 					waitTimeout := cfg.StickySessionWaitTimeout
 					maxWaiting := cfg.StickySessionMaxWaiting
-					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+					if routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
 						maxConcurrency = adaptiveRoutingCapacities[item.account.ID]
 						waitTimeout = cfg.FallbackWaitTimeout
 						maxWaiting = cfg.FallbackMaxWaiting
@@ -581,6 +746,15 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					if selection != nil {
 						selection.PreserveStickyBinding = preserveStickyBinding
 					}
+					var selected *Account
+					if selection != nil {
+						selected = selection.Account
+					}
+					logErr := routingLoadErr
+					if selectionErr != nil {
+						logErr = selectionErr
+					}
+					logAnthropicSelection("model_route", "wait_plan", adaptiveRoutingDecision, selected, false, anthropicStickyWouldBypass, logErr != nil, logErr)
 					return selection, selectionErr
 				}
 				// 所有路由账号会话限制都已满，继续到 Layer 2 回退
@@ -673,9 +847,19 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 									Sticky:          true,
 								})
 							}
-							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+							selection, selectionErr := s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+							var selected *Account
+							if selection != nil {
+								selected = selection.Account
+							}
+							if selectionErr != nil {
+								result.ReleaseFunc()
+							}
+							logAnthropicSelection("sticky", "slot_acquired", nil, selected, true, false, selectionErr != nil, selectionErr)
+							return selection, selectionErr
 						}
 					} else {
+						anthropicStickyWouldBypass = anthropicAdaptiveMode != ""
 						if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
 							preserveStickyBinding = true
 						}
@@ -709,9 +893,6 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 						)
 					}
 
-					if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
-						s.logAnthropicAdaptiveStickyWouldBypass(accountID, "load_balance")
-					}
 					if anthropicAdaptiveMode != AnthropicAdaptiveSchedulerModeEnforce && geminiAdaptiveMode != GeminiAdaptiveSchedulerModeEnforce {
 						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
 						if waitingCount < cfg.StickySessionMaxWaiting {
@@ -724,12 +905,18 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 									"session", shortSessionHash(sessionHash),
 									"result", "wait_plan",
 								)
-								return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+								selection, selectionErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 									AccountID:      accountID,
 									MaxConcurrency: stickyCapacity,
 									Timeout:        cfg.StickySessionWaitTimeout,
 									MaxWaiting:     cfg.StickySessionMaxWaiting,
 								})
+								var selected *Account
+								if selection != nil {
+									selected = selection.Account
+								}
+								logAnthropicSelection("sticky", "wait_plan", nil, selected, true, anthropicStickyWouldBypass, selectionErr != nil, selectionErr)
+								return selection, selectionErr
 							}
 						}
 					}
@@ -809,6 +996,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	if len(candidates) == 0 {
+		logAnthropicSelection("load_balance", "no_eligible_candidates", nil, nil, false, anthropicStickyWouldBypass, true, ErrNoAvailableAccounts)
 		if geminiAdaptiveMode != "" {
 			s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
 				Mode:           geminiAdaptiveMode,
@@ -835,6 +1023,25 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	var adaptiveNormalDecision *AnthropicAdaptiveDecision
 	var geminiAdaptiveNormalDecision *GeminiAdaptiveDecision
 	if err != nil {
+		if anthropicAdaptiveMode != "" {
+			s.logAnthropicAdaptiveDiagnosticBypass(ctx, anthropicAdaptiveSettings, anthropicAdaptiveBypassLog{
+				Reason:               "load_snapshot_failed",
+				Mode:                 anthropicAdaptiveMode,
+				Scope:                "load_balance",
+				RequestedModel:       requestedModel,
+				Platform:             platform,
+				GroupID:              groupID,
+				SessionHash:          sessionHash,
+				StickyAccountID:      stickyAccountID,
+				AccountCount:         len(candidates),
+				NativeCandidateCount: len(candidates),
+				LoadBatchEnabled:     cfg.LoadBatchEnabled,
+				HasConcurrency:       s.concurrencyService != nil,
+				Force:                true,
+				Err:                  err,
+				StartedAt:            adaptiveSchedulingStartedAt,
+			})
+		}
 		if geminiAdaptiveMode != "" {
 			fields := []any{
 				"request_id", contextStringValue(ctx, ctxkey.RequestID),
@@ -860,8 +1067,10 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			return account.Concurrency
 		}
 		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, candidates, groupID, sessionHash, preferOAuth, bindLegacySticky, capacityFor); legacyErr != nil {
+			logAnthropicSelection("load_balance", "legacy_fallback_failed", nil, nil, false, anthropicStickyWouldBypass, true, legacyErr)
 			return nil, legacyErr
 		} else if ok {
+			logAnthropicSelection("load_balance", "legacy_fallback_slot_acquired", nil, result.Account, result.Account != nil && result.Account.ID == stickyAccountID, anthropicStickyWouldBypass, true, err)
 			if geminiAdaptiveMode != "" {
 				s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
 					Mode:            geminiAdaptiveMode,
@@ -923,8 +1132,10 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				selection, selectionErr := s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
 				if selectionErr != nil {
 					result.ReleaseFunc()
+					logAnthropicSelection("load_balance", "hydrate_failed", adaptiveNormalDecision, nil, false, anthropicStickyWouldBypass, true, selectionErr)
 					return nil, selectionErr
 				}
+				logAnthropicSelection("load_balance", "slot_acquired", adaptiveNormalDecision, selection.Account, false, anthropicStickyWouldBypass, false, nil)
 				if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
 					s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
 						Mode:            geminiAdaptiveMode,
@@ -968,13 +1179,19 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 						if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
 							_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.account.ID, stickySessionTTL)
 						}
-						if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
-							s.logAnthropicAdaptiveShadowDecision(adaptiveNormalDecision, selected.account.ID, "load_balance", false)
-						}
 						if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeShadow {
 							s.logGeminiAdaptiveShadowDecision(ctx, geminiAdaptiveNormalDecision, selected.account, requestedModel, groupID, sessionHash, "load_balance", false, geminiAdaptiveSettings)
 						}
-						return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+						selection, selectionErr := s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+						if selectionErr != nil {
+							result.ReleaseFunc()
+						}
+						var selectedAccount *Account
+						if selection != nil {
+							selectedAccount = selection.Account
+						}
+						logAnthropicSelection("load_balance", "slot_acquired", adaptiveNormalDecision, selectedAccount, false, anthropicStickyWouldBypass, selectionErr != nil, selectionErr)
+						return selection, selectionErr
 					}
 				}
 
@@ -1043,13 +1260,6 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
 			continue // 会话限制已满，尝试下一个账号
 		}
-		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeShadow {
-			decision := adaptiveNormalDecision
-			if decision == nil {
-				decision = adaptiveFallbackDecision
-			}
-			s.logAnthropicAdaptiveShadowDecision(decision, acc.ID, "load_balance", false)
-		}
 		if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeShadow {
 			decision := geminiAdaptiveNormalDecision
 			if decision == nil {
@@ -1076,6 +1286,15 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		if selection != nil {
 			selection.PreserveStickyBinding = preserveStickyBinding
 		}
+		decision := adaptiveNormalDecision
+		if decision == nil {
+			decision = adaptiveFallbackDecision
+		}
+		var selectedAccount *Account
+		if selection != nil {
+			selectedAccount = selection.Account
+		}
+		logAnthropicSelection("fallback", "wait_plan", decision, selectedAccount, false, anthropicStickyWouldBypass, selectionErr != nil, selectionErr)
 		if selection != nil && geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
 			decision := geminiAdaptiveNormalDecision
 			if decision == nil {
@@ -1121,6 +1340,7 @@ func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates
 			}
 			selection, err := s.newSelectionResult(ctx, acc, true, result.ReleaseFunc, nil)
 			if err != nil {
+				result.ReleaseFunc()
 				return nil, false, err
 			}
 			return selection, true, nil

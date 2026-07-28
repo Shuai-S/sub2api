@@ -625,7 +625,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				zap.Bool("has_bound_session", hasBoundSession),
 				zap.Int("failed_account_count", len(fs.FailedAccountIDs)),
 			)
-			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
+			selectionCtx := c.Request.Context()
+			selectionCtx = service.WithAccountSwitchCount(selectionCtx, fs.SwitchCount, h.metadataBridgeEnabled())
+			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(selectionCtx, currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
 					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, currentAPIKey, reqModel, reqModel, platform)
@@ -831,10 +833,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 转发请求 - 根据账号平台分流
 			c.Set("parsed_request", attemptParsedReq)
 			var result *service.ForwardResult
-			requestCtx := c.Request.Context()
-			if fs.SwitchCount > 0 {
-				requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
-			}
+			requestCtx := selectionCtx
 			if fs.ForceCacheBilling {
 				requestCtx = service.WithForceCacheBilling(requestCtx)
 			}
@@ -859,7 +858,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
-			h.gatewayService.ReportAnthropicAdaptiveResult(c.Request.Context(), account, reqModel, result, err)
+			h.gatewayService.ReportAnthropicAdaptiveResult(requestCtx, account, reqModel, result, err)
 			h.gatewayService.ReportGeminiAdaptiveResult(requestCtx, account, reqModel, "generateContent", result, err)
 			if err != nil {
 				if migration := selection.PendingGeminiMigration; migration != nil && (migrationWriter == nil || !migrationWriter.Committed()) {

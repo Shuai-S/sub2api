@@ -1195,10 +1195,12 @@ export default {
           shadow: 'Shadow 观察',
           enforce: 'Enforce 执行'
         },
+        diagnosticLog: '诊断日志',
         sections: {
           selection: '选择策略',
           capacity: '容量学习',
-          learningAndWeights: 'EMA 与评分权重'
+          learningAndWeights: 'EMA 与评分权重',
+          diagnostics: '诊断采样'
         },
         parameters: {
           topK: 'Top K 候选数',
@@ -1223,10 +1225,12 @@ export default {
           weightReliability: '可靠性权重',
           weightCapacity: '容量权重',
           weightLatency: '延迟权重',
-          weightExploration: '探索权重'
+          weightExploration: '探索权重',
+          diagnosticLogSampleRate: '成功决策日志采样率'
         },
         tooltips: {
           mode: '观察模式仅计算并记录自适应决策，不改变实际路由；执行模式会在粘性账号不可用时使用自适应排序和学习容量。',
+          diagnosticLog: '开启后输出结构化调度诊断。仅开启自适应调度不会产生详细诊断事件；成功决策按采样率记录，失败、旁路和关键状态变化可强制记录。日志不包含请求正文或账号凭据。',
           topK: '每个账号优先级层内，按总分排序后进入 Softmax 加权选择的候选数量。其余账号仍会按得分顺序作为后备。',
           softmaxTemperature: '控制 Top K 内的随机程度。值越小越偏向最高分账号，值越大流量越分散。',
           initialReliability: '新账号首次进入内存学习状态时使用的成功率先验，范围 0 到 1。只影响新建状态。',
@@ -1249,7 +1253,8 @@ export default {
           weightReliability: '总分中成功率和连续失败惩罚后的可靠性分系数。增大后会更偏向稳定账号。',
           weightCapacity: '总分中账号剩余学习容量比例的系数。增大后会更偏向空闲账号。',
           weightLatency: '总分中当前模型族相对延迟表现的系数。增大后会更偏向低延迟账号。',
-          weightExploration: '总分中低样本账号探索奖励的权重。四项权重全为 0 时会恢复默认值。'
+          weightExploration: '总分中低样本账号探索奖励的权重。四项权重全为 0 时会恢复默认值。',
+          diagnosticLogSampleRate: '诊断日志开启时，成功调度决策被记录的概率，范围 0 到 1。失败和关键旁路不受此采样率限制。'
         }
       },
       geminiAdaptiveScheduler: {

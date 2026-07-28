@@ -4548,6 +4548,25 @@
                 </div>
 
                 <div
+                  class="flex items-center justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700"
+                  :class="{
+                    'opacity-60': !form.anthropic_adaptive_scheduler_enabled,
+                  }"
+                >
+                  <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>{{ t("admin.settings.anthropicAdaptiveScheduler.diagnosticLog") }}</span>
+                    <SchedulerParamHelp
+                      :content="t('admin.settings.anthropicAdaptiveScheduler.tooltips.diagnosticLog')"
+                    />
+                  </span>
+                  <Toggle
+                    v-model="form.anthropic_adaptive_scheduler_diagnostic_log_enabled"
+                    :disabled="!form.anthropic_adaptive_scheduler_enabled"
+                    data-testid="anthropic-adaptive-diagnostic-log-toggle"
+                  />
+                </div>
+
+                <div
                   class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700"
                   :class="{
                     'opacity-60': !form.anthropic_adaptive_scheduler_enabled,
@@ -4596,7 +4615,11 @@
                           :max="field.max"
                           :step="field.step"
                           :placeholder="anthropicAdaptiveSchedulerPlaceholder(field.key)"
-                          :disabled="!form.anthropic_adaptive_scheduler_enabled"
+                          :disabled="
+                            !form.anthropic_adaptive_scheduler_enabled ||
+                            (section.key === 'diagnostics' &&
+                              !form.anthropic_adaptive_scheduler_diagnostic_log_enabled)
+                          "
                           :data-testid="field.key.replace(/_/g, '-')"
                         />
                       </div>
@@ -9327,6 +9350,8 @@ type SettingsForm = Omit<
   openai_advanced_scheduler_weight_previous_response: string;
   openai_advanced_scheduler_weight_session_sticky: string;
   anthropic_adaptive_scheduler_enabled: boolean;
+  anthropic_adaptive_scheduler_diagnostic_log_enabled: boolean;
+  anthropic_adaptive_scheduler_diagnostic_log_sample_rate: number;
   anthropic_adaptive_scheduler_mode: string;
   anthropic_adaptive_scheduler_top_k: number;
   anthropic_adaptive_scheduler_softmax_temperature: number;
@@ -9427,6 +9452,7 @@ type SettingsForm = Omit<
 };
 
 const anthropicAdaptiveSchedulerRecommendedValues = {
+  anthropic_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
   anthropic_adaptive_scheduler_top_k: 8,
   anthropic_adaptive_scheduler_softmax_temperature: 0.35,
   anthropic_adaptive_scheduler_weight_reliability: 0.5,
@@ -9456,7 +9482,7 @@ type AnthropicAdaptiveSchedulerNumberKey =
   keyof typeof anthropicAdaptiveSchedulerRecommendedValues;
 
 const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
-  key: "selection" | "capacity" | "learningAndWeights";
+  key: "selection" | "capacity" | "learningAndWeights" | "diagnostics";
   fields: ReadonlyArray<{
     key: AnthropicAdaptiveSchedulerNumberKey;
     label:
@@ -9482,7 +9508,8 @@ const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
       | "weightReliability"
       | "weightCapacity"
       | "weightLatency"
-      | "weightExploration";
+      | "weightExploration"
+      | "diagnosticLogSampleRate";
     min: number;
     max?: number;
     step: number;
@@ -9524,6 +9551,12 @@ const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "anthropic_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_weight_latency", label: "weightLatency", min: 0, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_weight_exploration", label: "weightExploration", min: 0, step: 0.01 },
+    ],
+  },
+  {
+    key: "diagnostics",
+    fields: [
+      { key: "anthropic_adaptive_scheduler_diagnostic_log_sample_rate", label: "diagnosticLogSampleRate", min: 0, max: 1, step: 0.01 },
     ],
   },
 ];
@@ -9982,6 +10015,7 @@ const form = reactive<SettingsForm>({
   openai_advanced_scheduler_weight_previous_response: "",
   openai_advanced_scheduler_weight_session_sticky: "",
   anthropic_adaptive_scheduler_enabled: false,
+  anthropic_adaptive_scheduler_diagnostic_log_enabled: false,
   anthropic_adaptive_scheduler_mode: "shadow",
   ...anthropicAdaptiveSchedulerRecommendedValues,
   gemini_adaptive_scheduler_enabled: false,
@@ -11647,6 +11681,12 @@ async function saveSettings() {
         form.openai_advanced_scheduler_weight_session_sticky.trim(),
       anthropic_adaptive_scheduler_enabled:
         form.anthropic_adaptive_scheduler_enabled,
+      anthropic_adaptive_scheduler_diagnostic_log_enabled:
+        form.anthropic_adaptive_scheduler_diagnostic_log_enabled,
+      anthropic_adaptive_scheduler_diagnostic_log_sample_rate:
+        anthropicAdaptiveSchedulerNumber(
+          "anthropic_adaptive_scheduler_diagnostic_log_sample_rate",
+        ),
       anthropic_adaptive_scheduler_mode:
         form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow",
       anthropic_adaptive_scheduler_top_k:

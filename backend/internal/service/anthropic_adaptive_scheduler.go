@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync/atomic"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 type AnthropicAdaptiveMetricsSnapshot struct {
@@ -23,6 +25,15 @@ type anthropicAdaptiveScheduler struct {
 	fallbackTotal         atomic.Uint64
 	stickyHitTotal        atomic.Uint64
 	capacityDecreaseTotal atomic.Uint64
+}
+
+type anthropicAdaptiveModeResolution struct {
+	Mode                 string
+	Settings             AnthropicAdaptiveSchedulerSettings
+	BypassReason         string
+	Err                  error
+	NativeCandidateCount int
+	MixedCandidateCount  int
 }
 
 func newAnthropicAdaptiveScheduler() *anthropicAdaptiveScheduler {
@@ -45,25 +56,45 @@ func (s *anthropicAdaptiveScheduler) SnapshotMetrics() AnthropicAdaptiveMetricsS
 	}
 }
 
-func (s *GatewayService) anthropicAdaptiveMode(ctx context.Context, platform string, accounts []Account) (string, AnthropicAdaptiveSchedulerSettings) {
-	defaults := DefaultAnthropicAdaptiveSchedulerSettings()
-	if s == nil || s.anthropicAdaptiveScheduler == nil || s.settingService == nil || platform != PlatformAnthropic || len(accounts) == 0 {
-		return "", defaults
+func (s *GatewayService) anthropicAdaptiveMode(ctx context.Context, platform string, accounts []Account) anthropicAdaptiveModeResolution {
+	resolution := anthropicAdaptiveModeResolution{Settings: DefaultAnthropicAdaptiveSchedulerSettings()}
+	if platform != PlatformAnthropic {
+		resolution.BypassReason = "non_anthropic_platform"
+		return resolution
 	}
-	for i := range accounts {
-		if accounts[i].Platform != PlatformAnthropic {
-			return "", defaults
-		}
+	if s == nil || s.anthropicAdaptiveScheduler == nil || s.settingService == nil {
+		resolution.BypassReason = "scheduler_unavailable"
+		return resolution
 	}
 	settings, err := s.settingService.GetAnthropicAdaptiveSchedulerSettings(ctx)
 	if err != nil {
 		slog.Warn("anthropic_adaptive_settings_read_failed", "error", err)
-		return "", defaults
+		resolution.BypassReason = "settings_read_failed"
+		resolution.Err = err
+		return resolution
 	}
+	resolution.Settings = settings
 	if !settings.AnthropicAdaptiveSchedulerEnabled {
-		return "", settings
+		resolution.BypassReason = "disabled"
+		return resolution
 	}
-	return normalizeAnthropicAdaptiveSchedulerMode(settings.AnthropicAdaptiveSchedulerMode), settings
+	for i := range accounts {
+		if accounts[i].Platform == PlatformAnthropic {
+			resolution.NativeCandidateCount++
+		} else {
+			resolution.MixedCandidateCount++
+		}
+	}
+	if resolution.NativeCandidateCount == 0 {
+		resolution.BypassReason = "no_native_candidates"
+		return resolution
+	}
+	if resolution.MixedCandidateCount > 0 {
+		resolution.BypassReason = "mixed_platform_candidates"
+		return resolution
+	}
+	resolution.Mode = normalizeAnthropicAdaptiveSchedulerMode(settings.AnthropicAdaptiveSchedulerMode)
+	return resolution
 }
 
 func (s *GatewayService) anthropicAdaptiveCapacity(mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) int {
@@ -102,39 +133,56 @@ func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicA
 	return candidates, capacities, &decision
 }
 
-func (s *GatewayService) logAnthropicAdaptiveShadowDecision(decision *AnthropicAdaptiveDecision, baselineAccountID int64, scope string, stickyWouldBypass bool) {
-	if decision == nil || s == nil || s.anthropicAdaptiveScheduler == nil {
+func (s *GatewayService) logAnthropicAdaptiveDecision(
+	ctx context.Context,
+	settings AnthropicAdaptiveSchedulerSettings,
+	entry anthropicAdaptiveDecisionLog,
+) {
+	if entry.Mode == "" || s == nil || s.anthropicAdaptiveScheduler == nil {
 		return
 	}
-	diverged := decision.SelectedAccountID > 0 && baselineAccountID > 0 && decision.SelectedAccountID != baselineAccountID
-	if diverged {
-		s.anthropicAdaptiveScheduler.shadowDivergeTotal.Add(1)
+	if entry.Mode == AnthropicAdaptiveSchedulerModeShadow && (entry.Decision != nil || entry.StickyWouldBypass) {
+		baselineAccountID := entry.BaselineAccountID
+		if baselineAccountID == 0 && entry.SelectedAccount != nil {
+			baselineAccountID = entry.SelectedAccount.ID
+		}
+		var adaptiveAccountID int64
+		var candidateCount, topK int
+		var fallbackReason string
+		if entry.Decision != nil {
+			adaptiveAccountID = entry.Decision.SelectedAccountID
+			candidateCount = entry.Decision.CandidateCount
+			topK = entry.Decision.TopK
+			fallbackReason = entry.Decision.FallbackReason
+		}
+		diverged := adaptiveAccountID > 0 && baselineAccountID > 0 && adaptiveAccountID != baselineAccountID
+		if diverged {
+			s.anthropicAdaptiveScheduler.shadowDivergeTotal.Add(1)
+		}
+		slog.Info("anthropic_adaptive_shadow_decision",
+			"request_id", contextStringValue(ctx, ctxkey.RequestID),
+			"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
+			"baseline_account_id", baselineAccountID,
+			"adaptive_account_id", adaptiveAccountID,
+			"selected_account_id", func() int64 {
+				if entry.SelectedAccount != nil {
+					return entry.SelectedAccount.ID
+				}
+				return 0
+			}(),
+			"shadow_diverged", diverged,
+			"sticky_would_bypass", entry.StickyWouldBypass,
+			"scope", entry.Scope,
+			"outcome", entry.Outcome,
+			"model", entry.RequestedModel,
+			"group_id", derefGroupID(entry.GroupID),
+			"candidate_count", candidateCount,
+			"top_k", topK,
+			"fallback_reason", fallbackReason,
+			"latency_ms", anthropicAdaptiveElapsedMilliseconds(entry.StartedAt),
+		)
 	}
-	slog.Info("anthropic_adaptive_shadow_decision",
-		"baseline_account_id", baselineAccountID,
-		"adaptive_account_id", decision.SelectedAccountID,
-		"shadow_diverged", diverged,
-		"sticky_would_bypass", stickyWouldBypass,
-		"scope", scope,
-		"candidate_count", decision.CandidateCount,
-		"top_k", decision.TopK,
-		"fallback_reason", decision.FallbackReason,
-	)
-}
-
-func (s *GatewayService) logAnthropicAdaptiveStickyWouldBypass(accountID int64, scope string) {
-	if s == nil || s.anthropicAdaptiveScheduler == nil {
-		return
-	}
-	slog.Info("anthropic_adaptive_shadow_decision",
-		"baseline_account_id", accountID,
-		"adaptive_account_id", int64(0),
-		"shadow_diverged", false,
-		"sticky_would_bypass", true,
-		"scope", scope,
-		"candidate_count", 0,
-		"top_k", 0,
-	)
+	s.logAnthropicAdaptiveDiagnosticDecision(ctx, settings, entry)
 }
 
 func (s *GatewayService) markAnthropicAdaptiveStickyHit(mode string) {

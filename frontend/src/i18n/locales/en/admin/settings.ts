@@ -1201,10 +1201,12 @@ export default {
           shadow: 'Shadow observe',
           enforce: 'Enforce routing'
         },
+        diagnosticLog: 'Diagnostic logs',
         sections: {
           selection: 'Selection strategy',
           capacity: 'Capacity learning',
-          learningAndWeights: 'EMA and scoring weights'
+          learningAndWeights: 'EMA and scoring weights',
+          diagnostics: 'Diagnostic sampling'
         },
         parameters: {
           topK: 'Top K candidates',
@@ -1229,10 +1231,12 @@ export default {
           weightReliability: 'Reliability weight',
           weightCapacity: 'Capacity weight',
           weightLatency: 'Latency weight',
-          weightExploration: 'Exploration weight'
+          weightExploration: 'Exploration weight',
+          diagnosticLogSampleRate: 'Successful decision log sample rate'
         },
         tooltips: {
           mode: 'Shadow mode computes and logs adaptive decisions without changing routing. Enforce mode uses adaptive ranking and learned capacity only after sticky routing is unavailable.',
+          diagnosticLog: 'Emits structured scheduler diagnostics. Enabling adaptive scheduling alone does not emit detailed diagnostic events. Successful decisions use the sample rate; failures, bypasses, and important state changes may be forced. Request bodies and account credentials are never logged.',
           topK: 'Within each account priority tier, this many top-scoring accounts enter weighted Softmax selection. Remaining accounts stay available as score-ordered fallbacks.',
           softmaxTemperature: 'Controls randomness inside the Top K pool. Lower values favor the highest score; higher values spread traffic more evenly.',
           initialReliability: 'Success-rate prior assigned when an account first gets in-memory learning state, from 0 to 1. It affects newly created state only.',
@@ -1255,7 +1259,8 @@ export default {
           weightReliability: 'Total-score coefficient for success EMA after consecutive-failure penalty. Increasing it favors more reliable accounts.',
           weightCapacity: 'Total-score coefficient for remaining learned capacity. Increasing it favors accounts with more headroom.',
           weightLatency: 'Total-score coefficient for latency within the current model family. Increasing it favors lower-latency accounts.',
-          weightExploration: 'Total-score coefficient rewarding low-sample accounts. If all four weights are zero, defaults are restored.'
+          weightExploration: 'Total-score coefficient rewarding low-sample accounts. If all four weights are zero, defaults are restored.',
+          diagnosticLogSampleRate: 'Probability of logging a successful scheduling decision when diagnostics are enabled, from 0 to 1. Failures and important bypasses are not limited by this rate.'
         }
       },
       geminiAdaptiveScheduler: {

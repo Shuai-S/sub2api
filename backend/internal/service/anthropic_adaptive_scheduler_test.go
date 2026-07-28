@@ -14,6 +14,8 @@ func TestAnthropicAdaptiveSchedulerDefaultsDisabled(t *testing.T) {
 	settings := DefaultAnthropicAdaptiveSchedulerSettings()
 
 	require.False(t, settings.AnthropicAdaptiveSchedulerEnabled)
+	require.False(t, settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled)
+	require.Equal(t, 0.05, settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate)
 	require.Equal(t, AnthropicAdaptiveSchedulerModeShadow, settings.AnthropicAdaptiveSchedulerMode)
 	require.Equal(t, AnthropicAdaptiveSchedulerModeShadow, normalizeAnthropicAdaptiveSchedulerMode("invalid"))
 }
@@ -21,6 +23,8 @@ func TestAnthropicAdaptiveSchedulerDefaultsDisabled(t *testing.T) {
 func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 	settings := parseAnthropicAdaptiveSchedulerSettings(map[string]string{
 		SettingKeyAnthropicAdaptiveSchedulerEnabled:                     "true",
+		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled:        "true",
+		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate:     "0.25",
 		SettingKeyAnthropicAdaptiveSchedulerMode:                        "ENFORCE",
 		SettingKeyAnthropicAdaptiveSchedulerTopK:                        "4",
 		SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature:          "0.2",
@@ -34,6 +38,8 @@ func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 	})
 
 	require.True(t, settings.AnthropicAdaptiveSchedulerEnabled)
+	require.True(t, settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled)
+	require.Equal(t, 0.25, settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate)
 	require.Equal(t, AnthropicAdaptiveSchedulerModeEnforce, settings.AnthropicAdaptiveSchedulerMode)
 	require.Equal(t, 4, settings.AnthropicAdaptiveSchedulerTopK)
 	require.Equal(t, 0.2, settings.AnthropicAdaptiveSchedulerSoftmaxTemperature)
@@ -41,8 +47,10 @@ func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 	require.Equal(t, 12, settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink)
 	require.Equal(t, 3, settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier)
 	serialized := anthropicAdaptiveSchedulerSettingsToMap(settings)
-	require.Len(t, serialized, 25)
+	require.Len(t, serialized, 27)
 	require.Equal(t, "true", serialized[SettingKeyAnthropicAdaptiveSchedulerEnabled])
+	require.Equal(t, "true", serialized[SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled])
+	require.Equal(t, "0.25", serialized[SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate])
 	require.Equal(t, "enforce", serialized[SettingKeyAnthropicAdaptiveSchedulerMode])
 	require.Equal(t, "4", serialized[SettingKeyAnthropicAdaptiveSchedulerTopK])
 	require.Equal(t, "0.2", serialized[SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature])
@@ -51,6 +59,7 @@ func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 func TestNormalizeAnthropicAdaptiveSettingsRejectsInvalidValues(t *testing.T) {
 	settings := DefaultAnthropicAdaptiveSchedulerSettings()
 	settings.AnthropicAdaptiveSchedulerTopK = 0
+	settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate = 2
 	settings.AnthropicAdaptiveSchedulerShrinkFactorSoft = 0.4
 	settings.AnthropicAdaptiveSchedulerShrinkFactorHard = 0.8
 	settings.AnthropicAdaptiveSchedulerWeightReliability = 0
@@ -61,6 +70,7 @@ func TestNormalizeAnthropicAdaptiveSettingsRejectsInvalidValues(t *testing.T) {
 	settings = NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 
 	require.Equal(t, 8, settings.AnthropicAdaptiveSchedulerTopK)
+	require.Equal(t, 0.05, settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate)
 	require.Equal(t, 0.4, settings.AnthropicAdaptiveSchedulerShrinkFactorHard)
 	require.Equal(t, 0.5, settings.AnthropicAdaptiveSchedulerWeightReliability)
 	require.Equal(t, 0.3, settings.AnthropicAdaptiveSchedulerWeightCapacity)
@@ -280,6 +290,81 @@ func TestClassifyAnthropicAdaptiveResultHonorsHealthSampleOverride(t *testing.T)
 
 	require.False(t, genericRateLimit.HealthSample)
 	require.True(t, providerOverload.HealthSample)
+}
+
+func TestClassifyAnthropicAdaptiveResultTreatsPolicyFailureAsRequestScopedBeforeHealthOverride(t *testing.T) {
+	trueValue := true
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	policyBody := []byte(`{"error":{"message":"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program."}}`)
+
+	for _, scope := range []GatewayFailureScope{
+		GatewayFailureScopeAccount,
+		GatewayFailureScopeRequest,
+		GatewayFailureScopeProvider,
+	} {
+		t.Run(string(scope), func(t *testing.T) {
+			err := &UpstreamFailoverError{
+				StatusCode:   http.StatusForbidden,
+				Scope:        scope,
+				HealthSample: &trueValue,
+				ResponseBody: policyBody,
+			}
+
+			report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-sonnet-4-6", nil, err)
+
+			require.Equal(t, "request_policy", report.TerminalReason)
+			require.False(t, report.HealthSample)
+			require.False(t, report.CapacitySample)
+		})
+	}
+}
+
+func TestClassifyAnthropicAdaptiveSyntheticSuccessKeepsLearningSemantics(t *testing.T) {
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	firstTokenMs := 42
+	result := &ForwardResult{
+		RequestID:     "synthetic-request",
+		UpstreamModel: "claude-sonnet-4-6-20260101",
+		Stream:        true,
+		Synthetic:     true,
+		FirstTokenMs:  &firstTokenMs,
+		Duration:      250 * time.Millisecond,
+	}
+
+	report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-sonnet-4-6", result, nil)
+
+	require.True(t, report.Synthetic)
+	require.True(t, report.Success)
+	require.True(t, report.HealthSample)
+	require.True(t, report.CapacitySample)
+	require.Equal(t, "success", report.TerminalReason)
+	require.Equal(t, "synthetic-request", report.UpstreamRequestID)
+	require.Equal(t, int64(250), report.DurationMs)
+}
+
+func TestClassifyAnthropicAdaptiveFailureKeepsPartialResultMetadata(t *testing.T) {
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	firstTokenMs := 42
+	result := &ForwardResult{
+		RequestID:     "partial-request",
+		UpstreamModel: "claude-sonnet-4-6-20260101",
+		Stream:        true,
+		FirstTokenMs:  &firstTokenMs,
+		Duration:      250 * time.Millisecond,
+	}
+	err := &UpstreamFailoverError{
+		StatusCode: http.StatusBadGateway,
+		Scope:      GatewayFailureScopeAccount,
+	}
+
+	report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-sonnet-4-6", result, err)
+
+	require.Equal(t, "partial-request", report.UpstreamRequestID)
+	require.Equal(t, "claude-sonnet-4-6-20260101", report.MappedModel)
+	require.True(t, report.Stream)
+	require.Equal(t, &firstTokenMs, report.FirstTokenMs)
+	require.Equal(t, int64(250), report.DurationMs)
+	require.Equal(t, "upstream_5xx", report.TerminalReason)
 }
 
 func TestAnthropicAdaptiveCapacityShrinksOnExplicitConcurrencyEvidence(t *testing.T) {
