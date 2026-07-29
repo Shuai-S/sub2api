@@ -727,11 +727,30 @@ type openaiNonStreamingResultPassthrough struct {
 	imageOutputSizes []string
 }
 
-func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
+const openAIStreamSemanticOutputStartedKey = "openai_stream_semantic_output_started"
+
+func markOpenAIStreamSemanticOutputStarted(c *gin.Context) {
+	if c != nil {
+		c.Set(openAIStreamSemanticOutputStartedKey, true)
+	}
+}
+
+func openAIStreamSemanticOutputStarted(c *gin.Context, localStarted bool) bool {
 	if localStarted {
 		return true
 	}
-	return c != nil && c.Writer != nil && c.Writer.Written()
+	if c == nil {
+		return false
+	}
+	started, ok := c.Get(openAIStreamSemanticOutputStartedKey)
+	return ok && started == true
+}
+
+func openAIStreamPreSemanticFailover(err *UpstreamFailoverError) *UpstreamFailoverError {
+	if err != nil {
+		err.SafeToFailoverAfterWrite = true
+	}
+	return err
 }
 
 func openAIStreamEventIsPreamble(eventType string) bool {
@@ -994,7 +1013,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawTerminalEvent := false
 	sawFailedEvent := false
 	failedMessage := ""
-	clientOutputStarted := false
+	semanticOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
 	pendingLines := make([]string, 0, 8)
@@ -1093,24 +1112,26 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						UpstreamOutTok: usage.OutputTokens,
 					})
 				}
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-					if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
-						// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
-						// antigravity 先例），否则透传命中的 failed 在监控中不可见。
-						s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "http_error", dataBytes, failedMessage)
-						MarkResponseCommitted(c)
-						c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-						c.JSON(status, gin.H{
-							"error": gin.H{
-								"type":    errType,
-								"message": errMsg,
-							},
-						})
-						return resultWithUsage(), fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+				if !openAIStreamSemanticOutputStarted(c, semanticOutputStarted) {
+					if !c.Writer.Written() {
+						if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
+							// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
+							// antigravity 先例），否则透传命中的 failed 在监控中不可见。
+							s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "http_error", dataBytes, failedMessage)
+							MarkResponseCommitted(c)
+							c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+							c.JSON(status, gin.H{
+								"error": gin.H{
+									"type":    errType,
+									"message": errMsg,
+								},
+							})
+							return resultWithUsage(), fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+						}
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 						return resultWithUsage(),
-							s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+							openAIStreamPreSemanticFailover(s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage))
 					}
 				}
 				forceFlushFailedEvent = true
@@ -1129,7 +1150,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if sanitizedData, sanitized := sanitizeOpenAIResponseFailedEventForClient(
 				dataBytes,
 				eventType,
-				openAIStreamClientOutputStarted(c, clientOutputStarted),
+				openAIStreamSemanticOutputStarted(c, semanticOutputStarted),
 			); sanitized {
 				dataBytes = sanitizedData
 				trimmedData = strings.TrimSpace(string(sanitizedData))
@@ -1144,11 +1165,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 
 		if !clientDisconnected {
-			if !clientOutputStarted && !lineStartsClientOutput {
+			if !semanticOutputStarted && !lineStartsClientOutput {
 				pendingLines = append(pendingLines, line)
 				continue
 			}
-			if !clientOutputStarted && len(pendingLines) > 0 {
+			if !semanticOutputStarted && len(pendingLines) > 0 {
 				if !writePendingLines() {
 					continue
 				}
@@ -1157,7 +1178,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 			} else {
-				clientOutputStarted = true
+				semanticOutputStarted = true
+				markOpenAIStreamSemanticOutputStarted(c)
 				flushPending = true
 				if line == "" {
 					flushPendingOutput()
@@ -1180,13 +1202,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, err)
 			return resultWithUsage(), err
 		}
-		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+		if !openAIStreamSemanticOutputStarted(c, semanticOutputStarted) {
 			msg := "OpenAI stream disconnected before completion"
 			if errText := strings.TrimSpace(err.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			return resultWithUsage(),
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg)
+			return resultWithUsage(), openAIStreamPreSemanticFailover(
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, msg),
+			)
 		}
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
@@ -1209,9 +1232,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_request_id", upstreamRequestID),
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
-		if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-			return resultWithUsage(),
-				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event")
+		if !openAIStreamSemanticOutputStarted(c, semanticOutputStarted) {
+			return resultWithUsage(), openAIStreamPreSemanticFailover(
+				s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, nil, "OpenAI stream ended before a terminal event"),
+			)
 		}
 		s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")

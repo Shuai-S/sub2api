@@ -179,8 +179,8 @@ func TestOpenAIResponseFlush_DataQueuedButBlankDrainsFlushesOnce(t *testing.T) {
 
 	waitOpenAIResponseFlushSignal(t, recorder.flushBlocked)
 	close(allowSecond)
-	waitOpenAIResponseFlushSignal(t, terminalWaiting)
 	close(releaseFirstFlush)
+	waitOpenAIResponseFlushSignal(t, terminalWaiting)
 	waitOpenAIResponseFlushCount(t, recorder, 2)
 	close(allowTerminal)
 
@@ -216,8 +216,8 @@ func TestOpenAIResponseFlush_BurstDoesNotIncreaseFlushes(t *testing.T) {
 
 	waitOpenAIResponseFlushSignal(t, recorder.flushBlocked)
 	close(allowBurst)
-	waitOpenAIResponseFlushSignal(t, eofReached)
 	close(releaseFirstFlush)
+	waitOpenAIResponseFlushSignal(t, eofReached)
 
 	require.NoError(t, <-errCh)
 	require.NotNil(t, <-resultCh)
@@ -319,6 +319,47 @@ func TestOpenAIResponseFlush_KeepaliveFlushesImmediately(t *testing.T) {
 	gotBody, flushes := recorder.snapshot()
 	require.Equal(t, ":\n\ndata: [DONE]\n\n", gotBody)
 	require.Len(t, flushes, 2)
+}
+
+func TestOpenAIResponseFlush_KeepaliveThenFailedBeforeSemanticOutputReturnsSafeFailover(t *testing.T) {
+	recorder := newOpenAIResponseFlushRecorder()
+	reader, writer := io.Pipe()
+	resultCh, errCh := runOpenAIResponseFlushTestAsync(recorder, reader, config.GatewayConfig{StreamKeepaliveInterval: 1})
+
+	preamble := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_first"}}`,
+		"",
+		"event: response.in_progress",
+		`data: {"type":"response.in_progress","response":{"id":"resp_first"}}`,
+		"",
+	}, "\n") + "\n"
+	_, err := writer.Write([]byte(preamble))
+	require.NoError(t, err)
+
+	waitOpenAIResponseFlushCount(t, recorder, 1)
+	gotBody, flushes := recorder.snapshot()
+	require.Equal(t, ":\n\n", gotBody)
+	require.Equal(t, []string{":\n\n"}, flushes)
+
+	failed := strings.Join([]string{
+		"event: response.failed",
+		`data: {"type":"response.failed","response":{"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for account, please retry later"}}}`,
+		"",
+	}, "\n") + "\n"
+	_, err = writer.Write([]byte(failed))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	require.NotNil(t, <-resultCh)
+	forwardErr := <-errCh
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, forwardErr, &failoverErr)
+	require.True(t, failoverErr.SafeToFailoverAfterWrite)
+	require.False(t, failoverErr.FirstOutputGuardFailure)
+	gotBody, flushes = recorder.snapshot()
+	require.Equal(t, ":\n\n", gotBody)
+	require.Equal(t, []string{":\n\n"}, flushes)
 }
 
 func TestOpenAIResponseFlush_KeepaliveDoesNotSplitOpenEvent(t *testing.T) {
