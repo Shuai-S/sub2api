@@ -821,11 +821,13 @@ func TestHandleSelectionExhausted(t *testing.T) {
 		require.Equal(t, FailoverExhausted, action)
 	})
 
-	t.Run("503且未耗尽_等待后返回Continue并清除失败列表", func(t *testing.T) {
+	t.Run("Antigravity的503且未耗尽_等待后返回Continue并清除失败列表", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, false)
-		fs.LastFailoverErr = newTestFailoverErr(503, false, false)
-		fs.FailedAccountIDs[100] = struct{}{}
-		fs.SwitchCount = 1
+		err := newTestFailoverErr(503, false, false)
+		require.Equal(t, FailoverContinue, fs.HandleFailoverError(
+			context.Background(), mock, 100, service.PlatformAntigravity, 0, err,
+		))
 
 		start := time.Now()
 		action := fs.HandleSelectionExhausted(context.Background())
@@ -835,6 +837,23 @@ func TestHandleSelectionExhausted(t *testing.T) {
 		require.Empty(t, fs.FailedAccountIDs, "应清除失败账号列表")
 		require.GreaterOrEqual(t, elapsed, 1500*time.Millisecond, "应等待约 2s")
 		require.Less(t, elapsed, 5*time.Second)
+	})
+
+	t.Run("Anthropic的503立即返回Exhausted并保留失败列表", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, false)
+		err := newTestFailoverErr(503, false, false)
+		require.Equal(t, FailoverContinue, fs.HandleFailoverError(
+			context.Background(), mock, 100, service.PlatformAnthropic, 0, err,
+		))
+
+		start := time.Now()
+		action := fs.HandleSelectionExhausted(context.Background())
+		elapsed := time.Since(start)
+
+		require.Equal(t, FailoverExhausted, action)
+		require.Contains(t, fs.FailedAccountIDs, int64(100), "不应清除 Anthropic 失败账号")
+		require.Less(t, elapsed, 100*time.Millisecond, "不应执行单账号退避等待")
 	})
 
 	t.Run("503但SwitchCount已超过MaxSwitches_返回Exhausted", func(t *testing.T) {
@@ -888,9 +907,10 @@ func TestHandleSelectionExhausted(t *testing.T) {
 		require.Equal(t, FailoverCanceled, action)
 	})
 
-	t.Run("503且SwitchCount等于MaxSwitches_仍可重试", func(t *testing.T) {
+	t.Run("Antigravity的503且SwitchCount等于MaxSwitches_仍可重试", func(t *testing.T) {
 		fs := NewFailoverState(2, false)
 		fs.LastFailoverErr = newTestFailoverErr(503, false, false)
+		fs.lastFailedPlatform = service.PlatformAntigravity
 		fs.SwitchCount = 2 // == MaxSwitches，条件是 <=，仍可重试
 
 		action := fs.HandleSelectionExhausted(context.Background())
