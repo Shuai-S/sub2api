@@ -292,6 +292,24 @@ func TestClassifyAnthropicAdaptiveResultHonorsHealthSampleOverride(t *testing.T)
 	require.True(t, providerOverload.HealthSample)
 }
 
+func TestClassifyAnthropicAdaptiveTransportFailoverDoesNotPenalizeAccount(t *testing.T) {
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	healthSample := false
+
+	report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-sonnet-4-6", nil, &UpstreamFailoverError{
+		StatusCode:        http.StatusBadGateway,
+		Scope:             GatewayFailureScopeAccount,
+		FailureKind:       UpstreamFailureKindTransport,
+		NextAccountAction: NextAccountRetry,
+		HealthSample:      &healthSample,
+	})
+
+	require.Equal(t, "transport_error", report.TerminalReason)
+	require.False(t, report.HealthSample)
+	require.False(t, report.CapacitySample)
+	require.False(t, report.Success)
+}
+
 func TestClassifyAnthropicAdaptiveResultTreatsPolicyFailureAsRequestScopedBeforeHealthOverride(t *testing.T) {
 	trueValue := true
 	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}

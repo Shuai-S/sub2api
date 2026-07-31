@@ -131,6 +131,27 @@ func TestSleepWithContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleFailoverError_BasicSwitch(t *testing.T) {
+	t.Run("传输错误直接切换账号且不临时下线", func(t *testing.T) {
+		mock := &mockTempUnscheduler{}
+		fs := NewFailoverState(3, false)
+		healthSample := false
+		err := &service.UpstreamFailoverError{
+			StatusCode:        http.StatusBadGateway,
+			Scope:             service.GatewayFailureScopeAccount,
+			FailureKind:       service.UpstreamFailureKindTransport,
+			NextAccountAction: service.NextAccountRetry,
+			HealthSample:      &healthSample,
+		}
+
+		action := fs.HandleFailoverError(context.Background(), mock, 2263, service.PlatformAnthropic, maxSameAccountRetries, err)
+
+		require.Equal(t, FailoverContinue, action)
+		require.Equal(t, 1, fs.SwitchCount)
+		require.Contains(t, fs.FailedAccountIDs, int64(2263))
+		require.Zero(t, fs.SameAccountRetryCount[2263])
+		require.Empty(t, mock.calls, "传输错误不应触发临时下线或熔断")
+	})
+
 	t.Run("显式停止不切换账号且旧错误默认仍切换", func(t *testing.T) {
 		mock := &mockTempUnscheduler{}
 		fs := NewFailoverState(3, false)

@@ -1194,7 +1194,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_UpstreamRequest
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 
 	upstream := &anthropicHTTPUpstreamRecorder{
-		err: errors.New("dial tcp timeout"),
+		err: errors.New(`Post "https://account-secret.example/v1/messages": dial tcp: lookup account-secret.example on 1.1.1.1:53: no such host`),
 	}
 	svc := &GatewayService{
 		cfg: &config.Config{
@@ -1209,8 +1209,20 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_UpstreamRequest
 	result, err := svc.forwardAnthropicAPIKeyPassthrough(context.Background(), c, account, []byte(`{"model":"x"}`), "x", "x", false, time.Now())
 	require.Nil(t, result)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "upstream request failed")
-	require.Equal(t, http.StatusBadGateway, rec.Code)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Equal(t, GatewayFailureScopeAccount, failoverErr.Scope)
+	require.Equal(t, UpstreamFailureKindTransport, failoverErr.FailureKind)
+	require.True(t, failoverErr.ShouldRetryNextAccount())
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.NotNil(t, failoverErr.HealthSample)
+	require.False(t, *failoverErr.HealthSample)
+	require.Equal(t, http.StatusOK, rec.Code, "service must leave the response uncommitted for account failover")
+	require.Empty(t, rec.Body.String())
+	require.NotContains(t, string(failoverErr.ResponseBody), "account-secret.example")
+	require.NotContains(t, string(failoverErr.ResponseBody), "1.1.1.1")
+	require.NotContains(t, string(failoverErr.ResponseBody), "no such host")
 }
 
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_EmptyResponseBody(t *testing.T) {

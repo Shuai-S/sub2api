@@ -76,6 +76,13 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
+		if failoverErr.FailureKind == UpstreamFailureKindTransport {
+			if failoverErr.HealthSample != nil {
+				report.HealthSample = *failoverErr.HealthSample
+			}
+			report.TerminalReason = "transport_error"
+			return report
+		}
 		// UpstreamFailoverError.Error does not include ResponseBody. Inspect the
 		// structured payload before scope and health overrides so request policy
 		// failures cannot be attributed to the selected account.
