@@ -1708,8 +1708,10 @@ func (s *openAIAdaptiveSchedulerStateStore) tryClaimBalanceProbe(
 	if interval <= 0 {
 		interval = openAIAdaptiveBalanceProbeInterval
 	}
-	slotValue, _ := s.balanceProbeAttemptSlots.LoadOrStore(accountID, &openAIAdaptiveBalanceProbeAttemptSlot{})
-	slot := slotValue.(*openAIAdaptiveBalanceProbeAttemptSlot)
+	slot := s.balanceProbeAttemptSlot(accountID)
+	if slot == nil {
+		return false
+	}
 	for {
 		current := slot.value.Load()
 		lastAttemptAt := openAIAdaptiveBalanceProbeReferenceAt(state)
@@ -1736,8 +1738,10 @@ func (s *openAIAdaptiveSchedulerStateStore) recordBalanceProbeAttempt(accountID 
 	if s == nil || accountID <= 0 || now.IsZero() {
 		return
 	}
-	slotValue, _ := s.balanceProbeAttemptSlots.LoadOrStore(accountID, &openAIAdaptiveBalanceProbeAttemptSlot{})
-	slot := slotValue.(*openAIAdaptiveBalanceProbeAttemptSlot)
+	slot := s.balanceProbeAttemptSlot(accountID)
+	if slot == nil {
+		return
+	}
 	for {
 		current := slot.value.Load()
 		if current != nil && current.generation == generation && current.atUnixNano >= now.UnixNano() {
@@ -1748,6 +1752,18 @@ func (s *openAIAdaptiveSchedulerStateStore) recordBalanceProbeAttempt(accountID 
 			return
 		}
 	}
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) balanceProbeAttemptSlot(accountID int64) *openAIAdaptiveBalanceProbeAttemptSlot {
+	if s == nil || accountID <= 0 {
+		return nil
+	}
+	slotValue, _ := s.balanceProbeAttemptSlots.LoadOrStore(accountID, &openAIAdaptiveBalanceProbeAttemptSlot{})
+	slot, ok := slotValue.(*openAIAdaptiveBalanceProbeAttemptSlot)
+	if !ok {
+		return nil
+	}
+	return slot
 }
 
 func (s *openAIAdaptiveSchedulerStateStore) markBalanceInsufficient(
