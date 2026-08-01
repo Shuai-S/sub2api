@@ -864,6 +864,7 @@ func TestOpenAIAdaptiveInsufficientBalanceClassification(t *testing.T) {
 		&UpstreamFailoverError{StatusCode: http.StatusPaymentRequired, ResponseBody: []byte(`{"error":{"message":"payment required"}}`)},
 		&UpstreamFailoverError{StatusCode: http.StatusForbidden, ResponseBody: []byte(`{"error":{"code":"insufficient_balance","message":"top up"}}`)},
 		&UpstreamFailoverError{StatusCode: http.StatusBadRequest, ResponseBody: []byte(`{"error":{"message":"credit balance exhausted"}}`)},
+		&UpstreamFailoverError{StatusCode: http.StatusForbidden, ResponseBody: []byte(`{"error":{"type":"new_api_error","message":"用户额度不足, 剩余额度: ＄-0.035260 (request id: 202608010418101435097218268d9d6t9hYEYt1)"},"type":"error"}`)},
 	} {
 		require.True(t, isOpenAIAdaptiveInsufficientBalanceError(err))
 		require.False(t, openAIAdaptiveFailureHealthSample(err))

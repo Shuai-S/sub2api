@@ -201,6 +201,8 @@ func isOpenAIAdaptiveInsufficientBalanceText(value string) bool {
 		"billing_hard_limit_reached",
 		"credit balance exhausted",
 		"insufficient credit balance",
+		"额度不足",
+		"余额不足",
 	} {
 		if strings.Contains(lower, marker) {
 			return true
