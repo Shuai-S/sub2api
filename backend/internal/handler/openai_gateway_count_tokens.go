@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -192,14 +193,21 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 
 	forwardStart := time.Now()
 	if err := h.gatewayService.ForwardCountTokensAsAnthropic(c.Request.Context(), c, account, forwardBody, defaultMappedModel); err != nil {
-		h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
-			AccountID:      account.ID,
-			Success:        false,
-			DurationMs:     time.Since(forwardStart).Milliseconds(),
-			HealthSample:   false,
-			TerminalReason: "count_tokens_error",
-			Err:            err,
-		})
+		var failoverErr *service.UpstreamFailoverError
+		if errors.As(err, &failoverErr) {
+			h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(
+				c.Request.Context(), account.ID, err, nil, time.Since(forwardStart).Milliseconds(), false,
+			)
+		} else {
+			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
+				AccountID:      account.ID,
+				Success:        false,
+				DurationMs:     time.Since(forwardStart).Milliseconds(),
+				HealthSample:   false,
+				TerminalReason: "count_tokens_error",
+				Err:            err,
+			})
+		}
 		reqLog.Error("openai_count_tokens.forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		return
 	}

@@ -171,6 +171,12 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 			errMsg = "Upstream service temporarily unavailable"
 		}
 		writeAnthropicCountTokensError(c, resp.StatusCode, "upstream_error", errMsg)
+		if isOpenAIAdaptiveInsufficientBalanceResponse(resp.StatusCode, upstreamMsg, respBody) {
+			return &UpstreamFailoverError{
+				StatusCode:   resp.StatusCode,
+				ResponseBody: append([]byte(nil), respBody...),
+			}
+		}
 		if upstreamMsg == "" {
 			return fmt.Errorf("input_tokens upstream error: %d", resp.StatusCode)
 		}

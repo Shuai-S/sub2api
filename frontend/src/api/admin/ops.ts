@@ -249,6 +249,7 @@ export type OpsOpenAIAdaptiveLearningStatus =
   | 'unavailable'
   | 'cooldown'
   | 'half_open'
+  | 'insufficient_balance'
   | 'high_error'
   | 'saturated'
   | 'learning'
@@ -282,6 +283,7 @@ export interface OpsOpenAIAdaptiveLearningSummary {
   high_error_accounts: number
   cooldown_accounts: number
   half_open_accounts: number
+  insufficient_balance_accounts: number
   saturated_accounts: number
   unavailable_accounts: number
 }
@@ -336,6 +338,9 @@ export interface OpsOpenAIAdaptiveLearningAccount {
   last_capacity_failure_at?: string
   cooldown_until?: string
   cooldown_remaining_sec: number
+  balance_insufficient_at?: string
+  last_balance_probe_at?: string
+  balance_generation: number
 }
 
 export interface OpsOpenAIAdaptiveLearningResponse {

@@ -151,6 +151,25 @@ func TestOpenAIAdaptiveStatePersistenceFlushesOnlyDirtyRevisions(t *testing.T) {
 	require.Equal(t, 2, saveCalls)
 }
 
+func TestOpenAIAdaptiveStatePersistenceOmitsPerInstanceBalanceState(t *testing.T) {
+	now := time.Now()
+	state := validOpenAIAdaptivePersistenceState(1003, now)
+	state.BalanceInsufficientAt = now.Add(-time.Minute)
+	state.LastBalanceProbeAt = now
+	state.BalanceGeneration = 7
+
+	payload := mustEncodeOpenAIAdaptivePersistenceState(t, state)
+	require.NotContains(t, string(payload), "balance_insufficient")
+	require.NotContains(t, string(payload), "balance_probe")
+	require.NotContains(t, string(payload), "balance_generation")
+
+	restored, err := decodeOpenAIAdaptivePersistedState(state.AccountID, payload, now.Add(time.Second))
+	require.NoError(t, err)
+	require.Zero(t, restored.BalanceInsufficientAt)
+	require.Zero(t, restored.LastBalanceProbeAt)
+	require.Zero(t, restored.BalanceGeneration)
+}
+
 func TestOpenAIAdaptiveStatePersistenceKeepsConcurrentRevisionDirty(t *testing.T) {
 	cache := &fakeOpenAIAdaptiveStateCache{}
 	store := newOpenAIAdaptiveSchedulerStateStore()

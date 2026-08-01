@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -59,4 +60,20 @@ func TestOpenAIAdaptiveLearningUnlearnedRowsRemainSummarized(t *testing.T) {
 	require.Equal(t, 1, summary.UnlearnedAccounts)
 	require.Equal(t, 1, summary.LearningAccounts)
 	require.Equal(t, 1, summary.HighErrorAccounts)
+}
+
+func TestOpenAIAdaptiveLearningReportsInsufficientBalance(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	state := defaultOpenAIAdaptiveAccountState(1, cfg)
+	state.BalanceInsufficientAt = time.Now()
+	account := &Account{ID: 1, Status: StatusActive, Schedulable: true}
+
+	status, reason := openAIAdaptiveLearningAccountStatus(account, state, cfg, &AccountLoadInfo{}, 3, 0, time.Now(), true)
+	require.Equal(t, OpenAIAdaptiveLearningStatusInsufficientBalance, status)
+	require.Contains(t, reason, "insufficient balance")
+
+	summary := summarizeOpenAIAdaptiveLearningRows([]OpenAIAdaptiveSchedulerAccountLearningSnapshot{{
+		AccountID: 1, SchedulerStatus: status,
+	}})
+	require.Equal(t, 1, summary.InsufficientBalanceAccounts)
 }

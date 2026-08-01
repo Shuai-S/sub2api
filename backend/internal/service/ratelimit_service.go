@@ -39,6 +39,10 @@ type AccountRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
+type openAIInsufficientBalanceAdaptivePolicy interface {
+	ShouldManageOpenAIInsufficientBalance(ctx context.Context, account *Account) bool
+}
+
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
 type SuccessfulTestRecoveryResult struct {
 	ClearedError     bool
@@ -178,6 +182,13 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
+	if isOpenAIAdaptiveInsufficientBalanceResponse(statusCode, "", responseBody) {
+		if policy, ok := s.runtimeBlocker.(openAIInsufficientBalanceAdaptivePolicy); ok &&
+			policy.ShouldManageOpenAIInsufficientBalance(ctx, account) {
+			slog.Warn("openai_insufficient_balance_adaptive_probe_enabled", "account_id", account.ID, "status_code", statusCode)
+			return true
+		}
+	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。
@@ -228,7 +239,6 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	if upstreamMsg != "" {
 		upstreamMsg = truncateForLog([]byte(upstreamMsg), 512)
 	}
-
 	switch statusCode {
 	case 400:
 		// "organization has been disabled" → 永久禁用

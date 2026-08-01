@@ -85,6 +85,50 @@ func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesI
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
 }
 
+func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_PreservesInsufficientBalanceError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(body))
+	responseBody := `{"error":{"code":"insufficient_balance","message":"Please top up your balance"}}`
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusPaymentRequired,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(responseBody)),
+	}}
+	repo := &countTokensRuntimeStateRepo{}
+	rateLimitService := &RateLimitService{accountRepo: repo, cfg: &config.Config{}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+			Enabled: false, AllowInsecureHTTP: true,
+		}}},
+		httpUpstream:     upstream,
+		rateLimitService: rateLimitService,
+	}
+	rateLimitService.SetAccountRuntimeBlocker(svc)
+	account := &Account{
+		ID: 102, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "http://upstream.example"},
+	}
+
+	err := svc.ForwardCountTokensAsAnthropic(context.Background(), c, account, body, "gpt-5.3-codex")
+
+	require.Error(t, err)
+	require.True(t, isOpenAIAdaptiveInsufficientBalanceError(err))
+	require.Equal(t, http.StatusPaymentRequired, rec.Code)
+	require.Zero(t, repo.setErrorCalls)
+}
+
 func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_OAuthFallsBackWhenPlatformEndpointUnsupported(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

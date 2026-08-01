@@ -12,15 +12,16 @@ const (
 	openAIAdaptiveLearningDefaultLimit = 50
 	openAIAdaptiveLearningMaxLimit     = 500
 
-	OpenAIAdaptiveLearningStatusDisabled    = "disabled"
-	OpenAIAdaptiveLearningStatusUnavailable = "unavailable"
-	OpenAIAdaptiveLearningStatusCooldown    = "cooldown"
-	OpenAIAdaptiveLearningStatusHalfOpen    = "half_open"
-	OpenAIAdaptiveLearningStatusHighError   = "high_error"
-	OpenAIAdaptiveLearningStatusSaturated   = "saturated"
-	OpenAIAdaptiveLearningStatusLearning    = "learning"
-	OpenAIAdaptiveLearningStatusUnlearned   = "unlearned"
-	OpenAIAdaptiveLearningStatusHealthy     = "healthy"
+	OpenAIAdaptiveLearningStatusDisabled            = "disabled"
+	OpenAIAdaptiveLearningStatusUnavailable         = "unavailable"
+	OpenAIAdaptiveLearningStatusCooldown            = "cooldown"
+	OpenAIAdaptiveLearningStatusHalfOpen            = "half_open"
+	OpenAIAdaptiveLearningStatusInsufficientBalance = "insufficient_balance"
+	OpenAIAdaptiveLearningStatusHighError           = "high_error"
+	OpenAIAdaptiveLearningStatusSaturated           = "saturated"
+	OpenAIAdaptiveLearningStatusLearning            = "learning"
+	OpenAIAdaptiveLearningStatusUnlearned           = "unlearned"
+	OpenAIAdaptiveLearningStatusHealthy             = "healthy"
 )
 
 type OpenAIAdaptiveSchedulerLearningSnapshot struct {
@@ -84,15 +85,16 @@ type OpenAIAdaptiveSchedulerLearningSettingsSnapshot struct {
 }
 
 type OpenAIAdaptiveSchedulerLearningSummary struct {
-	TrackedAccounts     int `json:"tracked_accounts"`
-	UnlearnedAccounts   int `json:"unlearned_accounts"`
-	LearningAccounts    int `json:"learning_accounts"`
-	HealthyAccounts     int `json:"healthy_accounts"`
-	HighErrorAccounts   int `json:"high_error_accounts"`
-	CooldownAccounts    int `json:"cooldown_accounts"`
-	HalfOpenAccounts    int `json:"half_open_accounts"`
-	SaturatedAccounts   int `json:"saturated_accounts"`
-	UnavailableAccounts int `json:"unavailable_accounts"`
+	TrackedAccounts             int `json:"tracked_accounts"`
+	UnlearnedAccounts           int `json:"unlearned_accounts"`
+	LearningAccounts            int `json:"learning_accounts"`
+	HealthyAccounts             int `json:"healthy_accounts"`
+	HighErrorAccounts           int `json:"high_error_accounts"`
+	CooldownAccounts            int `json:"cooldown_accounts"`
+	HalfOpenAccounts            int `json:"half_open_accounts"`
+	InsufficientBalanceAccounts int `json:"insufficient_balance_accounts"`
+	SaturatedAccounts           int `json:"saturated_accounts"`
+	UnavailableAccounts         int `json:"unavailable_accounts"`
 }
 
 type OpenAIAdaptiveSchedulerAccountLearningSnapshot struct {
@@ -145,6 +147,9 @@ type OpenAIAdaptiveSchedulerAccountLearningSnapshot struct {
 	LastCapacityFailureAt   *time.Time `json:"last_capacity_failure_at,omitempty"`
 	CooldownUntil           *time.Time `json:"cooldown_until,omitempty"`
 	CooldownRemainingSec    int64      `json:"cooldown_remaining_sec"`
+	BalanceInsufficientAt   *time.Time `json:"balance_insufficient_at,omitempty"`
+	LastBalanceProbeAt      *time.Time `json:"last_balance_probe_at,omitempty"`
+	BalanceGeneration       uint64     `json:"balance_generation"`
 }
 
 func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
@@ -422,6 +427,9 @@ func buildOpenAIAdaptiveLearningAccountSnapshot(
 		LastCapacityFailureAt:      timePtrIfNotZero(state.LastCapacityFailureAt),
 		CooldownUntil:              cooldownUntil,
 		CooldownRemainingSec:       cooldownRemaining,
+		BalanceInsufficientAt:      timePtrIfNotZero(state.BalanceInsufficientAt),
+		LastBalanceProbeAt:         timePtrIfNotZero(state.LastBalanceProbeAt),
+		BalanceGeneration:          state.BalanceGeneration,
 	}
 }
 
@@ -443,6 +451,9 @@ func openAIAdaptiveLearningAccountStatus(
 			return OpenAIAdaptiveLearningStatusUnavailable, account.ErrorMessage
 		}
 		return OpenAIAdaptiveLearningStatusUnavailable, "account is not schedulable"
+	}
+	if isOpenAIAdaptiveBalanceInsufficient(state) {
+		return OpenAIAdaptiveLearningStatusInsufficientBalance, "probing account after insufficient balance"
 	}
 	if state.CooldownUntil.After(now) {
 		return OpenAIAdaptiveLearningStatusCooldown, "adaptive cooldown after capacity failures"
@@ -593,6 +604,7 @@ func normalizeOpenAIAdaptiveLearningStatusFilter(value string) string {
 		OpenAIAdaptiveLearningStatusUnavailable,
 		OpenAIAdaptiveLearningStatusCooldown,
 		OpenAIAdaptiveLearningStatusHalfOpen,
+		OpenAIAdaptiveLearningStatusInsufficientBalance,
 		OpenAIAdaptiveLearningStatusHighError,
 		OpenAIAdaptiveLearningStatusSaturated,
 		OpenAIAdaptiveLearningStatusLearning,
@@ -727,20 +739,22 @@ func openAIAdaptiveLearningStatusRank(status string) int {
 	switch status {
 	case OpenAIAdaptiveLearningStatusCooldown:
 		return 0
-	case OpenAIAdaptiveLearningStatusHalfOpen:
+	case OpenAIAdaptiveLearningStatusInsufficientBalance:
 		return 1
-	case OpenAIAdaptiveLearningStatusHighError:
+	case OpenAIAdaptiveLearningStatusHalfOpen:
 		return 2
-	case OpenAIAdaptiveLearningStatusSaturated:
+	case OpenAIAdaptiveLearningStatusHighError:
 		return 3
-	case OpenAIAdaptiveLearningStatusUnavailable:
+	case OpenAIAdaptiveLearningStatusSaturated:
 		return 4
-	case OpenAIAdaptiveLearningStatusLearning:
+	case OpenAIAdaptiveLearningStatusUnavailable:
 		return 5
-	case OpenAIAdaptiveLearningStatusUnlearned:
+	case OpenAIAdaptiveLearningStatusLearning:
 		return 6
-	case OpenAIAdaptiveLearningStatusDisabled:
+	case OpenAIAdaptiveLearningStatusUnlearned:
 		return 7
+	case OpenAIAdaptiveLearningStatusDisabled:
+		return 8
 	default:
 		return 8
 	}
@@ -759,6 +773,8 @@ func summarizeOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLe
 			summary.CooldownAccounts++
 		case OpenAIAdaptiveLearningStatusHalfOpen:
 			summary.HalfOpenAccounts++
+		case OpenAIAdaptiveLearningStatusInsufficientBalance:
+			summary.InsufficientBalanceAccounts++
 		case OpenAIAdaptiveLearningStatusHighError:
 			summary.HighErrorAccounts++
 		case OpenAIAdaptiveLearningStatusSaturated:

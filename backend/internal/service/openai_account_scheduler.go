@@ -101,16 +101,17 @@ type OpenAIAccountScheduleDecision struct {
 }
 
 type OpenAIAccountScheduleReport struct {
-	AccountID      int64
-	Success        bool
-	FirstTokenMs   *int
-	DurationMs     int64
-	Stream         bool
-	HealthSample   bool
-	Cooldown       bool
-	CooldownReason string
-	TerminalReason string
-	Err            error
+	AccountID           int64
+	Success             bool
+	FirstTokenMs        *int
+	DurationMs          int64
+	Stream              bool
+	HealthSample        bool
+	BalanceInsufficient bool
+	Cooldown            bool
+	CooldownReason      string
+	TerminalReason      string
+	Err                 error
 }
 
 type OpenAIAccountSchedulerMetricsSnapshot struct {

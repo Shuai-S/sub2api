@@ -45,6 +45,14 @@ func isOpenAIAccount(account *Account) bool {
 	return account != nil && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok)
 }
 
+func (s *OpenAIGatewayService) ShouldManageOpenAIInsufficientBalance(ctx context.Context, account *Account) bool {
+	if s == nil || account == nil || account.Platform != PlatformOpenAI {
+		return false
+	}
+	cfg := s.openAIAdaptiveSchedulerSettings(ctx)
+	return cfg.OpenAIAdaptiveSchedulerEnabled && cfg.OpenAIAdaptiveSchedulerMode == openAIAdaptiveSchedulerModeEnforce
+}
+
 // handleOpenAIAccountUpstreamError expects canonicalModel to be the model used
 // for scheduling after applying account mapping exactly once.
 func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, canonicalModel ...string) bool {
@@ -72,6 +80,8 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s == nil || account == nil {
 		return false
 	}
+	adaptiveBalanceManaged := s.ShouldManageOpenAIInsufficientBalance(stateCtx, account) &&
+		isOpenAIAdaptiveInsufficientBalanceResponse(statusCode, "", responseBody)
 	stateCtx = withTempUnschedulableModel(stateCtx, canonicalModel)
 	if s.rateLimitService != nil && len(canonicalModel) > 0 && s.rateLimitService.HandleUpstreamModelNotFound(stateCtx, account, canonicalModel[0], statusCode, responseBody) {
 		return true
@@ -79,7 +89,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	// Isolate a custom temporary-unschedulable match to the known upstream
 	// model before entering the generic account error path. This keeps the
 	// account available to other models and avoids the account runtime blocker.
-	if s.rateLimitService != nil && statusCode != http.StatusUnauthorized && len(canonicalModel) > 0 && strings.TrimSpace(canonicalModel[0]) != "" &&
+	if s.rateLimitService != nil && !adaptiveBalanceManaged && statusCode != http.StatusUnauthorized && len(canonicalModel) > 0 && strings.TrimSpace(canonicalModel[0]) != "" &&
 		s.rateLimitService.HandleTempUnschedulable(stateCtx, account, statusCode, responseBody, canonicalModel[0]) {
 		return true
 	}
@@ -92,7 +102,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	shouldDisable := s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
 	modelTempMatched := statusCode != http.StatusUnauthorized && tempUnschedulableModel(stateCtx, nil) != "" &&
 		len(matchTempUnschedulableRules(account, statusCode, responseBody)) > 0
-	if shouldDisable && !modelTempMatched {
+	if shouldDisable && !modelTempMatched && !adaptiveBalanceManaged {
 		s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
 	}
 	// Pool-mode retryable upstream errors are already bounded by the request-local

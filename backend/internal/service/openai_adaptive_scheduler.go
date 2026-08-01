@@ -19,6 +19,7 @@ const openAIAccountScheduleLayerAdaptive = "adaptive"
 var errOpenAIAdaptiveSchedulerFallback = errors.New("openai adaptive scheduler fallback")
 
 const openAIAdaptiveStickyCleanupMinInterval = 30 * time.Second
+const openAIAdaptiveBalanceProbeRetention = 10 * time.Minute
 
 type adaptiveOpenAIAccountScheduler struct {
 	service               *OpenAIGatewayService
@@ -54,6 +55,9 @@ type openAIAdaptiveAccountState struct {
 	RecentWindowStartedAt time.Time
 	LastCapacityFailureAt time.Time
 	CooldownUntil         time.Time
+	BalanceInsufficientAt time.Time
+	LastBalanceProbeAt    time.Time
+	BalanceGeneration     uint64
 	UpdatedAt             time.Time
 
 	revision          uint64
@@ -61,8 +65,19 @@ type openAIAdaptiveAccountState struct {
 }
 
 type openAIAdaptiveSchedulerStateStore struct {
-	mu     sync.RWMutex
-	states map[int64]*openAIAdaptiveAccountState
+	mu            sync.RWMutex
+	states        map[int64]*openAIAdaptiveAccountState
+	balanceProbes map[openAIAdaptiveBalanceProbeKey]openAIAdaptiveBalanceProbe
+}
+
+type openAIAdaptiveBalanceProbeKey struct {
+	accountID int64
+	requestID string
+}
+
+type openAIAdaptiveBalanceProbe struct {
+	generation uint64
+	createdAt  time.Time
 }
 
 type openAIAdaptiveCandidateScore struct {
@@ -180,7 +195,8 @@ func newAdaptiveOpenAIAccountScheduler(service *OpenAIGatewayService, stats *ope
 
 func newOpenAIAdaptiveSchedulerStateStore() *openAIAdaptiveSchedulerStateStore {
 	return &openAIAdaptiveSchedulerStateStore{
-		states: make(map[int64]*openAIAdaptiveAccountState),
+		states:        make(map[int64]*openAIAdaptiveAccountState),
+		balanceProbes: make(map[openAIAdaptiveBalanceProbeKey]openAIAdaptiveBalanceProbe),
 	}
 }
 
@@ -206,7 +222,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		s.metrics.recordSelect(decision)
 	}()
 
-	if selection, ok, err := s.selectByPreviousResponse(ctx, req, &decision); err != nil || ok {
+	if selection, ok, err := s.selectByPreviousResponse(ctx, req, cfg, &decision); err != nil || ok {
 		outcome := "previous_response"
 		if err != nil {
 			outcome = "previous_response_error"
@@ -214,6 +230,9 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 			outcome = "previous_response_empty"
 		}
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, outcome, err, start)
+		if selection != nil && selection.Account != nil {
+			s.state.registerBalanceProbe(selection.Account.ID, openAIAdaptiveRequestID(ctx), time.Now())
+		}
 		return selection, decision, err
 	}
 	selection, escapedSticky, err := s.selectByAdaptiveSticky(ctx, req, cfg)
@@ -221,6 +240,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return nil, decision, err
 	}
 	if selection != nil && selection.Account != nil {
+		s.state.registerBalanceProbe(selection.Account.ID, openAIAdaptiveRequestID(ctx), time.Now())
 		decision.Layer = openAIAccountScheduleLayerSessionSticky
 		decision.StickySessionHit = true
 		decision.SelectedAccountID = selection.Account.ID
@@ -251,9 +271,20 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 			"error", err,
 			"model", req.RequestedModel,
 		)
+		balanceAccountIDs := s.state.balanceInsufficientAccountIDs()
+		if len(balanceAccountIDs) > 0 {
+			req.ExcludedIDs = cloneExcludedAccountIDs(req.ExcludedIDs)
+			if req.ExcludedIDs == nil {
+				req.ExcludedIDs = make(map[int64]struct{})
+			}
+			for accountID := range balanceAccountIDs {
+				req.ExcludedIDs[accountID] = struct{}{}
+			}
+		}
 		return s.selectCurrentBaseline(ctx, req)
 	}
 	if selection != nil && selection.Account != nil {
+		s.state.registerBalanceProbe(selection.Account.ID, openAIAdaptiveRequestID(ctx), time.Now())
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "selected", nil, start)
@@ -337,6 +368,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectLegacyLoadAware(
 func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
+	cfg OpenAIAdaptiveSchedulerSettings,
 	decision *OpenAIAccountScheduleDecision,
 ) (*AccountSelectionResult, bool, error) {
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
@@ -356,6 +388,13 @@ func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 		return nil, true, err
 	}
 	if selection != nil && selection.Account != nil {
+		state := s.state.snapshot(selection.Account.ID, cfg)
+		if isOpenAIAdaptiveBalanceInsufficient(state) {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+			return nil, false, nil
+		}
 		if s.service.isOpenAIAccountRuntimeBlocked(selection.Account) ||
 			!s.baseline.isAccountTransportCompatible(selection.Account, req.RequiredTransport) ||
 			!s.baseline.isAccountRequestCompatible(ctx, selection.Account, req) {
@@ -422,6 +461,10 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		return nil, false, nil
 	}
 	state := s.state.snapshot(account.ID, cfg)
+	if isOpenAIAdaptiveBalanceInsufficient(state) {
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		return nil, false, nil
+	}
 	effectiveCapacity := effectiveOpenAIAdaptiveCapacity(account, state, cfg)
 	loadInfo := &AccountLoadInfo{AccountID: account.ID}
 	if s.service.concurrencyService != nil {
@@ -784,6 +827,21 @@ func buildOpenAIAdaptiveSelectionOrder(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 ) []openAIAdaptiveCandidateScore {
+	if len(candidates) > 1 {
+		normal := make([]openAIAdaptiveCandidateScore, 0, len(candidates))
+		balanceProbes := make([]openAIAdaptiveCandidateScore, 0, len(candidates))
+		for _, candidate := range candidates {
+			if isOpenAIAdaptiveBalanceInsufficient(candidate.state) {
+				balanceProbes = append(balanceProbes, candidate)
+			} else {
+				normal = append(normal, candidate)
+			}
+		}
+		if len(normal) > 0 && len(balanceProbes) > 0 {
+			order := buildOpenAIAdaptiveSelectionOrder(normal, req, cfg)
+			return append(order, buildOpenAIAdaptiveSelectionOrder(balanceProbes, req, cfg)...)
+		}
+	}
 	if len(candidates) <= 1 {
 		return append([]openAIAdaptiveCandidateScore(nil), candidates...)
 	}
@@ -1293,7 +1351,7 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 	if s == nil {
 		return
 	}
-	if report.HealthSample {
+	if report.HealthSample && !report.BalanceInsufficient {
 		s.baseline.ReportResult(report.AccountID, report.Success, report.FirstTokenMs)
 	}
 	if ctx == nil {
@@ -1302,6 +1360,20 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 	cfg := s.service.openAIAdaptiveSchedulerSettings(ctx)
 	if !cfg.OpenAIAdaptiveSchedulerEnabled {
 		return
+	}
+	requestID := openAIAdaptiveRequestID(ctx)
+	if report.BalanceInsufficient {
+		var account *Account
+		if !s.state.has(report.AccountID) {
+			account = s.reportAccountSnapshot(report.AccountID)
+		}
+		s.state.markBalanceInsufficient(account, report.AccountID, cfg, requestID, time.Now())
+		s.clearStickySessionsForCooldown(ctx, report.AccountID, "insufficient_balance")
+		s.logDiagnosticResult(ctx, cfg, report)
+		return
+	}
+	if report.Success {
+		s.state.recoverBalanceFromProbe(report.AccountID, requestID, time.Now())
 	}
 	var account *Account
 	if report.HealthSample && !s.state.has(report.AccountID) {
@@ -1349,7 +1421,12 @@ func (s *adaptiveOpenAIAccountScheduler) clearStickySessionsForCooldown(ctx cont
 }
 
 func openAIAdaptiveCooldownShouldClearSticky(reason string) bool {
-	return strings.TrimSpace(reason) == "concurrency_limit"
+	switch strings.TrimSpace(reason) {
+	case "concurrency_limit", "insufficient_balance":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *adaptiveOpenAIAccountScheduler) shouldRunStickyCleanup(accountID int64, now time.Time) bool {
@@ -1447,6 +1524,138 @@ func (s *openAIAdaptiveSchedulerStateStore) has(accountID int64) bool {
 	_, ok := s.states[accountID]
 	s.mu.RUnlock()
 	return ok
+}
+
+func openAIAdaptiveRequestID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if requestID := contextStringValue(ctx, ctxkey.RequestID); requestID != "" {
+		return requestID
+	}
+	return contextStringValue(ctx, ctxkey.ClientRequestID)
+}
+
+func isOpenAIAdaptiveBalanceInsufficient(state openAIAdaptiveAccountState) bool {
+	return !state.BalanceInsufficientAt.IsZero()
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) balanceInsufficientAccountIDs() map[int64]struct{} {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var accountIDs map[int64]struct{}
+	for accountID, state := range s.states {
+		if state == nil || !isOpenAIAdaptiveBalanceInsufficient(*state) {
+			continue
+		}
+		if accountIDs == nil {
+			accountIDs = make(map[int64]struct{})
+		}
+		accountIDs[accountID] = struct{}{}
+	}
+	return accountIDs
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) registerBalanceProbe(accountID int64, requestID string, now time.Time) {
+	requestID = strings.TrimSpace(requestID)
+	if s == nil || accountID <= 0 || requestID == "" {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.states[accountID]
+	if state == nil || !isOpenAIAdaptiveBalanceInsufficient(*state) {
+		return
+	}
+	s.cleanupBalanceProbesLocked(now)
+	state.LastBalanceProbeAt = now
+	s.balanceProbes[openAIAdaptiveBalanceProbeKey{accountID: accountID, requestID: requestID}] = openAIAdaptiveBalanceProbe{
+		generation: state.BalanceGeneration,
+		createdAt:  now,
+	}
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) markBalanceInsufficient(
+	account *Account,
+	accountID int64,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	requestID string,
+	now time.Time,
+) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.states[accountID]
+	if state == nil {
+		initial := defaultOpenAIAdaptiveAccountStateForAccount(account, accountID, cfg)
+		state = &initial
+		s.states[accountID] = state
+	}
+	key := openAIAdaptiveBalanceProbeKey{accountID: accountID, requestID: strings.TrimSpace(requestID)}
+	if probe, ok := s.balanceProbes[key]; ok && probe.generation == state.BalanceGeneration {
+		delete(s.balanceProbes, key)
+		state.LastBalanceProbeAt = now
+		state.BalanceInsufficientAt = now
+		return
+	}
+	state.BalanceGeneration++
+	state.BalanceInsufficientAt = now
+	state.LastBalanceProbeAt = time.Time{}
+	s.deleteBalanceProbesForAccountLocked(accountID)
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) recoverBalanceFromProbe(accountID int64, requestID string, now time.Time) bool {
+	requestID = strings.TrimSpace(requestID)
+	if s == nil || accountID <= 0 || requestID == "" {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupBalanceProbesLocked(now)
+	key := openAIAdaptiveBalanceProbeKey{accountID: accountID, requestID: requestID}
+	probe, ok := s.balanceProbes[key]
+	if !ok {
+		return false
+	}
+	delete(s.balanceProbes, key)
+	state := s.states[accountID]
+	if state == nil || !isOpenAIAdaptiveBalanceInsufficient(*state) || state.BalanceGeneration != probe.generation {
+		return false
+	}
+	state.BalanceInsufficientAt = time.Time{}
+	state.LastBalanceProbeAt = now
+	s.deleteBalanceProbesForAccountLocked(accountID)
+	return true
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) cleanupBalanceProbesLocked(now time.Time) {
+	for key, probe := range s.balanceProbes {
+		if now.Sub(probe.createdAt) > openAIAdaptiveBalanceProbeRetention {
+			delete(s.balanceProbes, key)
+		}
+	}
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) deleteBalanceProbesForAccountLocked(accountID int64) {
+	for key := range s.balanceProbes {
+		if key.accountID == accountID {
+			delete(s.balanceProbes, key)
+		}
+	}
 }
 
 func (s *openAIAdaptiveSchedulerStateStore) report(
@@ -1764,7 +1973,7 @@ func effectiveOpenAIAdaptiveCapacityWithLoad(
 	stable := stableOpenAIAdaptiveCapacity(account, state, cfg)
 	effective := stable
 	now := time.Now()
-	if shouldUseOpenAIAdaptiveHalfOpenProbe(state, cfg, now) {
+	if shouldUseOpenAIAdaptiveProbeCapacity(state, cfg, now) {
 		if cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity < effective {
 			effective = cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity
 		}
@@ -1780,6 +1989,10 @@ func effectiveOpenAIAdaptiveCapacityWithLoad(
 		}
 	}
 	return capOpenAIAdaptiveCapacity(account, effective)
+}
+
+func shouldUseOpenAIAdaptiveProbeCapacity(state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings, now time.Time) bool {
+	return isOpenAIAdaptiveBalanceInsufficient(state) || shouldUseOpenAIAdaptiveHalfOpenProbe(state, cfg, now)
 }
 
 func shouldUseOpenAIAdaptiveHalfOpenProbe(state openAIAdaptiveAccountState, cfg OpenAIAdaptiveSchedulerSettings, now time.Time) bool {

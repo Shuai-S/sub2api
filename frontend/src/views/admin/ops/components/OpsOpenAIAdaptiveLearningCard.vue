@@ -64,6 +64,7 @@ const statusFilterOptions = computed(() => [
   { value: 'high_error', label: t('admin.ops.openaiAdaptiveLearning.status.highError') },
   { value: 'cooldown', label: t('admin.ops.openaiAdaptiveLearning.status.cooldown') },
   { value: 'half_open', label: t('admin.ops.openaiAdaptiveLearning.status.halfOpen') },
+  { value: 'insufficient_balance', label: t('admin.ops.openaiAdaptiveLearning.status.insufficientBalance') },
   { value: 'saturated', label: t('admin.ops.openaiAdaptiveLearning.status.saturated') },
   { value: 'unavailable', label: t('admin.ops.openaiAdaptiveLearning.status.unavailable') },
   { value: 'disabled', label: t('admin.ops.openaiAdaptiveLearning.status.disabled') }
@@ -93,6 +94,7 @@ const statusKeyMap: Record<string, string> = {
   unavailable: 'admin.ops.openaiAdaptiveLearning.status.unavailable',
   cooldown: 'admin.ops.openaiAdaptiveLearning.status.cooldown',
   half_open: 'admin.ops.openaiAdaptiveLearning.status.halfOpen',
+  insufficient_balance: 'admin.ops.openaiAdaptiveLearning.status.insufficientBalance',
   high_error: 'admin.ops.openaiAdaptiveLearning.status.highError',
   saturated: 'admin.ops.openaiAdaptiveLearning.status.saturated',
   learning: 'admin.ops.openaiAdaptiveLearning.status.learning',
@@ -116,6 +118,7 @@ const statusClassMap: Record<string, string> = {
   unavailable: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   cooldown: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   half_open: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  insufficient_balance: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   high_error: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   saturated: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
   learning: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
@@ -142,7 +145,7 @@ const summaryItems = computed(() => {
     {
       key: 'risk',
       label: t('admin.ops.openaiAdaptiveLearning.summary.risk'),
-      value: formatNumber(s.high_error_accounts + s.cooldown_accounts + s.half_open_accounts + s.saturated_accounts),
+      value: formatNumber(s.high_error_accounts + s.cooldown_accounts + s.half_open_accounts + s.insufficient_balance_accounts + s.saturated_accounts),
       tone: 'text-orange-600 dark:text-orange-400'
     },
     {
@@ -338,7 +341,7 @@ function loadBarStyle(row: OpsOpenAIAdaptiveLearningAccount): string {
 }
 
 function loadBarClass(row: OpsOpenAIAdaptiveLearningAccount): string {
-  if (row.scheduler_status === 'cooldown' || row.scheduler_status === 'high_error') return 'bg-red-500'
+  if (row.scheduler_status === 'cooldown' || row.scheduler_status === 'high_error' || row.scheduler_status === 'insufficient_balance') return 'bg-red-500'
   if (row.load_percentage >= 90 || row.scheduler_status === 'saturated') return 'bg-orange-500'
   if (row.load_percentage >= 70 || row.waiting_count > 0) return 'bg-amber-500'
   return 'bg-green-500'
@@ -613,12 +616,14 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(row.last_failure_at || row.last_success_at)">
+                  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(row.last_balance_probe_at || row.balance_insufficient_at || row.last_failure_at || row.last_success_at)">
                     {{ row.cooldown_remaining_sec > 0
                       ? t('admin.ops.openaiAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
-                      : formatTime(row.last_failure_at || row.last_success_at) }}
+                      : row.scheduler_status === 'insufficient_balance'
+                        ? t('admin.ops.openaiAdaptiveLearning.balanceProbeAt', { value: formatTime(row.last_balance_probe_at || row.balance_insufficient_at) })
+                        : formatTime(row.last_failure_at || row.last_success_at) }}
                   </div>
-                  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+                  <div v-if="row.consecutive_failure > 0 && row.scheduler_status !== 'insufficient_balance'" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
                     {{ t('admin.ops.openaiAdaptiveLearning.consecutiveFailures', { count: row.consecutive_failure }) }}
                   </div>
                 </td>

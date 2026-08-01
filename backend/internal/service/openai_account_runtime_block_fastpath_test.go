@@ -84,6 +84,90 @@ func TestOpenAIRuntimeBlocker_IgnoresNonOpenAIFromRateLimitService(t *testing.T)
 	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
 }
 
+func TestOpenAIInsufficientBalanceAdaptivePolicyDoesNotPersistAccountError(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+	repo := &rateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := &Account{
+		ID: 4601, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusPaymentRequired),
+					"keywords":         []any{"top up"},
+					"duration_minutes": float64(30),
+				},
+			},
+		},
+	}
+
+	shouldDisable := gateway.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusPaymentRequired, http.Header{},
+		[]byte(`{"error":{"code":"insufficient_balance","message":"Please top up your balance"}}`),
+	)
+
+	require.True(t, shouldDisable)
+	require.Zero(t, repo.setErrorCalls)
+	require.Zero(t, repo.tempCalls)
+	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIInsufficientBalanceWithoutAdaptivePolicyKeepsPermanentError(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	repo := &rateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := &Account{ID: 4602, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+
+	shouldDisable := gateway.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusPaymentRequired, http.Header{},
+		[]byte(`{"error":{"message":"payment required"}}`),
+	)
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.True(t, gateway.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestOpenAIDeactivatedWorkspaceStillPersistsAccountError(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+	repo := &rateLimitAccountRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(gateway)
+	account := &Account{ID: 4603, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+
+	shouldDisable := gateway.handleOpenAIAccountUpstreamError(
+		context.Background(), account, http.StatusPaymentRequired, http.Header{},
+		[]byte(`{"detail":{"code":"deactivated_workspace"}}`),
+	)
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.setErrorCalls)
+}
+
 // 自 #4547（issue 4527 第4点）起，临时不可调度规则命中已知模型时按模型隔离：
 // 只封 (账号, 模型) 对，不再账号级一刀切；未知模型仍走账号级兜底
 // （见 TestOpenAITempUnschedulable_UnknownModelKeepsAccountRuntimeBlock）。

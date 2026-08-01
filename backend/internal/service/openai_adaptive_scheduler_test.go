@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 )
@@ -683,6 +685,199 @@ func TestEffectiveOpenAIAdaptiveCapacityWaitsForHalfOpenFailureThreshold(t *test
 
 	state.ConsecutiveCapacityFailure = 2
 	require.Equal(t, 5, effectiveOpenAIAdaptiveCapacity(&Account{Concurrency: 300}, state, cfg))
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceDoesNotRecordFailureAndUsesProbeCapacity(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity = 3
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	account := &Account{ID: 1, Concurrency: 1000}
+	state := defaultOpenAIAdaptiveAccountStateForAccount(account, account.ID, cfg)
+	state.EstimatedCapacity = 80
+	state.TotalSamples = 20
+	state.RecentSamples = 10
+	state.UpdatedAt = time.Now().Add(-time.Minute)
+	state.revision = 4
+	state.persistedRevision = 4
+	store.states[account.ID] = &state
+
+	store.markBalanceInsufficient(account, account.ID, cfg, "request-1", time.Now())
+	after := store.snapshot(account.ID, cfg)
+
+	require.True(t, isOpenAIAdaptiveBalanceInsufficient(after))
+	require.Equal(t, 80, after.EstimatedCapacity)
+	require.Equal(t, int64(20), after.TotalSamples)
+	require.Equal(t, 10, after.RecentSamples)
+	require.Zero(t, after.RecentFailures)
+	require.Zero(t, after.ConsecutiveFailure)
+	require.Zero(t, after.ConsecutiveCapacityFailure)
+	require.Equal(t, 3, effectiveOpenAIAdaptiveCapacity(account, after, cfg))
+	require.Equal(t, state.UpdatedAt, after.UpdatedAt)
+	require.Equal(t, state.revision, after.revision)
+	require.Empty(t, store.dirtySnapshots(time.Now(), openAIAdaptiveStateRetention))
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceRecoversOnlyFromCurrentProbeGeneration(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	account := &Account{ID: 1, Concurrency: 1000}
+	state := defaultOpenAIAdaptiveAccountStateForAccount(account, account.ID, cfg)
+	state.EstimatedCapacity = 80
+	state.ConsecutiveSuccess = 7
+	store.states[account.ID] = &state
+
+	store.markBalanceInsufficient(account, account.ID, cfg, "balance-error", time.Now())
+	generation := store.snapshot(account.ID, cfg).BalanceGeneration
+	require.Positive(t, generation)
+
+	require.False(t, store.recoverBalanceFromProbe(account.ID, "old-in-flight", time.Now()))
+	require.True(t, isOpenAIAdaptiveBalanceInsufficient(store.snapshot(account.ID, cfg)))
+
+	store.registerBalanceProbe(account.ID, "probe-1", time.Now())
+	require.True(t, store.recoverBalanceFromProbe(account.ID, "probe-1", time.Now()))
+	after := store.snapshot(account.ID, cfg)
+	require.False(t, isOpenAIAdaptiveBalanceInsufficient(after))
+	require.Equal(t, 80, after.EstimatedCapacity)
+	require.Equal(t, 7, after.ConsecutiveSuccess)
+	require.Zero(t, after.ConsecutiveFailure)
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceReportSkipsLearningAndProbeSuccessRecovers(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	state := defaultOpenAIAdaptiveAccountState(1, cfg)
+	state.EstimatedCapacity = 50
+	store.states[1] = &state
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: &OpenAIGatewayService{}, baseline: &defaultOpenAIAccountScheduler{}, state: store,
+	}
+	failureCtx := context.WithValue(context.Background(), ctxkey.RequestID, "failure")
+	scheduler.ReportScheduleResultWithContext(failureCtx, OpenAIAccountScheduleReport{
+		AccountID: 1, HealthSample: true, BalanceInsufficient: true, TerminalReason: "insufficient_balance",
+	})
+	afterFailure := store.snapshot(1, cfg)
+	require.True(t, isOpenAIAdaptiveBalanceInsufficient(afterFailure))
+	require.Zero(t, afterFailure.TotalSamples)
+
+	probeCtx := context.WithValue(context.Background(), ctxkey.RequestID, "probe")
+	store.registerBalanceProbe(1, "probe", time.Now())
+	scheduler.ReportScheduleResultWithContext(probeCtx, OpenAIAccountScheduleReport{
+		AccountID: 1, Success: true, HealthSample: true, TerminalReason: "success",
+	})
+	afterSuccess := store.snapshot(1, cfg)
+	require.False(t, isOpenAIAdaptiveBalanceInsufficient(afterSuccess))
+	require.Equal(t, int64(1), afterSuccess.TotalSamples)
+	require.Equal(t, 50, afterSuccess.EstimatedCapacity)
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceCandidatesFollowNormalCandidates(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	req := OpenAIAccountScheduleRequest{RequestedModel: "gpt-5", SessionHash: "balance-order"}
+	normalState := defaultOpenAIAdaptiveAccountState(1, cfg)
+	balanceState := defaultOpenAIAdaptiveAccountState(2, cfg)
+	balanceState.BalanceInsufficientAt = time.Now()
+	candidates := []openAIAdaptiveCandidateScore{
+		{account: &Account{ID: 2}, state: balanceState, score: 1},
+		{account: &Account{ID: 1}, state: normalState, score: 0},
+	}
+
+	order := buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+	require.Equal(t, int64(1), order[0].account.ID)
+	require.Equal(t, int64(2), order[1].account.ID)
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceInfrastructureFallbackExcludesBalanceAccounts(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+	balanceAccount := Account{ID: 31, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 100, Priority: 0}
+	normalAccount := Account{ID: 32, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 100, Priority: 10}
+	service := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{balanceAccount, normalAccount}},
+		cfg:         &config.Config{},
+	}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: service, baseline: &defaultOpenAIAccountScheduler{service: service}, state: newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.state.markBalanceInsufficient(&balanceAccount, balanceAccount.ID, cfg, "failure", time.Now())
+
+	selection, _, err := scheduler.Select(context.WithValue(context.Background(), ctxkey.RequestID, "fallback"), OpenAIAccountScheduleRequest{
+		Platform: PlatformOpenAI, RequestedModel: "gpt-5.1", RequiredTransport: OpenAIUpstreamTransportAny,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, normalAccount.ID, selection.Account.ID)
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceCapacityFullDoesNotFallback(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	cfg.OpenAIAdaptiveSchedulerHalfOpenProbeCapacity = 3
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+	account := Account{ID: 33, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 100}
+	serviceConfig := &config.Config{}
+	serviceConfig.Gateway.Scheduling.LoadBatchEnabled = true
+	service := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cfg:         serviceConfig,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{loadMap: map[int64]*AccountLoadInfo{
+			account.ID: {AccountID: account.ID, CurrentConcurrency: 3},
+		}}),
+	}
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service: service, baseline: &defaultOpenAIAccountScheduler{service: service}, state: newOpenAIAdaptiveSchedulerStateStore(),
+	}
+	scheduler.state.markBalanceInsufficient(&account, account.ID, cfg, "failure", time.Now())
+
+	selection, _, err := scheduler.Select(context.WithValue(context.Background(), ctxkey.RequestID, "capacity-full"), OpenAIAccountScheduleRequest{
+		Platform: PlatformOpenAI, RequestedModel: "gpt-5.1", RequiredTransport: OpenAIUpstreamTransportAny,
+	})
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, selection)
+}
+
+func TestOpenAIAdaptiveInsufficientBalanceClassification(t *testing.T) {
+	for _, err := range []error{
+		&UpstreamFailoverError{StatusCode: http.StatusPaymentRequired, ResponseBody: []byte(`{"error":{"message":"payment required"}}`)},
+		&UpstreamFailoverError{StatusCode: http.StatusForbidden, ResponseBody: []byte(`{"error":{"code":"insufficient_balance","message":"top up"}}`)},
+		&UpstreamFailoverError{StatusCode: http.StatusBadRequest, ResponseBody: []byte(`{"error":{"message":"credit balance exhausted"}}`)},
+	} {
+		require.True(t, isOpenAIAdaptiveInsufficientBalanceError(err))
+		require.False(t, openAIAdaptiveFailureHealthSample(err))
+		require.Empty(t, openAIAdaptiveFailureCooldownReason(err))
+		require.Equal(t, "insufficient_balance", classifyOpenAIAdaptiveTerminalReason(err, false))
+	}
+	require.False(t, isOpenAIAdaptiveInsufficientBalanceError(&UpstreamFailoverError{
+		StatusCode:   http.StatusPaymentRequired,
+		ResponseBody: []byte(`{"detail":{"code":"deactivated_workspace"}}`),
+	}))
+	require.False(t, isOpenAIAdaptiveInsufficientBalanceError(&UpstreamFailoverError{
+		StatusCode:   http.StatusTooManyRequests,
+		ResponseBody: []byte(`{"error":{"message":"quota exceeded"}}`),
+	}))
 }
 
 func TestOpenAIAdaptiveSchedulerAIMDDecreasesCapacityOnFailures(t *testing.T) {

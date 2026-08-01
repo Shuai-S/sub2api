@@ -15,23 +15,28 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureWithContext(ctx
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx context.Context, accountID int64, err error, firstTokenMs *int, durationMs int64, stream bool) {
+	balanceInsufficient := isOpenAIAdaptiveInsufficientBalanceError(err)
 	healthSample := openAIAdaptiveFailureHealthSample(err)
 	cooldownReason := openAIAdaptiveFailureCooldownReason(err)
 	s.ReportOpenAIAccountScheduleReportWithContext(ctx, OpenAIAccountScheduleReport{
-		AccountID:      accountID,
-		Success:        false,
-		FirstTokenMs:   firstTokenMs,
-		DurationMs:     durationMs,
-		Stream:         stream,
-		HealthSample:   healthSample,
-		Cooldown:       cooldownReason != "",
-		CooldownReason: cooldownReason,
-		TerminalReason: classifyOpenAIAdaptiveTerminalReason(err, healthSample),
-		Err:            err,
+		AccountID:           accountID,
+		Success:             false,
+		FirstTokenMs:        firstTokenMs,
+		DurationMs:          durationMs,
+		Stream:              stream,
+		HealthSample:        healthSample,
+		BalanceInsufficient: balanceInsufficient,
+		Cooldown:            cooldownReason != "",
+		CooldownReason:      cooldownReason,
+		TerminalReason:      classifyOpenAIAdaptiveTerminalReason(err, healthSample),
+		Err:                 err,
 	})
 }
 
 func openAIAdaptiveFailureHealthSample(err error) bool {
+	if isOpenAIAdaptiveInsufficientBalanceError(err) {
+		return false
+	}
 	healthSample := shouldLearnOpenAIAdaptiveFailure(err)
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
@@ -47,6 +52,9 @@ func openAIAdaptiveFailureHealthSample(err error) bool {
 
 func openAIAdaptiveFailureCooldownReason(err error) string {
 	if err == nil {
+		return ""
+	}
+	if isOpenAIAdaptiveInsufficientBalanceError(err) {
 		return ""
 	}
 	var failoverErr *UpstreamFailoverError
@@ -140,10 +148,65 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 	if err == nil {
 		return "failure"
 	}
+	if isOpenAIAdaptiveInsufficientBalanceError(err) {
+		return "insufficient_balance"
+	}
 	if !healthSample {
 		return "non_account_health_error"
 	}
 	return "account_health_failure"
+}
+
+func isOpenAIAdaptiveInsufficientBalanceError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		return isOpenAIAdaptiveInsufficientBalanceResponse(
+			failoverErr.StatusCode,
+			upstreamFailoverErrorMessageForAdaptive(failoverErr),
+			failoverErr.ResponseBody,
+		)
+	}
+	var dialErr *openAIWSDialError
+	if errors.As(err, &dialErr) {
+		return isOpenAIAdaptiveInsufficientBalanceResponse(dialErr.StatusCode, "", dialErr.ResponseBody)
+	}
+	return isOpenAIAdaptiveInsufficientBalanceText(err.Error())
+}
+
+func isOpenAIAdaptiveInsufficientBalanceResponse(statusCode int, message string, body []byte) bool {
+	if statusCode == http.StatusPaymentRequired {
+		code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(body)))
+		if code == "deactivated_workspace" || strings.Contains(strings.ToLower(string(body)), "deactivated_workspace") {
+			return false
+		}
+		return true
+	}
+	if statusCode != http.StatusBadRequest && statusCode != http.StatusForbidden {
+		return false
+	}
+	return isOpenAIAdaptiveInsufficientBalanceText(message) || isOpenAIAdaptiveInsufficientBalanceText(string(body))
+}
+
+func isOpenAIAdaptiveInsufficientBalanceText(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"insufficient_balance",
+		"insufficient balance",
+		"billing_hard_limit_reached",
+		"credit balance exhausted",
+		"insufficient credit balance",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldLearnOpenAIAdaptiveFailure(err error) bool {

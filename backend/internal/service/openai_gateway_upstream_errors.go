@@ -225,6 +225,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	if isOpenAIAdaptiveInsufficientBalanceResponse(statusCode, upstreamMsg, upstreamBody) {
+		return true
+	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
