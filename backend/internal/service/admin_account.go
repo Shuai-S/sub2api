@@ -480,7 +480,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Schedulable: true,
 	}
 	if input.RateSyncEnabled != nil && *input.RateSyncEnabled {
-		if !isUpstreamBillingProbeAccount(account) {
+		if !IsUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
 		if input.RateMultiplier != nil {
@@ -492,7 +492,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
 		account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
 	} else if input.ProbeEnabled != nil && *input.ProbeEnabled {
-		if !isUpstreamBillingProbeAccount(account) {
+		if !IsUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
 		if account.Extra == nil {
@@ -768,7 +768,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
 		delete(account.Extra, UpstreamBillingProbeExtraKey)
-		if !isUpstreamBillingProbeAccount(account) {
+		if !IsUpstreamBillingProbeAccount(account) {
 			delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
 			delete(account.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 		}
@@ -793,7 +793,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Priority = *input.Priority
 	}
 	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
-		if !isUpstreamBillingProbeAccount(account) {
+		if !IsUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
 		probeEnabled := true
@@ -855,7 +855,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 
 	billingSettingsAppliedAtomically := false
-	if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil || input.RateMultiplier != nil) && isUpstreamBillingProbeAccount(account) {
+	if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil || input.RateMultiplier != nil) && IsUpstreamBillingProbeAccount(account) {
 		if updater, ok := s.accountRepo.(accountBillingSettingsAtomicUpdater); ok {
 			if err := updater.UpdateWithUpstreamBillingSettings(ctx, account, requestedProbeEnabledUpdate, requestedRateSyncEnabledUpdate, input.RateMultiplier != nil); err != nil {
 				return nil, err
@@ -867,7 +867,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := s.accountRepo.Update(ctx, account); err != nil {
 			return nil, err
 		}
-		if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil) && isUpstreamBillingProbeAccount(account) {
+		if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil) && IsUpstreamBillingProbeAccount(account) {
 			updates := make(map[string]any, 2)
 			if requestedProbeEnabledUpdate != nil {
 				updates[UpstreamBillingProbeEnabledExtraKey] = *requestedProbeEnabledUpdate
@@ -986,7 +986,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			if !ok {
 				return nil, ErrAccountNotFound
 			}
-			if (input.ProbeEnabled != nil || input.RateSyncEnabled != nil) && !isUpstreamBillingProbeAccount(account) {
+			if (input.ProbeEnabled != nil || input.RateSyncEnabled != nil) && !IsUpstreamBillingProbeAccount(account) {
 				return nil, ErrUpstreamBillingProbeAccountInvalid
 			}
 		}

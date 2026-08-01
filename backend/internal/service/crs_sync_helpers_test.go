@@ -161,11 +161,14 @@ func TestReconcileCRSUpstreamBillingProbeExtra(t *testing.T) {
 		{name: "openai oauth", platform: PlatformOpenAI, typeName: AccountTypeOAuth},
 		{name: "gemini oauth", platform: PlatformGemini, typeName: AccountTypeOAuth},
 		{name: "gemini api key", platform: PlatformGemini, typeName: AccountTypeAPIKey},
+		{name: "grok api key", platform: PlatformGrok, typeName: AccountTypeAPIKey},
 	} {
-		t.Run(target.name+" removes inapplicable state", func(t *testing.T) {
+		t.Run(target.name+" reconciles managed state", func(t *testing.T) {
 			extra := mergeMap(existing.Extra, remote)
 			reconcileCRSUpstreamBillingProbeExtra(existing, target.platform, target.typeName, existing.Credentials, extra)
-			require.NotContains(t, extra, UpstreamBillingProbeEnabledExtraKey)
+			if IsUpstreamBillingProbeAccount(&Account{Platform: target.platform, Type: target.typeName}) {
+				require.Equal(t, false, extra[UpstreamBillingProbeEnabledExtraKey])
+			}
 			require.NotContains(t, extra, UpstreamBillingProbeExtraKey)
 		})
 	}

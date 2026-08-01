@@ -1144,7 +1144,7 @@
         </div>
 
         <div
-          v-if="form.platform === 'openai'"
+          v-if="supportsUpstreamBilling(form.platform, form.type)"
           class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
         >
           <div class="flex items-center justify-between gap-4">
@@ -2783,7 +2783,7 @@
             min="0"
             step="0.0001"
             class="input"
-            :disabled="form.platform === 'openai' && form.type === 'apikey' && upstreamBillingRateSyncEnabled"
+            :disabled="supportsUpstreamBilling(form.platform, form.type) && upstreamBillingRateSyncEnabled"
             data-testid="account-rate-multiplier"
           />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
@@ -3633,6 +3633,7 @@ import {
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import { supportsUpstreamBilling } from '@/utils/upstreamBilling'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -4663,8 +4664,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
   try {
     const account = await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
     if (
-      payload.platform === 'openai' &&
-      payload.type === 'apikey' &&
+      supportsUpstreamBilling(payload.platform, payload.type) &&
       payload.upstream_billing_probe_enabled === true
     ) {
       try {
@@ -5221,11 +5221,13 @@ const handleSubmit = async () => {
     group_ids: form.group_ids,
     extra,
     upstream_billing_probe_enabled:
-      form.platform === 'openai' ? upstreamBillingAutoProbeEnabled.value : undefined,
+      supportsUpstreamBilling(form.platform, form.type) ? upstreamBillingAutoProbeEnabled.value : undefined,
     upstream_billing_rate_sync_enabled:
-      form.platform === 'openai' ? upstreamBillingRateSyncEnabled.value : undefined,
+      supportsUpstreamBilling(form.platform, form.type) ? upstreamBillingRateSyncEnabled.value : undefined,
     rate_multiplier:
-      form.platform === 'openai' && upstreamBillingRateSyncEnabled.value ? undefined : form.rate_multiplier,
+      supportsUpstreamBilling(form.platform, form.type) && upstreamBillingRateSyncEnabled.value
+        ? undefined
+        : form.rate_multiplier,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
 }

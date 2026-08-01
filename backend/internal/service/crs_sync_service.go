@@ -1174,7 +1174,7 @@ func reconcileCRSUpstreamBillingProbeExtra(
 		return
 	}
 	target := &Account{Platform: targetPlatform, Type: targetType, Credentials: targetCredentials}
-	if targetPlatform == PlatformOpenAI && targetType == AccountTypeAPIKey {
+	if IsUpstreamBillingProbeAccount(target) {
 		if enabled, ok := existing.Extra[UpstreamBillingProbeEnabledExtraKey]; ok {
 			extra[UpstreamBillingProbeEnabledExtraKey] = enabled
 		}

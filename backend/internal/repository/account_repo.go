@@ -643,7 +643,7 @@ func lockAndMergeAccountProbeExtra(ctx context.Context, client *dbent.Client, ac
 	} {
 		delete(extra, key)
 	}
-	probeAccount := account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeAPIKey
+	probeAccount := service.IsUpstreamBillingProbeAccount(account)
 	currentProbeEnabled, currentProbeSet, err := decodeAccountExtraBool(currentEnabled)
 	if err != nil {
 		return nil, err
@@ -770,13 +770,13 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 						)
 					)
 				THEN (CASE
-						WHEN platform = 'openai' THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
+						WHEN platform IN ('openai', 'anthropic', 'gemini', 'grok') THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
 						ELSE COALESCE(extra, '{}'::jsonb)
 					END)
 					- 'ollama_cloud_usage_session'
 					- 'ollama_cloud_usage_auto_refresh'
 					- 'ollama_cloud_usage_snapshot'
-				WHEN platform = 'openai'
+				WHEN platform IN ('openai', 'anthropic', 'gemini', 'grok')
 					AND type = 'apikey'
 					AND credentials IS DISTINCT FROM $1::jsonb
 				THEN COALESCE(extra, '{}'::jsonb) - 'upstream_billing_probe'
@@ -2963,8 +2963,8 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		whereClause += " AND COALESCE(extra ->> 'upstream_billing_rate_sync_enabled', 'false') <> 'true'"
 	}
 	if updates.ProbeEnabled != nil || updates.RateSyncEnabled != nil {
-		whereClause += " AND platform = $" + itoa(idx) + " AND type = $" + itoa(idx+1)
-		args = append(args, service.PlatformOpenAI, service.AccountTypeAPIKey)
+		whereClause += " AND platform IN ($" + itoa(idx) + ", $" + itoa(idx+1) + ", $" + itoa(idx+2) + ", $" + itoa(idx+3) + ") AND type = $" + itoa(idx+4)
+		args = append(args, service.PlatformOpenAI, service.PlatformAnthropic, service.PlatformGemini, service.PlatformGrok, service.AccountTypeAPIKey)
 	}
 	query := "UPDATE accounts SET " + joinClauses(setClauses, ", ") + whereClause
 
@@ -3509,7 +3509,7 @@ func (r *accountRepository) ListDueUpstreamBillingProbeAccounts(ctx context.Cont
 			FROM accounts
 			WHERE deleted_at IS NULL
 				AND status = 'active'
-				AND platform = 'openai'
+				AND platform IN ('openai', 'anthropic', 'gemini', 'grok')
 				AND type = 'apikey'
 				AND extra @> '{"upstream_billing_probe_enabled": true}'::jsonb
 		), parsed AS MATERIALIZED (

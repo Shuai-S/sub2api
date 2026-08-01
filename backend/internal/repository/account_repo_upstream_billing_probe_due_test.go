@@ -28,7 +28,7 @@ func TestAccountRepositoryListDueUpstreamBillingProbeAccountsBoundsQuery(t *test
 	normalized := normalizeSQLWhitespace(capturedSQL)
 	require.Contains(t, normalized, "deleted_at IS NULL")
 	require.Contains(t, normalized, "status = 'active'")
-	require.Contains(t, normalized, "platform = 'openai'")
+	require.Contains(t, normalized, "platform IN ('openai', 'anthropic', 'gemini', 'grok')")
 	require.Contains(t, normalized, "type = 'apikey'")
 	require.Contains(t, normalized, `extra @> '{"upstream_billing_probe_enabled": true}'::jsonb`)
 	require.Contains(t, normalized, "jsonb_path_query_first_tz")

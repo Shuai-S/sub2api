@@ -100,6 +100,7 @@ import { useI18n } from 'vue-i18n'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Account, UpstreamBillingProbeSnapshot } from '@/types'
+import { supportsUpstreamBilling } from '@/utils/upstreamBilling'
 
 const props = withDefaults(defineProps<{
   account: Account
@@ -116,7 +117,7 @@ defineEmits<{
 
 const { t } = useI18n()
 const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000
-const eligible = computed(() => props.account.platform === 'openai' && props.account.type === 'apikey')
+const eligible = computed(() => supportsUpstreamBilling(props.account.platform, props.account.type))
 const snapshot = computed<UpstreamBillingProbeSnapshot | undefined>(() => props.account.extra?.upstream_billing_probe)
 const data = computed(() => snapshot.value?.data)
 const probeEnabled = computed(() => props.account.extra?.upstream_billing_probe_enabled === true)

@@ -112,15 +112,28 @@ async function selectButtonByText(wrapper: ReturnType<typeof mountModal>, text: 
 }
 
 async function submitApiKeyAccount(
-  platform: 'openai' | 'anthropic',
+  platform: 'openai' | 'anthropic' | 'gemini' | 'grok',
   enableLongContextBilling = false,
   disableUpstreamBillingProbe = false,
   enableUpstreamBillingRateSync = false
 ) {
   const wrapper = mountModal()
-  await selectButtonByText(wrapper, platform === 'openai' ? 'OpenAI' : 'admin.accounts.claudeConsole')
-  if (platform === 'openai') {
-    await selectButtonByText(wrapper, 'API Key')
+  switch (platform) {
+    case 'openai':
+      await selectButtonByText(wrapper, 'OpenAI')
+      await selectButtonByText(wrapper, 'API Key')
+      break
+    case 'anthropic':
+      await selectButtonByText(wrapper, 'admin.accounts.claudeConsole')
+      break
+    case 'gemini':
+      await selectButtonByText(wrapper, 'Gemini')
+      await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+      break
+    case 'grok':
+      await selectButtonByText(wrapper, 'Grok')
+      await wrapper.get('[data-testid="grok-account-type-api-key"]').trigger('click')
+      break
   }
   await wrapper.get('form#create-account-form input[type="text"]').setValue(`${platform} account`)
   await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
@@ -176,6 +189,20 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
+
+  it.each(['anthropic', 'gemini', 'grok'] as const)(
+    'enables upstream billing probes and performs the initial probe for %s API key accounts',
+    async (platform) => {
+      createAccountMock.mockResolvedValueOnce({ id: 42, platform, type: 'apikey' })
+
+      await submitApiKeyAccount(platform)
+
+      const payload = createAccountMock.mock.calls[0]?.[0]
+      expect(payload?.upstream_billing_probe_enabled).toBe(true)
+      expect(payload?.upstream_billing_rate_sync_enabled).toBe(false)
+      expect(probeUpstreamBillingMock).toHaveBeenCalledWith(42)
+    }
+  )
 
   it('enabling upstream rate sync keeps probing on and omits the manual account rate', async () => {
     await submitApiKeyAccount('openai', false, true, true)
@@ -247,12 +274,12 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(true)
   })
 
-  it('omits the OpenAI setting for non-OpenAI account creation', async () => {
+  it('keeps OpenAI-only billing settings isolated while enabling Anthropic upstream probing', async () => {
     await submitApiKeyAccount('anthropic')
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
-    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBeUndefined()
+    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
 
   it('submits Claude Code upstream mimicry for an Anthropic API key account', async () => {

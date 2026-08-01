@@ -653,6 +653,24 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.upstream_billing_probe_enabled).toBe(true)
   })
 
+  it.each(['anthropic', 'gemini', 'grok'] as const)(
+    'shows upstream billing controls for %s API key accounts',
+    (platform) => {
+      const account = { ...buildAccount(), platform }
+      const wrapper = mountModal(account)
+
+      expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="upstream-billing-rate-sync"]').exists()).toBe(true)
+    }
+  )
+
+  it('does not show upstream billing controls for Gemini service accounts', () => {
+    const wrapper = mountModal(buildVertexAccount())
+
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-rate-sync"]').exists()).toBe(false)
+  })
+
   it('enabling upstream rate sync disables manual rate editing and submits coupled switches', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset().mockResolvedValue(account)

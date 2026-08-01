@@ -18,6 +18,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/google/uuid"
@@ -54,7 +55,7 @@ var (
 		"UPSTREAM_BILLING_PROBE_UNAVAILABLE", "upstream billing probe is unavailable",
 	)
 	ErrUpstreamBillingProbeAccountInvalid = infraerrors.BadRequest(
-		"UPSTREAM_BILLING_PROBE_ACCOUNT_INVALID", "account is not an OpenAI API key account",
+		"UPSTREAM_BILLING_PROBE_ACCOUNT_INVALID", "account is not a supported provider API key account",
 	)
 	ErrUpstreamBillingProbeIdentityChanged = infraerrors.Conflict(
 		"UPSTREAM_BILLING_PROBE_IDENTITY_CHANGED", "account identity changed during upstream billing probe; retry the probe",
@@ -355,7 +356,7 @@ func (s *UpstreamBillingProbeService) RunDue(ctx context.Context) error {
 	due := make([]Account, 0, len(accounts))
 	for i := range accounts {
 		account := accounts[i]
-		if !isUpstreamBillingProbeAccount(&account) || !account.IsActive() || !upstreamBillingProbeEnabled(&account) {
+		if !IsUpstreamBillingProbeAccount(&account) || !account.IsActive() || !upstreamBillingProbeEnabled(&account) {
 			continue
 		}
 		snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
@@ -457,7 +458,7 @@ func (s *UpstreamBillingProbeService) probeAccountWithMode(ctx context.Context, 
 		if loadErr != nil {
 			return nil, loadErr
 		}
-		if !isUpstreamBillingProbeAccount(account) {
+		if !IsUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
 		if requireEnabled {
@@ -565,7 +566,7 @@ func (s *UpstreamBillingProbeService) SetAccountEnabled(ctx context.Context, acc
 	if err != nil {
 		return err
 	}
-	if !isUpstreamBillingProbeAccount(account) {
+	if !IsUpstreamBillingProbeAccount(account) {
 		return ErrUpstreamBillingProbeAccountInvalid
 	}
 	updates := map[string]any{UpstreamBillingProbeEnabledExtraKey: enabled}
@@ -580,14 +581,11 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 	if s.accountTestService == nil || s.accountTestService.httpUpstream == nil {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "transport_unavailable", 0)
 	}
-	apiKey := account.GetOpenAIApiKey()
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
 	if apiKey == "" {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "missing_api_key", 0)
 	}
-	baseURL := account.GetOpenAIBaseURL()
-	if baseURL == "" {
-		baseURL = "https://api.openai.com"
-	}
+	baseURL := upstreamBillingProbeBaseURL(account)
 	normalizedBaseURL, err := s.accountTestService.validateUpstreamBaseURL(baseURL)
 	if err != nil {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "invalid_base_url", 0)
@@ -602,18 +600,12 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 		}
 		proxyURL = account.Proxy.URL()
 	}
-	probeURL := buildOpenAIEndpointURL(normalizedBaseURL, "/v1/sub2api/billing")
 	probeCtx, cancel := context.WithTimeout(ctx, upstreamBillingProbeRequestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, probeURL, bytes.NewReader(nil))
+	req, err := buildUpstreamBillingProbeRequest(probeCtx, account, normalizedBaseURL, apiKey)
 	if err != nil {
 		return s.persistProbeFailure(ctx, account, intervalMinutes, now, 0, "request_build_failed", 0)
 	}
-	reqCtx := WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI)
-	req = req.WithContext(WithHTTPUpstreamRedirectsDisabled(reqCtx))
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	account.ApplyHeaderOverrides(req.Header)
 	var tlsProfile *tlsfingerprint.Profile
 	if s.accountTestService.tlsFPProfileService != nil {
 		tlsProfile = s.accountTestService.tlsFPProfileService.ResolveTLSProfile(account)
@@ -772,6 +764,53 @@ func NormalizeUpstreamBillingRateMultiplier(value float64) (float64, bool) {
 
 func probeFloatPtr(value float64) *float64 {
 	return &value
+}
+
+func upstreamBillingProbeBaseURL(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	switch account.Platform {
+	case PlatformOpenAI:
+		return account.GetOpenAIBaseURL()
+	case PlatformAnthropic:
+		return account.GetBaseURL()
+	case PlatformGemini:
+		return account.GetGeminiBaseURL(geminicli.AIStudioBaseURL)
+	case PlatformGrok:
+		return account.GetGrokBaseURL()
+	default:
+		return ""
+	}
+}
+
+func buildUpstreamBillingProbeRequest(ctx context.Context, account *Account, baseURL, apiKey string) (*http.Request, error) {
+	if !IsUpstreamBillingProbeAccount(account) {
+		return nil, ErrUpstreamBillingProbeAccountInvalid
+	}
+	probeURL := buildOpenAIEndpointURL(baseURL, "/v1/sub2api/billing")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, bytes.NewReader(nil))
+	if err != nil {
+		return nil, err
+	}
+	reqCtx := WithHTTPUpstreamRedirectsDisabled(req.Context())
+	if account != nil && account.Platform == PlatformOpenAI {
+		reqCtx = WithHTTPUpstreamProfile(reqCtx, HTTPUpstreamProfileOpenAI)
+	}
+	req = req.WithContext(reqCtx)
+	req.Header.Set("Accept", "application/json")
+	switch account.Platform {
+	case PlatformOpenAI, PlatformGrok:
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	case PlatformAnthropic:
+		setAnthropicAPIKeyAuthHeader(req.Header, account, apiKey)
+	case PlatformGemini:
+		req.Header.Set("x-goog-api-key", apiKey)
+	default:
+		return nil, ErrUpstreamBillingProbeAccountInvalid
+	}
+	account.ApplyHeaderOverrides(req.Header)
+	return req, nil
 }
 
 func parseUpstreamBillingProbeResponse(body []byte) (map[string]any, error) {
@@ -937,6 +976,23 @@ func decodeUpstreamBillingProbeSnapshot(extra map[string]any) *UpstreamBillingPr
 	return &snapshot
 }
 
+// IsUpstreamBillingProbeAccount reports whether an account participates in the
+// shared Sub2API-compatible upstream billing probe contract.
+func IsUpstreamBillingProbeAccount(account *Account) bool {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	switch account.Platform {
+	case PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok:
+		return true
+	default:
+		return false
+	}
+}
+
+// isUpstreamBillingProbeAccount remains OpenAI-specific for the OpenAI
+// scheduler's cached-cost fast path. Other providers consume the synchronized
+// accounts.rate_multiplier and do not opt into that scheduler behavior.
 func isUpstreamBillingProbeAccount(account *Account) bool {
 	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey
 }

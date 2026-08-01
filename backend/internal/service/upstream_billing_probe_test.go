@@ -155,6 +155,144 @@ func (r *upstreamBillingProbeAccountRepo) FindByExtraField(_ context.Context, ke
 	return result, nil
 }
 
+func TestIsUpstreamBillingProbeAccountSupportsOnlyProviderAPIKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		typeName string
+		want     bool
+	}{
+		{name: "openai api key", platform: PlatformOpenAI, typeName: AccountTypeAPIKey, want: true},
+		{name: "anthropic api key", platform: PlatformAnthropic, typeName: AccountTypeAPIKey, want: true},
+		{name: "gemini api key", platform: PlatformGemini, typeName: AccountTypeAPIKey, want: true},
+		{name: "grok api key", platform: PlatformGrok, typeName: AccountTypeAPIKey, want: true},
+		{name: "openai oauth", platform: PlatformOpenAI, typeName: AccountTypeOAuth, want: false},
+		{name: "anthropic bedrock", platform: PlatformAnthropic, typeName: AccountTypeBedrock, want: false},
+		{name: "gemini service account", platform: PlatformGemini, typeName: AccountTypeServiceAccount, want: false},
+		{name: "grok oauth", platform: PlatformGrok, typeName: AccountTypeOAuth, want: false},
+		{name: "other api key", platform: PlatformAntigravity, typeName: AccountTypeAPIKey, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{Platform: tt.platform, Type: tt.typeName}
+			require.Equal(t, tt.want, IsUpstreamBillingProbeAccount(account))
+		})
+	}
+}
+
+func TestBuildUpstreamBillingProbeRequestUsesProviderAuthentication(t *testing.T) {
+	tests := []struct {
+		name          string
+		platform      string
+		baseURL       string
+		extra         map[string]any
+		wantURL       string
+		wantAuth      string
+		wantXAPIKey   string
+		wantGoogleKey string
+		wantProfile   HTTPUpstreamProfile
+	}{
+		{
+			name:        "openai bearer and v1 path",
+			platform:    PlatformOpenAI,
+			baseURL:     "https://relay.example/v1",
+			wantURL:     "https://relay.example/v1/sub2api/billing",
+			wantAuth:    "Bearer test-key",
+			wantProfile: HTTPUpstreamProfileOpenAI,
+		},
+		{
+			name:        "anthropic x api key",
+			platform:    PlatformAnthropic,
+			baseURL:     "https://relay.example",
+			wantURL:     "https://relay.example/v1/sub2api/billing",
+			wantXAPIKey: "test-key",
+		},
+		{
+			name:     "anthropic bearer override",
+			platform: PlatformAnthropic,
+			baseURL:  "https://relay.example/anthropic/v1",
+			extra: map[string]any{
+				anthropicAPIKeyAuthSchemeExtraKey: AnthropicAPIKeyAuthSchemeAuthorizationBearer,
+			},
+			wantURL:     "https://relay.example/anthropic/v1/sub2api/billing",
+			wantAuth:    "Bearer test-key",
+			wantProfile: HTTPUpstreamProfileDefault,
+		},
+		{
+			name:          "gemini google api key",
+			platform:      PlatformGemini,
+			baseURL:       "https://relay.example/v1beta",
+			wantURL:       "https://relay.example/v1beta/sub2api/billing",
+			wantGoogleKey: "test-key",
+		},
+		{
+			name:        "grok bearer",
+			platform:    PlatformGrok,
+			baseURL:     "https://api.x.ai/v1",
+			wantURL:     "https://api.x.ai/v1/sub2api/billing",
+			wantAuth:    "Bearer test-key",
+			wantProfile: HTTPUpstreamProfileDefault,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{
+				Platform:    tt.platform,
+				Type:        AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "test-key"},
+				Extra:       tt.extra,
+			}
+			req, err := buildUpstreamBillingProbeRequest(context.Background(), account, tt.baseURL, "test-key")
+			require.NoError(t, err)
+			require.Equal(t, tt.wantURL, req.URL.String())
+			require.Equal(t, http.MethodGet, req.Method)
+			require.Equal(t, "application/json", req.Header.Get("Accept"))
+			require.Equal(t, tt.wantAuth, req.Header.Get("Authorization"))
+			require.Equal(t, tt.wantXAPIKey, req.Header.Get("x-api-key"))
+			require.Equal(t, tt.wantGoogleKey, req.Header.Get("x-goog-api-key"))
+			require.Equal(t, tt.wantProfile, HTTPUpstreamProfileFromContext(req.Context()))
+			require.True(t, HTTPUpstreamRedirectsDisabled(req.Context()))
+		})
+	}
+}
+
+func TestUpstreamBillingProbeSupportedPlatformsApplyResolvedRate(t *testing.T) {
+	for index, platform := range []string{PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok} {
+		t.Run(platform, func(t *testing.T) {
+			currentRate := 1.25
+			account := &Account{
+				ID:             int64(index + 1),
+				Platform:       platform,
+				Type:           AccountTypeAPIKey,
+				Status:         StatusActive,
+				RateMultiplier: &currentRate,
+				Credentials: map[string]any{
+					"api_key":  "test-key",
+					"base_url": "https://relay.example/v1",
+				},
+				Extra: map[string]any{
+					UpstreamBillingRateSyncEnabledExtraKey: true,
+				},
+			}
+			repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+			svc := newUpstreamBillingProbeTestService(repo, &upstreamBillingProbeHTTPStub{}, &upstreamBillingProbeSettingRepo{})
+
+			snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+
+			require.NoError(t, err)
+			require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+			require.NotNil(t, snapshot.RateSync)
+			require.Equal(t, UpstreamBillingRateSyncStatusApplied, snapshot.RateSync.Status)
+			require.InDelta(t, 0.8, account.BillingRateMultiplier(), 1e-12)
+			require.Len(t, repo.rateTargets[account.ID], 1)
+			require.NotNil(t, repo.rateTargets[account.ID][0])
+			require.InDelta(t, 0.8, *repo.rateTargets[account.ID][0], 1e-12)
+		})
+	}
+}
+
 type upstreamBillingProbeSettingRepo struct {
 	SettingRepository
 	mu     sync.Mutex

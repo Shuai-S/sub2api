@@ -443,7 +443,27 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
-  it('非 OpenAI API Key 目标不显示上游倍率自动探测批量开关', () => {
+  it.each(['anthropic', 'gemini', 'grok'] as const)(
+    '%s API Key 目标显示上游倍率批量开关',
+    (platform) => {
+      const wrapper = mountModal({ selectedPlatforms: [platform], selectedTypes: ['apikey'] })
+
+      expect(wrapper.find('#bulk-edit-upstream-billing-auto-probe-enabled').exists()).toBe(true)
+      expect(wrapper.find('#bulk-edit-upstream-billing-rate-sync-enabled').exists()).toBe(true)
+    }
+  )
+
+  it('四个平台的 API Key 混合选择仍显示上游倍率批量开关', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai', 'anthropic', 'gemini', 'grok'],
+      selectedTypes: ['apikey']
+    })
+
+    expect(wrapper.find('#bulk-edit-upstream-billing-auto-probe-enabled').exists()).toBe(true)
+    expect(wrapper.find('#bulk-edit-upstream-billing-rate-sync-enabled').exists()).toBe(true)
+  })
+
+  it('不支持的账号类型不显示上游倍率自动探测批量开关', () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']

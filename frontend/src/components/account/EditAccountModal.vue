@@ -1469,7 +1469,7 @@
             min="0"
             step="0.0001"
             class="input"
-            :disabled="account?.platform === 'openai' && account?.type === 'apikey' && upstreamBillingRateSyncEnabled"
+            :disabled="supportsUpstreamBilling(account?.platform ?? '', account?.type ?? '') && upstreamBillingRateSyncEnabled"
             data-testid="account-rate-multiplier"
           />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
@@ -1681,7 +1681,7 @@
       </div>
 
       <div
-        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        v-if="supportsUpstreamBilling(account?.platform ?? '', account?.type ?? '')"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -2722,6 +2722,7 @@ import {
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import { supportsUpstreamBilling } from '@/utils/upstreamBilling'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -4154,7 +4155,7 @@ const handleSubmit = async () => {
       updatePayload.load_factor = 0
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
-    if (props.account.platform === 'openai' && props.account.type === 'apikey') {
+    if (supportsUpstreamBilling(props.account.platform, props.account.type)) {
       updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
       updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
       if (upstreamBillingRateSyncEnabled.value) delete updatePayload.rate_multiplier

@@ -855,8 +855,8 @@
         </div>
       </div>
 
-      <!-- Upstream billing auto probe (OpenAI API Key only) -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- Upstream billing auto probe (supported provider API keys only) -->
+      <div v-if="allUpstreamBillingAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <div class="flex-1 pr-4">
             <label
@@ -894,8 +894,8 @@
         </div>
       </div>
 
-      <!-- Upstream billing rate sync (OpenAI API Key only) -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- Upstream billing rate sync (supported provider API keys only) -->
+      <div v-if="allUpstreamBillingAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <div class="flex-1 pr-4">
             <label
@@ -1368,6 +1368,7 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
+import { supportsUpstreamBilling } from '@/utils/upstreamBilling'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1439,6 +1440,16 @@ const allOpenAIAPIKey = computed(() => {
     targetSelectedPlatforms.value[0] === 'openai' &&
     targetSelectedTypes.value.length > 0 &&
     targetSelectedTypes.value.every(t => t === 'apikey')
+  )
+})
+
+const allUpstreamBillingAPIKey = computed(() => {
+  return (
+    targetSelectedPlatforms.value.length > 0 &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedPlatforms.value.every(platform =>
+      targetSelectedTypes.value.every(type => supportsUpstreamBilling(platform, type))
+    )
   )
 })
 

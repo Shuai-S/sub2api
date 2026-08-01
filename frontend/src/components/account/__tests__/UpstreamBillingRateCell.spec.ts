@@ -297,8 +297,12 @@ describe('UpstreamBillingRateCell', () => {
     const wrapper = mount(UpstreamBillingRateCell, {
       props: { account: makeAccount(), now: Date.now() }
     })
-    await wrapper.get('[data-testid="upstream-billing-probe"]').trigger('click')
-    expect(wrapper.emitted('probe')).toHaveLength(1)
+
+    for (const platform of ['openai', 'anthropic', 'gemini', 'grok'] as const) {
+      await wrapper.setProps({ account: makeAccount({ platform }) })
+      await wrapper.get('[data-testid="upstream-billing-probe"]').trigger('click')
+    }
+    expect(wrapper.emitted('probe')).toHaveLength(4)
 
     await wrapper.setProps({ account: makeAccount({ type: 'oauth' }) })
     expect(wrapper.findAll('button')).toHaveLength(0)
