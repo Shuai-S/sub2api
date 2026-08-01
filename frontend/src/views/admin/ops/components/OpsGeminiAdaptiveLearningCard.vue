@@ -289,6 +289,11 @@ function formatScore(value?: number | null): string {
   return String(Math.round(value * 100))
 }
 
+function formatRate(value?: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
+  return value.toFixed(2)
+}
+
 function formatPercent(value?: number | null, digits = 0): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
   return `${(value * 100).toFixed(digits)}%`
@@ -515,6 +520,7 @@ function onNextPage() {
                   </div>
                   <div class="mt-0.5 flex flex-wrap gap-1 text-[11px] text-gray-500 dark:text-gray-400">
                     <span>#{{ row.account_id }}</span><span>{{ row.platform }}</span><span>{{ row.type || '-' }}</span><span>P{{ row.priority }}</span>
+                    <span>{{ t('admin.ops.geminiAdaptiveLearning.rateMultiplier', { value: formatRate(row.rate_multiplier) }) }}</span>
                   </div>
                 </td>
                 <td class="px-3 py-2">

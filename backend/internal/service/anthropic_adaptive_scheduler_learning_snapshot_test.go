@@ -19,6 +19,28 @@ func TestAnthropicAdaptiveLearningSnapshotReadDoesNotCreateState(t *testing.T) {
 	require.Empty(t, store.accounts)
 }
 
+func TestAnthropicAdaptiveLearningSnapshotIncludesRateMultiplier(t *testing.T) {
+	rate := 0.8
+	now := time.Now()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	account := &Account{
+		ID:             42,
+		Platform:       PlatformAnthropic,
+		Type:           AccountTypeAPIKey,
+		Status:         StatusActive,
+		Schedulable:    true,
+		Concurrency:    8,
+		RateMultiplier: &rate,
+	}
+	state := defaultAnthropicAdaptiveAccountState(account, now, settings)
+
+	snapshot := buildAnthropicAdaptiveLearningAccountSnapshot(
+		account, state, settings, &AccountLoadInfo{}, "claude-sonnet-4", now, true,
+	)
+
+	require.InDelta(t, rate, snapshot.RateMultiplier, 1e-12)
+}
+
 func TestAnthropicAdaptiveLearningAccountStatuses(t *testing.T) {
 	now := time.Now()
 	settings := DefaultAnthropicAdaptiveSchedulerSettings()

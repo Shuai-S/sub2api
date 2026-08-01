@@ -126,6 +126,7 @@ type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
 	ConfiguredConcurrency int     `json:"configured_concurrency"`
 	EstimatedCapacity     int     `json:"estimated_capacity"`
 	EffectiveCapacity     int     `json:"effective_capacity"`
+	RateMultiplier        float64 `json:"rate_multiplier"`
 	CurrentConcurrency    int     `json:"current_concurrency"`
 	WaitingCount          int     `json:"waiting_count"`
 	LoadPercentage        float64 `json:"load_percentage"`
@@ -369,6 +370,7 @@ func buildGeminiAdaptiveLearningAccountSnapshot(account *Account, state geminiAd
 		AccountID: account.ID, AccountName: account.Name, Platform: account.Platform, Type: account.Type,
 		AccountStatus: account.Status, Schedulable: account.IsSchedulable(), Priority: account.Priority,
 		ConfiguredConcurrency: account.Concurrency, EstimatedCapacity: capacity, EffectiveCapacity: capacity,
+		RateMultiplier:     account.BillingRateMultiplier(),
 		CurrentConcurrency: load.CurrentConcurrency, WaitingCount: load.WaitingCount, LoadPercentage: adaptiveLoadRate(load, capacity),
 		SchedulerStatus: status, StatusReason: reason, Learned: state.TotalSamples > 0,
 		PathSuccessEMA: state.PathSuccessEMA, ModelFamily: family, ModelSuccessEMA: modelState.SuccessEMA,

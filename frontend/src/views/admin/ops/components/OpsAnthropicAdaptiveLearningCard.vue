@@ -313,6 +313,11 @@ function formatScore(value?: number | null): string {
   return `${Math.round(value * 100)}`
 }
 
+function formatRate(value?: number | null): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
+  return value.toFixed(2)
+}
+
 function formatDuration(seconds?: number | null): string {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds <= 0) return '-'
   if (seconds < 60) return `${Math.round(seconds)}s`
@@ -557,6 +562,7 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
                     <span>#{{ row.account_id }}</span>
                     <span>{{ row.type || '-' }}</span>
                     <span>P{{ row.priority }}</span>
+                    <span>{{ t('admin.ops.anthropicAdaptiveLearning.rateMultiplier', { value: formatRate(row.rate_multiplier) }) }}</span>
                   </div>
                 </td>
                 <td class="px-3 py-2">

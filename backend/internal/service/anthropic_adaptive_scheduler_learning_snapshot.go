@@ -122,9 +122,10 @@ type AnthropicAdaptiveSchedulerAccountLearningSnapshot struct {
 	Schedulable   bool   `json:"schedulable"`
 	Priority      int    `json:"priority"`
 
-	ConfiguredConcurrency int `json:"configured_concurrency"`
-	EstimatedCapacity     int `json:"estimated_capacity"`
-	EffectiveCapacity     int `json:"effective_capacity"`
+	ConfiguredConcurrency int     `json:"configured_concurrency"`
+	EstimatedCapacity     int     `json:"estimated_capacity"`
+	EffectiveCapacity     int     `json:"effective_capacity"`
+	RateMultiplier        float64 `json:"rate_multiplier"`
 
 	CurrentConcurrency int     `json:"current_concurrency"`
 	WaitingCount       int     `json:"waiting_count"`
@@ -441,6 +442,7 @@ func buildAnthropicAdaptiveLearningAccountSnapshot(
 		ConfiguredConcurrency:      account.Concurrency,
 		EstimatedCapacity:          effectiveCapacity,
 		EffectiveCapacity:          effectiveCapacity,
+		RateMultiplier:             account.BillingRateMultiplier(),
 		CurrentConcurrency:         loadInfo.CurrentConcurrency,
 		WaitingCount:               loadInfo.WaitingCount,
 		LoadPercentage:             adaptiveLoadRate(loadInfo, effectiveCapacity),

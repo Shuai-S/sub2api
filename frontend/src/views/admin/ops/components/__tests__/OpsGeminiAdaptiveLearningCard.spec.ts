@@ -16,7 +16,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      t: (key: string, params?: Record<string, unknown>) => params ? `${key} ${JSON.stringify(params)}` : key,
     }),
   }
 })
@@ -94,13 +94,14 @@ const sampleResponse = {
       account_id: 7,
       account_name: 'Gemini primary',
       platform: 'gemini',
-      type: 'oauth',
+      type: 'apikey',
       account_status: 'active',
       schedulable: true,
       priority: 1,
       configured_concurrency: 10,
       estimated_capacity: 8,
       effective_capacity: 8,
+      rate_multiplier: 1.25,
       current_concurrency: 3,
       waiting_count: 0,
       load_percentage: 37.5,
@@ -177,6 +178,7 @@ describe('OpsGeminiAdaptiveLearningCard', () => {
       expect.objectContaining({ group_id: 7, model: 'gemini-2.5-pro', top_n: 20 })
     )
     expect(wrapper.text()).toContain('Gemini primary')
+    expect(wrapper.text()).toContain('admin.ops.geminiAdaptiveLearning.rateMultiplier {"value":"1.25"}')
     expect(wrapper.text()).toContain('R 95 / Q 80 / C 63')
     expect(wrapper.text()).toContain('10/100 (10%)')
 

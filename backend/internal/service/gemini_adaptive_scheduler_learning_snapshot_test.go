@@ -19,6 +19,28 @@ func TestGeminiAdaptiveLearningSnapshotReadDoesNotCreateState(t *testing.T) {
 	require.Empty(t, store.accounts)
 }
 
+func TestGeminiAdaptiveLearningSnapshotIncludesRateMultiplier(t *testing.T) {
+	rate := 1.25
+	now := time.Now()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	account := &Account{
+		ID:             42,
+		Platform:       PlatformGemini,
+		Type:           AccountTypeAPIKey,
+		Status:         StatusActive,
+		Schedulable:    true,
+		Concurrency:    8,
+		RateMultiplier: &rate,
+	}
+	state := defaultGeminiAdaptiveAccountState(account, now, settings)
+
+	snapshot := buildGeminiAdaptiveLearningAccountSnapshot(
+		account, state, settings, &AccountLoadInfo{}, GeminiAdaptiveQuotaSnapshot{}, "gemini-2.5-pro", now,
+	)
+
+	require.InDelta(t, rate, snapshot.RateMultiplier, 1e-12)
+}
+
 func TestGeminiAdaptiveLearningAccountStatuses(t *testing.T) {
 	now := time.Now()
 	settings := DefaultGeminiAdaptiveSchedulerSettings()

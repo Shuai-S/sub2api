@@ -16,7 +16,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      t: (key: string, params?: Record<string, unknown>) => params ? `${key} ${JSON.stringify(params)}` : key,
     }),
   }
 })
@@ -97,13 +97,14 @@ const sampleResponse = {
       account_id: 7,
       account_name: 'Claude primary',
       platform: 'anthropic',
-      type: 'oauth',
+      type: 'apikey',
       account_status: 'active',
       schedulable: true,
       priority: 1,
       configured_concurrency: 10,
       estimated_capacity: 8,
       effective_capacity: 8,
+      rate_multiplier: 0.8,
       current_concurrency: 3,
       waiting_count: 0,
       load_percentage: 37.5,
@@ -195,6 +196,7 @@ describe('OpsAnthropicAdaptiveLearningCard', () => {
       expect.objectContaining({ page: 1, page_size: 20 })
     )
     expect(wrapper.text()).toContain('Claude primary')
+    expect(wrapper.text()).toContain('admin.ops.anthropicAdaptiveLearning.rateMultiplier {"value":"0.80"}')
     expect(wrapper.text()).toContain('180ms')
     expect(wrapper.text()).toContain('R 95 / C 63 / L 70 / E 20')
   })

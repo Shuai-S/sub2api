@@ -458,6 +458,7 @@ export interface OpsAnthropicAdaptiveLearningAccount {
   configured_concurrency: number
   estimated_capacity: number
   effective_capacity: number
+  rate_multiplier: number
 
   current_concurrency: number
   waiting_count: number
@@ -658,6 +659,7 @@ export interface OpsGeminiAdaptiveLearningAccount {
   configured_concurrency: number
   estimated_capacity: number
   effective_capacity: number
+  rate_multiplier: number
   current_concurrency: number
   waiting_count: number
   load_percentage: number
