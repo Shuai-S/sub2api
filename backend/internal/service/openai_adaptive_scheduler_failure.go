@@ -176,6 +176,54 @@ func isOpenAIAdaptiveInsufficientBalanceError(err error) bool {
 	return isOpenAIAdaptiveInsufficientBalanceText(err.Error())
 }
 
+// OpenAIAccountInternalErrorClientMessage is the stable downstream message for
+// account-scoped upstream failures whose details may expose credentials,
+// balances, request IDs, or provider quota information.
+const OpenAIAccountInternalErrorClientMessage = "Upstream service temporarily unavailable, please retry later"
+
+// IsOpenAIAccountInternalFailoverError reports whether a failover error is an
+// account-internal failure that should be hidden behind the generic upstream
+// error response after account failover is exhausted.
+func IsOpenAIAccountInternalFailoverError(err *UpstreamFailoverError) bool {
+	if err == nil {
+		return false
+	}
+	if isOpenAIAdaptiveInsufficientBalanceError(err) || err.IsCredentialFailure() {
+		return true
+	}
+
+	// These statuses are account-level failures in the OpenAI failover path.
+	switch err.StatusCode {
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+		return true
+	}
+
+	// Some providers report quota exhaustion with a non-standard status code.
+	// Match explicit markers only so ordinary request and server errors retain
+	// their existing downstream behavior.
+	text := strings.ToLower(strings.TrimSpace(
+		upstreamFailoverErrorMessageForAdaptive(err) + " " +
+			string(err.ResponseBody) + " " +
+			extractUpstreamErrorCode(err.ResponseBody),
+	))
+	for _, marker := range []string{
+		"insufficient_quota",
+		"quota_exceeded",
+		"quota exceeded",
+		"quota_exhausted",
+		"quota exhausted",
+		"usage_limit_reached",
+		"usage limit reached",
+		"rate_limit_exceeded",
+		"rate limit exceeded",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func isOpenAIAdaptiveInsufficientBalanceResponse(statusCode int, message string, body []byte) bool {
 	if statusCode == http.StatusPaymentRequired {
 		code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(body)))

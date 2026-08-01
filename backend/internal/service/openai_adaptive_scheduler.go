@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -20,6 +21,7 @@ var errOpenAIAdaptiveSchedulerFallback = errors.New("openai adaptive scheduler f
 
 const openAIAdaptiveStickyCleanupMinInterval = 30 * time.Second
 const openAIAdaptiveBalanceProbeRetention = 10 * time.Minute
+const openAIAdaptiveBalanceProbeInterval = 5 * time.Minute
 
 type adaptiveOpenAIAccountScheduler struct {
 	service               *OpenAIGatewayService
@@ -65,9 +67,10 @@ type openAIAdaptiveAccountState struct {
 }
 
 type openAIAdaptiveSchedulerStateStore struct {
-	mu            sync.RWMutex
-	states        map[int64]*openAIAdaptiveAccountState
-	balanceProbes map[openAIAdaptiveBalanceProbeKey]openAIAdaptiveBalanceProbe
+	mu                       sync.RWMutex
+	states                   map[int64]*openAIAdaptiveAccountState
+	balanceProbes            map[openAIAdaptiveBalanceProbeKey]openAIAdaptiveBalanceProbe
+	balanceProbeAttemptSlots sync.Map
 }
 
 type openAIAdaptiveBalanceProbeKey struct {
@@ -78,6 +81,15 @@ type openAIAdaptiveBalanceProbeKey struct {
 type openAIAdaptiveBalanceProbe struct {
 	generation uint64
 	createdAt  time.Time
+}
+
+type openAIAdaptiveBalanceProbeAttempt struct {
+	generation uint64
+	atUnixNano int64
+}
+
+type openAIAdaptiveBalanceProbeAttemptSlot struct {
+	value atomic.Pointer[openAIAdaptiveBalanceProbeAttempt]
 }
 
 type openAIAdaptiveCandidateScore struct {
@@ -523,7 +535,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 			freshFilterStats := openAISelectionFilterStats{}
 			freshCandidates, freshSkew := s.buildAdaptiveCandidates(req, cfg, plan.filtered, plan.states, freshLoadMap, true, &freshFilterStats)
 			attemptStats.merge("fresh_", freshFilterStats)
-			freshOrder := buildOpenAIAdaptiveSelectionOrder(freshCandidates, req, cfg)
+			freshOrder := s.buildBalanceProbeSelectionOrder(ctx, freshCandidates, req, cfg, time.Now())
 			freshResult, freshCompactBlocked, freshAcquireErr := s.tryAcquireAdaptiveSelectionOrder(ctx, req, cfg, freshOrder, &attemptStats)
 			if freshAcquireErr != nil {
 				return nil, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, freshAcquireErr
@@ -685,11 +697,77 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 	if plan.topK > len(candidates) {
 		plan.topK = len(candidates)
 	}
-	plan.selectionOrder = buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+	if allowSideEffects {
+		plan.selectionOrder = s.buildBalanceProbeSelectionOrder(ctx, candidates, req, cfg, time.Now())
+	} else {
+		plan.selectionOrder = buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+	}
 	if len(plan.selectionOrder) == 0 {
 		return plan, noAvailableOpenAISelectionError(req.RequestedModel, false, plan.filterStats.summary("selection_order_empty"))
 	}
 	return plan, nil
+}
+
+// buildBalanceProbeSelectionOrder exposes at most one due balance account to a
+// real request. Claims are lock-free and scoped per account, so different
+// balance accounts can be probed concurrently without coordinating instances.
+func (s *adaptiveOpenAIAccountScheduler) buildBalanceProbeSelectionOrder(
+	ctx context.Context,
+	candidates []openAIAdaptiveCandidateScore,
+	req OpenAIAccountScheduleRequest,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	now time.Time,
+) []openAIAdaptiveCandidateScore {
+	if s == nil || s.state == nil || len(candidates) == 0 {
+		return buildOpenAIAdaptiveSelectionOrder(candidates, req, cfg)
+	}
+	normal := make([]openAIAdaptiveCandidateScore, 0, len(candidates))
+	balanceCandidates := make([]openAIAdaptiveCandidateScore, 0, len(candidates))
+	for _, candidate := range candidates {
+		if isOpenAIAdaptiveBalanceInsufficient(candidate.state) {
+			balanceCandidates = append(balanceCandidates, candidate)
+		} else {
+			normal = append(normal, candidate)
+		}
+	}
+	order := buildOpenAIAdaptiveSelectionOrder(normal, req, cfg)
+	if len(balanceCandidates) == 0 {
+		return order
+	}
+	if openAIAdaptiveRequestID(ctx) == "" {
+		return order
+	}
+	sort.SliceStable(balanceCandidates, func(i, j int) bool {
+		left := openAIAdaptiveBalanceProbeReferenceAt(balanceCandidates[i].state)
+		right := openAIAdaptiveBalanceProbeReferenceAt(balanceCandidates[j].state)
+		if left.Equal(right) {
+			if balanceCandidates[i].account == nil {
+				return false
+			}
+			if balanceCandidates[j].account == nil {
+				return true
+			}
+			return balanceCandidates[i].account.ID < balanceCandidates[j].account.ID
+		}
+		if left.IsZero() {
+			return true
+		}
+		if right.IsZero() {
+			return false
+		}
+		return left.Before(right)
+	})
+	for _, candidate := range balanceCandidates {
+		if candidate.account != nil && s.state.tryClaimBalanceProbe(
+			candidate.account.ID,
+			candidate.state,
+			now,
+			openAIAdaptiveBalanceProbeInterval,
+		) {
+			return append([]openAIAdaptiveCandidateScore{candidate}, order...)
+		}
+	}
+	return order
 }
 
 func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
@@ -1351,9 +1429,6 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 	if s == nil {
 		return
 	}
-	if report.HealthSample && !report.BalanceInsufficient {
-		s.baseline.ReportResult(report.AccountID, report.Success, report.FirstTokenMs)
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1362,6 +1437,10 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 		return
 	}
 	requestID := openAIAdaptiveRequestID(ctx)
+	balanceProbe := s.state.isBalanceProbe(report.AccountID, requestID, time.Now())
+	if report.HealthSample && !report.BalanceInsufficient && (!balanceProbe || report.Success) {
+		s.baseline.ReportResult(report.AccountID, report.Success, report.FirstTokenMs)
+	}
 	if report.BalanceInsufficient {
 		var account *Account
 		if !s.state.has(report.AccountID) {
@@ -1372,7 +1451,16 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 		s.logDiagnosticResult(ctx, cfg, report)
 		return
 	}
-	if report.Success {
+	if balanceProbe {
+		if report.Success {
+			s.state.recoverBalanceFromProbe(report.AccountID, requestID, time.Now())
+		} else {
+			s.state.finishFailedBalanceProbe(report.AccountID, requestID, time.Now())
+			s.logDiagnosticResult(ctx, cfg, report)
+			return
+		}
+	}
+	if report.Success && !balanceProbe {
 		s.state.recoverBalanceFromProbe(report.AccountID, requestID, time.Now())
 	}
 	var account *Account
@@ -1579,6 +1667,87 @@ func (s *openAIAdaptiveSchedulerStateStore) registerBalanceProbe(accountID int64
 		generation: state.BalanceGeneration,
 		createdAt:  now,
 	}
+	s.recordBalanceProbeAttempt(accountID, state.BalanceGeneration, now)
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) isBalanceProbe(accountID int64, requestID string, now time.Time) bool {
+	requestID = strings.TrimSpace(requestID)
+	if s == nil || accountID <= 0 || requestID == "" {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupBalanceProbesLocked(now)
+	probe, ok := s.balanceProbes[openAIAdaptiveBalanceProbeKey{accountID: accountID, requestID: requestID}]
+	state := s.states[accountID]
+	return ok && state != nil && isOpenAIAdaptiveBalanceInsufficient(*state) && state.BalanceGeneration == probe.generation
+}
+
+func openAIAdaptiveBalanceProbeReferenceAt(state openAIAdaptiveAccountState) time.Time {
+	if state.LastBalanceProbeAt.After(state.BalanceInsufficientAt) {
+		return state.LastBalanceProbeAt
+	}
+	return state.BalanceInsufficientAt
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) tryClaimBalanceProbe(
+	accountID int64,
+	state openAIAdaptiveAccountState,
+	now time.Time,
+	interval time.Duration,
+) bool {
+	if s == nil || accountID <= 0 || !isOpenAIAdaptiveBalanceInsufficient(state) {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if interval <= 0 {
+		interval = openAIAdaptiveBalanceProbeInterval
+	}
+	slotValue, _ := s.balanceProbeAttemptSlots.LoadOrStore(accountID, &openAIAdaptiveBalanceProbeAttemptSlot{})
+	slot := slotValue.(*openAIAdaptiveBalanceProbeAttemptSlot)
+	for {
+		current := slot.value.Load()
+		lastAttemptAt := openAIAdaptiveBalanceProbeReferenceAt(state)
+		if current != nil && current.generation == state.BalanceGeneration {
+			atomicAttemptAt := time.Unix(0, current.atUnixNano)
+			if atomicAttemptAt.After(lastAttemptAt) {
+				lastAttemptAt = atomicAttemptAt
+			}
+		}
+		if !lastAttemptAt.IsZero() && now.Sub(lastAttemptAt) < interval {
+			return false
+		}
+		next := &openAIAdaptiveBalanceProbeAttempt{
+			generation: state.BalanceGeneration,
+			atUnixNano: now.UnixNano(),
+		}
+		if slot.value.CompareAndSwap(current, next) {
+			return true
+		}
+	}
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) recordBalanceProbeAttempt(accountID int64, generation uint64, now time.Time) {
+	if s == nil || accountID <= 0 || now.IsZero() {
+		return
+	}
+	slotValue, _ := s.balanceProbeAttemptSlots.LoadOrStore(accountID, &openAIAdaptiveBalanceProbeAttemptSlot{})
+	slot := slotValue.(*openAIAdaptiveBalanceProbeAttemptSlot)
+	for {
+		current := slot.value.Load()
+		if current != nil && current.generation == generation && current.atUnixNano >= now.UnixNano() {
+			return
+		}
+		next := &openAIAdaptiveBalanceProbeAttempt{generation: generation, atUnixNano: now.UnixNano()}
+		if slot.value.CompareAndSwap(current, next) {
+			return
+		}
+	}
 }
 
 func (s *openAIAdaptiveSchedulerStateStore) markBalanceInsufficient(
@@ -1607,12 +1776,14 @@ func (s *openAIAdaptiveSchedulerStateStore) markBalanceInsufficient(
 		delete(s.balanceProbes, key)
 		state.LastBalanceProbeAt = now
 		state.BalanceInsufficientAt = now
+		s.recordBalanceProbeAttempt(accountID, state.BalanceGeneration, now)
 		return
 	}
 	state.BalanceGeneration++
 	state.BalanceInsufficientAt = now
 	state.LastBalanceProbeAt = time.Time{}
 	s.deleteBalanceProbesForAccountLocked(accountID)
+	s.balanceProbeAttemptSlots.Delete(accountID)
 }
 
 func (s *openAIAdaptiveSchedulerStateStore) recoverBalanceFromProbe(accountID int64, requestID string, now time.Time) bool {
@@ -1639,7 +1810,34 @@ func (s *openAIAdaptiveSchedulerStateStore) recoverBalanceFromProbe(accountID in
 	state.BalanceInsufficientAt = time.Time{}
 	state.LastBalanceProbeAt = now
 	s.deleteBalanceProbesForAccountLocked(accountID)
+	s.balanceProbeAttemptSlots.Delete(accountID)
 	return true
+}
+
+func (s *openAIAdaptiveSchedulerStateStore) finishFailedBalanceProbe(accountID int64, requestID string, now time.Time) bool {
+	requestID = strings.TrimSpace(requestID)
+	if s == nil || accountID <= 0 || requestID == "" {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupBalanceProbesLocked(now)
+	key := openAIAdaptiveBalanceProbeKey{accountID: accountID, requestID: requestID}
+	probe, ok := s.balanceProbes[key]
+	if !ok {
+		return false
+	}
+	delete(s.balanceProbes, key)
+	state := s.states[accountID]
+	valid := state != nil && isOpenAIAdaptiveBalanceInsufficient(*state) && state.BalanceGeneration == probe.generation
+	if valid {
+		state.LastBalanceProbeAt = now
+		s.recordBalanceProbeAttempt(accountID, state.BalanceGeneration, now)
+	}
+	return valid
 }
 
 func (s *openAIAdaptiveSchedulerStateStore) cleanupBalanceProbesLocked(now time.Time) {

@@ -434,7 +434,7 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-		require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+		require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 		require.Empty(t, repo.errorIDs())
 		require.Empty(t, upstream.accountHits())
 		require.Equal(t, 1, repo.selectorCalls())
@@ -534,7 +534,7 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 				router.ServeHTTP(recorder, req)
 
 				require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
-				require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+				require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 				require.Empty(t, upstream.accountHits())
 				require.Equal(t, 1, repo.selectorCalls())
 			})
@@ -551,7 +551,7 @@ func TestResponsesCredentialFailoverLoop(t *testing.T) {
 		router.ServeHTTP(recorder, req)
 
 		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
-		require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+		require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 		require.Equal(t, 1, repo.selectorCalls())
 		require.Empty(t, upstream.accountHits())
 		require.Empty(t, repo.errorIDs())
@@ -585,7 +585,8 @@ func TestResponsesGrok429FailoverIsBounded(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
+		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
+		require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.Equal(t, []int64{801, 802}, repo.rateLimitedAccountIDs())
 		require.NotContains(t, recorder.Body.String(), "expired")
@@ -689,7 +690,8 @@ func TestGrokMedia429FailoverIsBounded(t *testing.T) {
 
 		router.ServeHTTP(recorder, req)
 
-		require.Equal(t, http.StatusTooManyRequests, recorder.Code, recorder.Body.String())
+		require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
+		require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 		require.Equal(t, []int64{801, 802}, upstream.accountHits())
 		require.NotContains(t, recorder.Body.String(), "rate limited")
 	})
@@ -734,7 +736,11 @@ func TestGrokOAuthCredentialFailoverAcrossHTTPHandlers(t *testing.T) {
 			router.ServeHTTP(recorder, req)
 
 			require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
-			require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+			if endpoint.name == "messages" {
+				require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+			} else {
+				require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
+			}
 			require.NotContains(t, recorder.Body.String(), "revoked-refresh")
 			require.NotContains(t, recorder.Body.String(), "healthy-refresh")
 			require.Equal(t, []int64{801, 802}, repo.errorIDs())

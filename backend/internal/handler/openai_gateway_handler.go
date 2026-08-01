@@ -2411,6 +2411,21 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		return
 	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
+	if service.IsOpenAIAccountInternalFailoverError(failoverErr) {
+		// Keep the raw upstream details in Ops context, but never expose account
+		// credentials, balance amounts, request IDs, or quota diagnostics to the
+		// downstream caller.
+		service.SetOpsUpstreamError(c, failoverErr.StatusCode,
+			service.ExtractUpstreamErrorMessage(failoverErr.ResponseBody), "")
+		h.handleStreamingAwareError(
+			c,
+			http.StatusServiceUnavailable,
+			"upstream_error",
+			service.OpenAIAccountInternalErrorClientMessage,
+			streamStarted,
+		)
+		return
+	}
 	if failoverErr.IsCredentialFailure() {
 		status, message := credentialFailoverClientResponse(failoverErr)
 		h.handleStreamingAwareError(c, status, "upstream_error", message, streamStarted)

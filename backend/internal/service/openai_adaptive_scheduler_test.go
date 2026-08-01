@@ -794,6 +794,147 @@ func TestOpenAIAdaptiveInsufficientBalanceCandidatesFollowNormalCandidates(t *te
 	require.Equal(t, int64(2), order[1].account.ID)
 }
 
+func TestOpenAIAdaptiveDueBalanceProbesUseIndependentAccountSlots(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerExplorationRate = 0
+	now := time.Now()
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	scheduler := &adaptiveOpenAIAccountScheduler{state: store}
+
+	normalState := defaultOpenAIAdaptiveAccountState(1, cfg)
+	balanceState1 := defaultOpenAIAdaptiveAccountState(2, cfg)
+	balanceState1.BalanceInsufficientAt = now.Add(-time.Hour)
+	balanceState2 := defaultOpenAIAdaptiveAccountState(3, cfg)
+	balanceState2.BalanceInsufficientAt = now.Add(-time.Hour)
+	store.states[2] = &balanceState1
+	store.states[3] = &balanceState2
+	candidates := []openAIAdaptiveCandidateScore{
+		{account: &Account{ID: 1}, state: normalState},
+		{account: &Account{ID: 2}, state: balanceState1},
+		{account: &Account{ID: 3}, state: balanceState2},
+	}
+
+	owner1 := context.WithValue(context.Background(), ctxkey.RequestID, "balance-probe-1")
+	order1 := scheduler.buildBalanceProbeSelectionOrder(owner1, candidates, OpenAIAccountScheduleRequest{}, cfg, now)
+	require.Len(t, order1, 2)
+	require.Equal(t, int64(2), order1[0].account.ID)
+	require.Equal(t, int64(1), order1[1].account.ID)
+
+	owner2 := context.WithValue(context.Background(), ctxkey.RequestID, "balance-probe-2")
+	order2 := scheduler.buildBalanceProbeSelectionOrder(owner2, candidates, OpenAIAccountScheduleRequest{}, cfg, now)
+	require.Len(t, order2, 2)
+	require.Equal(t, int64(3), order2[0].account.ID)
+	require.Equal(t, int64(1), order2[1].account.ID)
+
+	owner3 := context.WithValue(context.Background(), ctxkey.RequestID, "balance-probe-3")
+	order3 := scheduler.buildBalanceProbeSelectionOrder(owner3, candidates, OpenAIAccountScheduleRequest{}, cfg, now)
+	require.Len(t, order3, 1)
+	require.Equal(t, int64(1), order3[0].account.ID)
+
+	store.registerBalanceProbe(2, "balance-probe-1", now)
+	require.True(t, store.finishFailedBalanceProbe(2, "balance-probe-1", now.Add(time.Second)))
+	require.True(t, isOpenAIAdaptiveBalanceInsufficient(store.snapshot(2, cfg)))
+}
+
+func TestOpenAIAdaptiveBalanceProbeWaitsForInterval(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	now := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	state := defaultOpenAIAdaptiveAccountState(11, cfg)
+	state.BalanceInsufficientAt = now
+	store.states[11] = &state
+
+	require.False(t, store.tryClaimBalanceProbe(
+		11,
+		state,
+		now.Add(openAIAdaptiveBalanceProbeInterval-time.Nanosecond),
+		openAIAdaptiveBalanceProbeInterval,
+	))
+	require.True(t, store.tryClaimBalanceProbe(
+		11,
+		state,
+		now.Add(openAIAdaptiveBalanceProbeInterval),
+		openAIAdaptiveBalanceProbeInterval,
+	))
+}
+
+func TestOpenAIAdaptiveBalanceProbeClaimIsAtomicPerAccount(t *testing.T) {
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	now := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	state21 := defaultOpenAIAdaptiveAccountState(21, cfg)
+	state21.BalanceInsufficientAt = now.Add(-time.Hour)
+	state22 := defaultOpenAIAdaptiveAccountState(22, cfg)
+	state22.BalanceInsufficientAt = now.Add(-time.Hour)
+
+	const contenders = 32
+	start := make(chan struct{})
+	results := make(chan bool, contenders)
+	for i := 0; i < contenders; i++ {
+		go func() {
+			<-start
+			results <- store.tryClaimBalanceProbe(
+				21,
+				state21,
+				now,
+				openAIAdaptiveBalanceProbeInterval,
+			)
+		}()
+	}
+	close(start)
+
+	winners := 0
+	for i := 0; i < contenders; i++ {
+		if <-results {
+			winners++
+		}
+	}
+	require.Equal(t, 1, winners)
+	require.True(t, store.tryClaimBalanceProbe(
+		22,
+		state22,
+		now,
+		openAIAdaptiveBalanceProbeInterval,
+	))
+}
+
+func TestOpenAIAdaptiveFailedBalanceProbeDoesNotRecordLearningFailure(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{
+		settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano(),
+	})
+	store := newOpenAIAdaptiveSchedulerStateStore()
+	state := defaultOpenAIAdaptiveAccountState(41, cfg)
+	state.TotalSamples = 12
+	state.RecentSamples = 7
+	state.ConsecutiveFailure = 2
+	state.BalanceInsufficientAt = time.Now().Add(-time.Hour)
+	store.states[41] = &state
+	store.registerBalanceProbe(41, "failed-probe", time.Now())
+	scheduler := &adaptiveOpenAIAccountScheduler{
+		service:  &OpenAIGatewayService{},
+		baseline: &defaultOpenAIAccountScheduler{stats: newOpenAIAccountRuntimeStats()},
+		state:    store,
+	}
+
+	probeCtx := context.WithValue(context.Background(), ctxkey.RequestID, "failed-probe")
+	scheduler.ReportScheduleResultWithContext(probeCtx, OpenAIAccountScheduleReport{
+		AccountID: 41, Success: false, HealthSample: true, TerminalReason: "account_health_failure",
+	})
+
+	after := store.snapshot(41, cfg)
+	require.True(t, isOpenAIAdaptiveBalanceInsufficient(after))
+	require.Equal(t, int64(12), after.TotalSamples)
+	require.Equal(t, 7, after.RecentSamples)
+	require.Equal(t, 2, after.ConsecutiveFailure)
+	require.Zero(t, after.RecentFailures)
+}
+
 func TestOpenAIAdaptiveInsufficientBalanceInfrastructureFallbackExcludesBalanceAccounts(t *testing.T) {
 	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
 	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
@@ -879,6 +1020,75 @@ func TestOpenAIAdaptiveInsufficientBalanceClassification(t *testing.T) {
 		StatusCode:   http.StatusTooManyRequests,
 		ResponseBody: []byte(`{"error":{"message":"quota exceeded"}}`),
 	}))
+}
+
+func TestOpenAIAccountInternalFailoverErrorClassification(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *UpstreamFailoverError
+		want bool
+	}{
+		{
+			name: "structured credential failure",
+			err: &UpstreamFailoverError{
+				Stage: GatewayFailureStageAccountAuth,
+			},
+			want: true,
+		},
+		{
+			name: "newapi insufficient balance",
+			err: &UpstreamFailoverError{
+				StatusCode:   http.StatusForbidden,
+				ResponseBody: []byte(`{"error":{"type":"new_api_error","message":"用户额度不足, 剩余额度: ＄-0.035260 (request id: req-123)"}}`),
+			},
+			want: true,
+		},
+		{
+			name: "account status",
+			err:  &UpstreamFailoverError{StatusCode: http.StatusUnauthorized},
+			want: true,
+		},
+		{
+			name: "payment required",
+			err:  &UpstreamFailoverError{StatusCode: http.StatusPaymentRequired},
+			want: true,
+		},
+		{
+			name: "quota rate limit",
+			err: &UpstreamFailoverError{
+				StatusCode:   http.StatusTooManyRequests,
+				ResponseBody: []byte(`{"error":{"code":"quota_exceeded","message":"quota exceeded"}}`),
+			},
+			want: true,
+		},
+		{
+			name: "non-standard quota marker",
+			err: &UpstreamFailoverError{
+				StatusCode:   http.StatusBadRequest,
+				ResponseBody: []byte(`{"error":{"code":"insufficient_quota","message":"quota exhausted"}}`),
+			},
+			want: true,
+		},
+		{
+			name: "plain bad request",
+			err: &UpstreamFailoverError{
+				StatusCode:   http.StatusBadRequest,
+				ResponseBody: []byte(`{"error":{"type":"invalid_request_error","message":"invalid parameter"}}`),
+			},
+			want: false,
+		},
+		{
+			name: "plain server error",
+			err:  &UpstreamFailoverError{StatusCode: http.StatusInternalServerError},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, IsOpenAIAccountInternalFailoverError(tt.err))
+		})
+	}
 }
 
 func TestOpenAIAdaptiveSchedulerAIMDDecreasesCapacityOnFailures(t *testing.T) {

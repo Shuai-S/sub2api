@@ -94,13 +94,63 @@ func TestCredentialFailoverExhaustionReturnsFixedSafe503(t *testing.T) {
 	}, false)
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	require.Contains(t, recorder.Body.String(), service.GrokCredentialUnavailableClientMessage)
+	require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 	require.NotContains(t, strings.ToLower(recorder.Body.String()), "invalid_grant")
 	require.NotContains(t, strings.ToLower(recorder.Body.String()), "refresh_token")
 	require.NotContains(t, recorder.Body.String(), "must-not-leak")
 }
 
-func TestInferenceFailoverExhaustionRestoresRetryAfter(t *testing.T) {
+func TestAccountInternalBalanceErrorReturnsFixedSafe503(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	h := &OpenAIGatewayHandler{}
+
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusForbidden,
+		ResponseBody: []byte(`{"error":{"type":"new_api_error","message":"用户额度不足, 剩余额度: ＄-0.035260 (request id: 202608010418101435097218268d9d6t9hYEYt1)"}}`),
+	}, false)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
+	require.NotContains(t, recorder.Body.String(), "-0.035260")
+	require.NotContains(t, recorder.Body.String(), "202608010418101435097218268d9d6t9hYEYt1")
+}
+
+func TestAccountQuotaErrorReturnsFixedSafe503AndRetryAfter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	h := &OpenAIGatewayHandler{}
+
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:      http.StatusTooManyRequests,
+		ResponseHeaders: http.Header{"Retry-After": []string{"17"}},
+		ResponseBody:    []byte(`{"error":{"code":"quota_exceeded","message":"quota exceeded"}}`),
+	}, false)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, "17", recorder.Header().Get("Retry-After"))
+	require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
+	require.NotContains(t, recorder.Body.String(), "quota_exceeded")
+}
+
+func TestPlainUpstreamServerErrorKeepsExistingMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	h := &OpenAIGatewayHandler{}
+
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusInternalServerError,
+		ResponseBody: []byte(`{"error":{"message":"server exploded"}}`),
+	}, false)
+
+	require.Equal(t, http.StatusBadGateway, recorder.Code)
+	require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable"}}`, recorder.Body.String())
+}
+
+func TestAccountRateLimitFailoverExhaustionReturnsSafe503AndRestoresRetryAfter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -111,8 +161,9 @@ func TestInferenceFailoverExhaustionRestoresRetryAfter(t *testing.T) {
 		ResponseHeaders: http.Header{"Retry-After": []string{"17"}},
 	}, false)
 
-	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, "17", recorder.Header().Get("Retry-After"))
+	require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream service temporarily unavailable, please retry later"}}`, recorder.Body.String())
 }
 
 func TestFailoverExhaustionRejectsSecretBearingRetryAfter(t *testing.T) {
@@ -126,7 +177,7 @@ func TestFailoverExhaustionRejectsSecretBearingRetryAfter(t *testing.T) {
 		ResponseHeaders: http.Header{"Retry-After": []string{"refresh_token=must-not-leak"}},
 	}, false)
 
-	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Empty(t, recorder.Header().Get("Retry-After"))
 	require.NotContains(t, recorder.Body.String(), "must-not-leak")
 }
@@ -144,7 +195,7 @@ func TestFailoverExhaustionRejectsFarFutureRetryAfterDate(t *testing.T) {
 		},
 	}, false)
 
-	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Empty(t, recorder.Header().Get("Retry-After"))
 }
 
@@ -160,8 +211,23 @@ func TestFailoverExhaustionAllowsBoundedRetryAfterDate(t *testing.T) {
 		ResponseHeaders: http.Header{"Retry-After": []string{retryAfter}},
 	}, false)
 
-	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Equal(t, retryAfter, recorder.Header().Get("Retry-After"))
+}
+
+func TestPlainBadRequestKeepsExistingMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	h := &OpenAIGatewayHandler{}
+
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusBadRequest,
+		ResponseBody: []byte(`{"error":{"type":"invalid_request_error","message":"invalid parameter"}}`),
+	}, false)
+
+	require.Equal(t, http.StatusBadGateway, recorder.Code)
+	require.JSONEq(t, `{"error":{"type":"upstream_error","message":"Upstream request failed"}}`, recorder.Body.String())
 }
 
 func TestOpsClassificationTreatsCredentialFailureAsAuthNotInference(t *testing.T) {
