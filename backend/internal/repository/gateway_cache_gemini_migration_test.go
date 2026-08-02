@@ -58,7 +58,7 @@ func TestGatewayCacheGeminiSessionMigrationLeaseCASDeleteAndRelease(t *testing.T
 	require.NoError(t, err)
 	require.True(t, deleted)
 	_, err = baseCache.GetSessionAccountID(ctx, 11, "session")
-	require.ErrorIs(t, err, redis.Nil)
+	require.ErrorIs(t, err, service.ErrStickySessionNotFound)
 	released, err = migrationCache.ReleaseSessionMigrationLease(ctx, 11, "session", "token-b")
 	require.NoError(t, err)
 	require.True(t, released)

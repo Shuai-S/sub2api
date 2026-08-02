@@ -63,17 +63,6 @@
           {{ t('admin.accounts.upstreamBilling.globalProbeState') }}
           <span class="text-red-400">{{ t('admin.accounts.upstreamBilling.disabled') }}</span>
         </p>
-        <p class="mt-1" data-testid="upstream-billing-rate-sync-state">
-          {{ t('admin.accounts.upstreamBilling.rateSyncState') }}
-          <span :class="rateSyncEnabled ? 'text-emerald-400' : 'text-gray-400'">
-            {{ rateSyncEnabled ? t('admin.accounts.upstreamBilling.enabled') : t('admin.accounts.upstreamBilling.disabled') }}
-          </span>
-        </p>
-        <p v-if="snapshot?.rate_sync" class="mt-1" data-testid="upstream-billing-rate-sync-result">
-          {{ t(`admin.accounts.upstreamBilling.rateSyncStatus.${snapshot.rate_sync.status}`) }}
-          · {{ snapshot.rate_sync.applied_rate_multiplier ?? '-' }}x
-          · {{ formatDate(snapshot.rate_sync.synced_at) }}
-        </p>
       </div>
     </HelpTooltip>
     <span v-if="hasEffectiveRate && statusLabel" :class="statusClass" class="whitespace-nowrap text-[10px] font-medium">
@@ -99,8 +88,8 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { formatMultiplier } from '@/utils/formatters'
 import type { Account, UpstreamBillingProbeSnapshot } from '@/types'
-import { supportsUpstreamBilling } from '@/utils/upstreamBilling'
 
 const props = withDefaults(defineProps<{
   account: Account
@@ -117,11 +106,11 @@ defineEmits<{
 
 const { t } = useI18n()
 const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000
-const eligible = computed(() => supportsUpstreamBilling(props.account.platform, props.account.type))
+// 探测资格已放宽到全部 API-key 平台（上游是 sub2api 即可应答）。
+const eligible = computed(() => props.account.type === 'apikey')
 const snapshot = computed<UpstreamBillingProbeSnapshot | undefined>(() => props.account.extra?.upstream_billing_probe)
 const data = computed(() => snapshot.value?.data)
 const probeEnabled = computed(() => props.account.extra?.upstream_billing_probe_enabled === true)
-const rateSyncEnabled = computed(() => props.account.extra?.upstream_billing_rate_sync_enabled === true)
 const nextProbeAt = computed(() => {
   const value = snapshot.value?.next_probe_at
   return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : ''
@@ -203,7 +192,7 @@ const elapsedSinceLastSuccess = computed(() => {
 const effectiveRate = computed(() => {
   if (!validTimestamps.value || stale.value || !['ok', 'failed'].includes(snapshot.value?.status ?? '')) return '-'
   const value = currentEffectiveRate.value
-  return value == null ? '-' : `${Number(value.toPrecision(12))}x`
+  return value == null ? '-' : `${formatMultiplier(value)}x`
 })
 const statusLabel = computed(() => {
   if (!snapshot.value) return t('admin.accounts.upstreamBilling.notProbed')

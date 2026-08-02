@@ -121,9 +121,6 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"openai_compact_checked_at":              {},
 	"openai_compact_last_status":             {},
 	"openai_compact_last_error":              {},
-	"upstream_billing_probe_enabled":         {},
-	"upstream_billing_rate_sync_enabled":     {},
-	"upstream_billing_probe":                 {},
 	"antigravity_credits_overages":           {},
 	"antigravity_force_token_refresh":        {},
 	"antigravity_force_token_refresh_at":     {},
@@ -315,9 +312,6 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
 	}
-	if err := NormalizeClaudeCodeUpstreamMimicryCredentials(input.Credentials); err != nil {
-		return nil, err
-	}
 	duplicate, err := buildAccountForCreate(input, accountExtra)
 	if err != nil {
 		return nil, err
@@ -479,20 +473,8 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
-	if input.RateSyncEnabled != nil && *input.RateSyncEnabled {
-		if !IsUpstreamBillingProbeAccount(account) {
-			return nil, ErrUpstreamBillingProbeAccountInvalid
-		}
-		if input.RateMultiplier != nil {
-			return nil, ErrUpstreamBillingRateSyncManualRate
-		}
-		if account.Extra == nil {
-			account.Extra = make(map[string]any)
-		}
-		account.Extra[UpstreamBillingProbeEnabledExtraKey] = true
-		account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
-	} else if input.ProbeEnabled != nil && *input.ProbeEnabled {
-		if !IsUpstreamBillingProbeAccount(account) {
+	if input.ProbeEnabled != nil && *input.ProbeEnabled {
+		if !isUpstreamBillingProbeAccount(account) {
 			return nil, ErrUpstreamBillingProbeAccountInvalid
 		}
 		if account.Extra == nil {
@@ -569,9 +551,6 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
 	}
-	if err := NormalizeClaudeCodeUpstreamMimicryCredentials(input.Credentials); err != nil {
-		return nil, err
-	}
 
 	account, err := buildAccountForCreate(input, accountExtra)
 	if err != nil {
@@ -614,10 +593,6 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	}
 
 	return account, nil
-}
-
-type accountBillingSettingsAtomicUpdater interface {
-	UpdateWithUpstreamBillingSettings(context.Context, *Account, *bool, *bool, bool) error
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
@@ -686,9 +661,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err := NormalizeHeaderOverrideCredentials(account.Credentials); err != nil {
 			return nil, err
 		}
-		if err := NormalizeClaudeCodeUpstreamMimicryCredentials(account.Credentials); err != nil {
-			return nil, err
-		}
 	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
@@ -696,20 +668,15 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	requestedRateSyncEnabledUpdate := input.RateSyncEnabled
 	if input.Extra != nil {
 		requestedProbeEnabled, hasRequestedProbeEnabled := normalizedExtra[UpstreamBillingProbeEnabledExtraKey]
-		if hasRequestedProbeEnabled && requestedProbeEnabledUpdate == nil {
+		if hasRequestedProbeEnabled {
 			enabled, ok := requestedProbeEnabled.(bool)
 			if !ok {
 				return nil, infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_ENABLED", "upstream_billing_probe_enabled must be a boolean")
 			}
-			requestedProbeEnabledUpdate = &enabled
-		}
-		requestedRateSyncEnabled, hasRequestedRateSyncEnabled := normalizedExtra[UpstreamBillingRateSyncEnabledExtraKey]
-		if hasRequestedRateSyncEnabled && requestedRateSyncEnabledUpdate == nil {
-			enabled, ok := requestedRateSyncEnabled.(bool)
-			if !ok {
-				return nil, infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_RATE_SYNC_ENABLED", "upstream_billing_rate_sync_enabled must be a boolean")
+			if requestedProbeEnabledUpdate != nil && *requestedProbeEnabledUpdate != enabled {
+				return nil, infraerrors.BadRequest("CONFLICTING_UPSTREAM_BILLING_PROBE_ENABLED", "conflicting upstream_billing_probe_enabled values")
 			}
-			requestedRateSyncEnabledUpdate = &enabled
+			requestedProbeEnabledUpdate = &enabled
 		}
 		delete(normalizedExtra, UpstreamBillingProbeEnabledExtraKey)
 		delete(normalizedExtra, UpstreamBillingRateSyncEnabledExtraKey)
@@ -755,6 +722,35 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		ComputeQuotaResetAt(account.Extra)
 		NormalizeFixedQuotaWindows(account.Extra)
 	}
+	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
+		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
+			return nil, infraerrors.BadRequest(
+				"UPSTREAM_BILLING_RATE_SYNC_REQUIRES_PROBE",
+				"upstream billing rate sync requires upstream billing probe",
+			)
+		}
+		enabled := true
+		requestedProbeEnabledUpdate = &enabled
+	}
+	if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
+		disabled := false
+		requestedRateSyncEnabledUpdate = &disabled
+	}
+	if (requestedProbeEnabledUpdate != nil && *requestedProbeEnabledUpdate) ||
+		(requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate) {
+		if !isUpstreamBillingProbeAccount(account) {
+			return nil, ErrUpstreamBillingProbeAccountInvalid
+		}
+	}
+	if account.Extra == nil && (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil) {
+		account.Extra = make(map[string]any)
+	}
+	if requestedProbeEnabledUpdate != nil {
+		account.Extra[UpstreamBillingProbeEnabledExtraKey] = *requestedProbeEnabledUpdate
+	}
+	if requestedRateSyncEnabledUpdate != nil {
+		account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = *requestedRateSyncEnabledUpdate
+	}
 	// 影子代理恒继承母账号(由 propagateProxyToShadows 同步),不接受独立编辑——外审 B/P1;
 	// 否则要等母账号下次改 proxy 才被覆盖,期间影子会出现"有时继承、有时独立"的漂移。
 	if input.ProxyID != nil && !account.IsCredentialShadow() {
@@ -768,7 +764,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
 		delete(account.Extra, UpstreamBillingProbeExtraKey)
-		if !IsUpstreamBillingProbeAccount(account) {
+		if !isUpstreamBillingProbeAccount(account) {
 			delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
 			delete(account.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 		}
@@ -792,27 +788,16 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if input.Priority != nil {
 		account.Priority = *input.Priority
 	}
-	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
-		if !IsUpstreamBillingProbeAccount(account) {
-			return nil, ErrUpstreamBillingProbeAccountInvalid
-		}
-		probeEnabled := true
-		requestedProbeEnabledUpdate = &probeEnabled
-	}
-	if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
-		rateSyncEnabled := false
-		requestedRateSyncEnabledUpdate = &rateSyncEnabled
-	}
-	effectiveRateSyncEnabled := upstreamBillingRateSyncEnabled(account)
-	if requestedRateSyncEnabledUpdate != nil {
-		effectiveRateSyncEnabled = *requestedRateSyncEnabledUpdate
-	}
-	if input.RateMultiplier != nil && effectiveRateSyncEnabled {
-		return nil, ErrUpstreamBillingRateSyncManualRate
-	}
 	if input.RateMultiplier != nil {
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
+		}
+		// 同步开启时倍率归上游所有，手工值活不过下一次成功探测（表现为"改了又自己
+		// 变回去"），与批量路径一样直接拒绝。判断的是本次请求生效后的状态：上面
+		// 已把请求携带的两个开关落进 account.Extra，所以"同一请求关闭同步 + 改倍率"
+		// （用户显式收回所有权）会走到这里时读到 false，正常放行。
+		if upstreamBillingRateSyncEnabled(account) {
+			return nil, ErrUpstreamBillingRateSyncConflict
 		}
 		account.RateMultiplier = input.RateMultiplier
 	}
@@ -855,27 +840,39 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 
 	billingSettingsAppliedAtomically := false
-	if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil || input.RateMultiplier != nil) && IsUpstreamBillingProbeAccount(account) {
-		if updater, ok := s.accountRepo.(accountBillingSettingsAtomicUpdater); ok {
-			if err := updater.UpdateWithUpstreamBillingSettings(ctx, account, requestedProbeEnabledUpdate, requestedRateSyncEnabledUpdate, input.RateMultiplier != nil); err != nil {
-				return nil, err
-			}
-			billingSettingsAppliedAtomically = true
+	updater := s.accountBillingRepo
+	if updater == nil {
+		// Unit tests and narrow internal callers may construct adminServiceImpl
+		// directly; production wiring requires this capability through
+		// AdminAccountRepository.
+		updater, _ = s.accountRepo.(AccountBillingSettingsRepository)
+	}
+	if updater != nil {
+		if err := updater.UpdateWithAccountBillingSettings(
+			ctx,
+			account,
+			requestedProbeEnabledUpdate,
+			requestedRateSyncEnabledUpdate,
+			input.RateMultiplier,
+		); err != nil {
+			return nil, err
 		}
+		billingSettingsAppliedAtomically = true
 	}
 	if !billingSettingsAppliedAtomically {
 		if err := s.accountRepo.Update(ctx, account); err != nil {
 			return nil, err
 		}
-		if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil) && IsUpstreamBillingProbeAccount(account) {
-			updates := make(map[string]any, 2)
+		if (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil) &&
+			isUpstreamBillingProbeAccount(account) {
+			settings := make(map[string]any, 2)
 			if requestedProbeEnabledUpdate != nil {
-				updates[UpstreamBillingProbeEnabledExtraKey] = *requestedProbeEnabledUpdate
+				settings[UpstreamBillingProbeEnabledExtraKey] = *requestedProbeEnabledUpdate
 			}
 			if requestedRateSyncEnabledUpdate != nil {
-				updates[UpstreamBillingRateSyncEnabledExtraKey] = *requestedRateSyncEnabledUpdate
+				settings[UpstreamBillingRateSyncEnabledExtraKey] = *requestedRateSyncEnabledUpdate
 			}
-			if err := s.accountRepo.UpdateExtra(ctx, account.ID, updates); err != nil {
+			if err := s.accountRepo.UpdateExtra(ctx, account.ID, settings); err != nil {
 				return nil, err
 			}
 		}
@@ -967,14 +964,14 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || input.ProbeEnabled != nil || input.RateSyncEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
 		}
 		cachedTargets = loaded
 	}
-	if input.ProbeEnabled != nil || input.RateSyncEnabled != nil || input.RateMultiplier != nil {
+	if input.ProbeEnabled != nil {
 		targetsByID := make(map[int64]*Account, len(cachedTargets))
 		for _, account := range cachedTargets {
 			if account != nil {
@@ -986,30 +983,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			if !ok {
 				return nil, ErrAccountNotFound
 			}
-			if (input.ProbeEnabled != nil || input.RateSyncEnabled != nil) && !IsUpstreamBillingProbeAccount(account) {
+			if !isUpstreamBillingProbeAccount(account) {
 				return nil, ErrUpstreamBillingProbeAccountInvalid
-			}
-		}
-	}
-	if input.RateSyncEnabled != nil && *input.RateSyncEnabled {
-		probeEnabled := true
-		input.ProbeEnabled = &probeEnabled
-	}
-	if input.ProbeEnabled != nil && !*input.ProbeEnabled {
-		rateSyncEnabled := false
-		input.RateSyncEnabled = &rateSyncEnabled
-	}
-	if input.RateMultiplier != nil {
-		for _, account := range cachedTargets {
-			if account == nil {
-				continue
-			}
-			effectiveRateSync := upstreamBillingRateSyncEnabled(account)
-			if input.RateSyncEnabled != nil {
-				effectiveRateSync = *input.RateSyncEnabled
-			}
-			if effectiveRateSync {
-				return nil, ErrUpstreamBillingRateSyncManualRate
 			}
 		}
 	}
@@ -1075,34 +1050,42 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
+		syncEnabledCount := 0
+		for _, account := range cachedTargets {
+			if account == nil || account.Extra == nil {
+				continue
+			}
+			enabled, _ := account.Extra[UpstreamBillingRateSyncEnabledExtraKey].(bool)
+			if enabled {
+				syncEnabledCount++
+			}
+		}
+		if syncEnabledCount > 0 {
+			return nil, ErrUpstreamBillingRateSyncBulkConflict.WithMetadata(map[string]string{
+				"count": strconv.Itoa(syncEnabledCount),
+			})
+		}
 	}
 
 	// 校验并规范化请求头覆写配置（批量路径为 JSONB 顶层 key 合并，直接校验增量即可）
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
 	}
-	if err := NormalizeClaudeCodeUpstreamMimicryCredentials(input.Credentials); err != nil {
-		return nil, err
-	}
 
 	// Prepare bulk updates for columns and JSONB fields.
 	repoUpdates := AccountBulkUpdate{
-		Credentials:     input.Credentials,
-		Extra:           input.Extra,
-		ProbeEnabled:    input.ProbeEnabled,
-		RateSyncEnabled: input.RateSyncEnabled,
+		Credentials:  input.Credentials,
+		Extra:        input.Extra,
+		ProbeEnabled: input.ProbeEnabled,
 	}
 	if input.ProbeEnabled != nil {
 		if repoUpdates.Extra == nil {
 			repoUpdates.Extra = make(map[string]any)
 		}
 		repoUpdates.Extra[UpstreamBillingProbeEnabledExtraKey] = *input.ProbeEnabled
-	}
-	if input.RateSyncEnabled != nil {
-		if repoUpdates.Extra == nil {
-			repoUpdates.Extra = make(map[string]any)
+		if !*input.ProbeEnabled {
+			repoUpdates.Extra[UpstreamBillingRateSyncEnabledExtraKey] = false
 		}
-		repoUpdates.Extra[UpstreamBillingRateSyncEnabledExtraKey] = *input.RateSyncEnabled
 	}
 	if updatesUpstreamBillingProbeIdentity(input.Credentials) || input.ProxyID != nil {
 		if repoUpdates.Extra == nil {
@@ -1186,7 +1169,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 }
 
 func updatesUpstreamBillingProbeIdentity(credentials map[string]any) bool {
-	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides, credKeyClaudeCodeUpstreamMimicryEnabled} {
+	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides} {
 		if _, ok := credentials[key]; ok {
 			return true
 		}
@@ -1202,7 +1185,7 @@ func upstreamBillingProbeIdentity(account *Account) map[string]any {
 	if account.ProxyID != nil {
 		identity["proxy_id"] = *account.ProxyID
 	}
-	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides, credKeyClaudeCodeUpstreamMimicryEnabled} {
+	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides} {
 		if value, ok := account.Credentials[key]; ok {
 			identity[key] = value
 		}

@@ -28,7 +28,7 @@ export default {
       dataExportedSkippedShadows: 'Data exported. Skipped {count} spark shadow account(s): their scheduling config is not included in the backup; recreate and re-tune them after restore.',
       dataExportFailed: 'Failed to export data',
       dataImportTitle: 'Import Data',
-      dataImportHint: 'Upload one or more exported JSON files to import accounts and proxies.',
+      dataImportHint: 'Upload the exported JSON file to import accounts and proxies.',
       dataImportWarning: 'Import will create new accounts/proxies; groups must be bound manually. Ensure existing data does not conflict.',
       dataImportFile: 'Data file',
       dataImportButton: 'Start Import',
@@ -225,15 +225,11 @@ export default {
       upstreamBilling: {
         trustWarning: 'This rate is declared by the upstream site for the current API key. Sub2API cannot verify that it matches actual charges. The upstream site or an intermediary may return forged, stale, or modified data. Verify it against bills, balance changes, and actual usage.',
         autoProbe: 'Automatically probe upstream declared rate',
-        autoProbeHint: 'Probe this account\'s upstream declared rate on the global interval when global probing is enabled.',
-        rateSync: 'Sync upstream rate to account rate',
-        rateSyncHint: 'After a successful probe, apply the upstream resolved rate to the account. Peak-period rates are never persisted. Manual rate editing is disabled while sync is on.',
-        rateSyncState: 'Account rate sync:',
-        rateSyncStatus: {
-          applied: 'Applied new rate',
-          unchanged: 'Rate unchanged',
-          invalid: 'Invalid upstream rate; not applied'
-        },
+        autoProbeHint: 'Refresh the upstream declared rate on the global interval. This switch alone does not change the account rate.',
+        syncRate: 'Sync upstream declared rate',
+        syncRateHint: 'Update the account rate after each successful probe, using the base rate excluding peak hours. Failed probes or declarations outside the allowed range leave it unchanged. Enabling this also turns on "Automatically probe upstream declared rate".',
+        syncRateManagedHint: 'The current rate is maintained automatically from the upstream declared base rate (excluding peak hours).',
+        syncedRateTooltip: 'This account rate is synchronized from the upstream declared base rate (excluding peak hours)',
         manualProbe: 'Probe upstream rate now',
         stale: 'Stale',
         unsupported: 'Unsupported',
@@ -258,7 +254,7 @@ export default {
         enabled: 'On',
         disabled: 'Off',
         probeFailed: 'Failed to probe upstream rate',
-        noEligibleAccounts: 'Select OpenAI, Anthropic, Gemini, or Grok API key accounts',
+        noEligibleAccounts: 'Select API key accounts',
         batchLimit: 'A batch can probe at most 20 accounts',
         batchCompleted: 'Probed {count} account(s)',
         batchPartial: 'Probe partially completed: {success} succeeded, {failed} failed'
@@ -396,10 +392,16 @@ export default {
       bulkSchedulableResultUnknown: 'Bulk scheduling result incomplete. Please retry or refresh.',
       bulkActions: {
         selected: '{count} account(s) selected',
+        selectedAll: 'All {count} account(s) selected',
         selectCurrentPage: 'Select this page',
+        selectAllResults: 'Select all results ({count})',
+        selectingAll: 'Selecting all results...',
+        selectAllFailed: 'Failed to load all accounts. The previous selection was kept.',
         clear: 'Clear selection',
         edit: 'Bulk Edit',
         delete: 'Bulk Delete',
+        confirmDelete: 'Delete the selected {count} account(s)? This action cannot be undone.',
+        deleteSuccess: 'Deleted {count} account(s)',
         enableScheduling: 'Enable Scheduling',
         disableScheduling: 'Disable Scheduling',
         resetStatus: 'Reset Status',
@@ -422,6 +424,8 @@ export default {
         failed: 'Bulk update failed',
         noSelection: 'Please select accounts to edit',
         noFieldsSelected: 'Select at least one field to update',
+        rateSyncWarning: 'Accounts with upstream rate sync enabled cannot be changed in bulk. Disable sync in the account editor first.',
+        rateSyncConflict: 'Cannot change account rates: {count} target account(s) have upstream rate sync enabled.',
         mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform.'
       },
       bulkDeleteTitle: 'Bulk Delete Accounts',
@@ -497,6 +501,9 @@ export default {
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+        flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
+        flattenNamespacesDesc:
+          'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
         longContextBilling: 'API long-context pricing',
         longContextBillingDesc:
           'Disabled by default. Enable only when this account\'s upstream charges OpenAI API long-context rates above the model threshold.',
@@ -515,10 +522,6 @@ export default {
         wsModeConcurrencyHint:
           'When WS mode is enabled, account concurrency becomes the WS connection pool limit for this account.',
         wsModePassthroughHint: 'Passthrough mode does not use the WS connection pool.',
-        imagesStreamSupported: 'Upstream image streaming',
-        imagesStreamSupportedDesc:
-          'Enabled by default. Disable only when the upstream is known not to support streamed image responses; requests requiring an upstream image stream will not use this account.',
-        imagesStreamSupportedValue: 'Allow streamed image requests',
         oauthResponsesWebsocketsV2: 'OAuth WebSocket Mode',
         oauthResponsesWebsocketsV2Desc:
           'Only applies to OpenAI OAuth. This account can use OpenAI WebSocket Mode only when enabled.',
@@ -668,10 +671,6 @@ export default {
       interceptWarmupRequests: 'Intercept Warmup Requests',
       interceptWarmupRequestsDesc:
         'When enabled, warmup requests like title generation will return mock responses without consuming upstream tokens',
-      claudeCodeUpstreamMimicry: {
-        title: 'Mimic Claude Code Upstream',
-        hint: 'Rewrite requests from non-Claude-Code clients as Claude Code traffic for compatible upstreams that enforce Claude Code client access.'
-      },
       headerOverride: {
         title: 'Header Override',
         hint: 'Override same-named request headers on forwarding (case-insensitive)',

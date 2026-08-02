@@ -112,28 +112,14 @@ async function selectButtonByText(wrapper: ReturnType<typeof mountModal>, text: 
 }
 
 async function submitApiKeyAccount(
-  platform: 'openai' | 'anthropic' | 'gemini' | 'grok',
+  platform: 'openai' | 'anthropic',
   enableLongContextBilling = false,
-  disableUpstreamBillingProbe = false,
-  enableUpstreamBillingRateSync = false
+  disableUpstreamBillingProbe = false
 ) {
   const wrapper = mountModal()
-  switch (platform) {
-    case 'openai':
-      await selectButtonByText(wrapper, 'OpenAI')
-      await selectButtonByText(wrapper, 'API Key')
-      break
-    case 'anthropic':
-      await selectButtonByText(wrapper, 'admin.accounts.claudeConsole')
-      break
-    case 'gemini':
-      await selectButtonByText(wrapper, 'Gemini')
-      await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
-      break
-    case 'grok':
-      await selectButtonByText(wrapper, 'Grok')
-      await wrapper.get('[data-testid="grok-account-type-api-key"]').trigger('click')
-      break
+  await selectButtonByText(wrapper, platform === 'openai' ? 'OpenAI' : 'admin.accounts.claudeConsole')
+  if (platform === 'openai') {
+    await selectButtonByText(wrapper, 'API Key')
   }
   await wrapper.get('form#create-account-form input[type="text"]').setValue(`${platform} account`)
   await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
@@ -142,9 +128,6 @@ async function submitApiKeyAccount(
   }
   if (disableUpstreamBillingProbe) {
     await wrapper.get('[data-testid="upstream-billing-auto-probe"]').trigger('click')
-  }
-  if (enableUpstreamBillingRateSync) {
-    await wrapper.get('[data-testid="upstream-billing-rate-sync"]').trigger('click')
   }
   await wrapper.get('form#create-account-form').trigger('submit.prevent')
   await flushPromises()
@@ -184,33 +167,25 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 
+  // namespace 摊平是仅 OAuth 的兼容开关：API Key 走 chat completions 回退桥时由桥自行摊平
+  it('shows the Codex namespace flatten toggle only for OpenAI OAuth accounts', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+
+    expect(wrapper.find('[data-testid="create-openai-flatten-namespaces-toggle"]').exists()).toBe(
+      true
+    )
+
+    await selectButtonByText(wrapper, 'API Key')
+    expect(wrapper.find('[data-testid="create-openai-flatten-namespaces-toggle"]').exists()).toBe(
+      false
+    )
+  })
+
   it('enables upstream billing probes by default for new OpenAI API key accounts', async () => {
     await submitApiKeyAccount('openai')
 
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
-  })
-
-  it.each(['anthropic', 'gemini', 'grok'] as const)(
-    'enables upstream billing probes and performs the initial probe for %s API key accounts',
-    async (platform) => {
-      createAccountMock.mockResolvedValueOnce({ id: 42, platform, type: 'apikey' })
-
-      await submitApiKeyAccount(platform)
-
-      const payload = createAccountMock.mock.calls[0]?.[0]
-      expect(payload?.upstream_billing_probe_enabled).toBe(true)
-      expect(payload?.upstream_billing_rate_sync_enabled).toBe(false)
-      expect(probeUpstreamBillingMock).toHaveBeenCalledWith(42)
-    }
-  )
-
-  it('enabling upstream rate sync keeps probing on and omits the manual account rate', async () => {
-    await submitApiKeyAccount('openai', false, true, true)
-
-    const payload = createAccountMock.mock.calls[0]?.[0]
-    expect(payload?.upstream_billing_probe_enabled).toBe(true)
-    expect(payload?.upstream_billing_rate_sync_enabled).toBe(true)
-    expect(payload?.rate_multiplier).toBeUndefined()
   })
 
   it('waits for the initial upstream billing probe before refreshing the account list', async () => {
@@ -274,27 +249,44 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(true)
   })
 
-  it('keeps OpenAI-only billing settings isolated while enabling Anthropic upstream probing', async () => {
+  it('omits the OpenAI setting for non-OpenAI account creation', async () => {
     await submitApiKeyAccount('anthropic')
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+    // 上游倍率探测已放宽到全部 API-key 平台：非 OpenAI 平台与 OpenAI 一致，默认开启。
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
 
-  it('submits Claude Code upstream mimicry for an Anthropic API key account', async () => {
+  it('sends an explicit disabled state when the non-OpenAI create toggle is turned off', async () => {
+    await submitApiKeyAccount('anthropic', false, true)
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(false)
+  })
+
+  it('antigravity upstream 创建默认携带上游倍率探测开关', async () => {
+    // antigravity upstream 走独立创建 helper，
+    // 也必须与其余 API-key 平台一样默认开启探测并传递开关。
     const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'admin.accounts.claudeConsole')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('Anthropic relay')
+    await selectButtonByText(wrapper, 'Antigravity')
+    await selectButtonByText(wrapper, 'admin.accounts.types.antigravityApikey')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('antigravity relay')
+    const baseInput = wrapper
+      .findAll('input')
+      .find((candidate) => candidate.attributes('placeholder') === 'https://cloudcode-pa.googleapis.com')
+    expect(baseInput).toBeDefined()
+    await baseInput?.setValue('https://relay.example')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-upstream')
-    await wrapper.get('[data-testid="claude-code-upstream-mimicry-toggle"]').trigger('click')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
-    expect(
-      createAccountMock.mock.calls[0]?.[0]?.credentials?.claude_code_upstream_mimicry_enabled
-    ).toBe(true)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload?.platform).toBe('antigravity')
+    expect(payload?.type).toBe('apikey')
+    expect(payload?.upstream_billing_probe_enabled).toBe(true)
+    // 创建成功后前端立即发起一次首探（与其他 apikey 平台一致）。
+    expect(probeUpstreamBillingMock).toHaveBeenCalledWith(42)
   })
 
   it('leaves Codex session import billing ownership to the backend', async () => {

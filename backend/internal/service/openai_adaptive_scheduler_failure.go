@@ -188,6 +188,12 @@ func IsOpenAIAccountInternalFailoverError(err *UpstreamFailoverError) bool {
 	if err == nil {
 		return false
 	}
+	// Pool-mode concurrency/rate limits are safe client-facing 429s. Preserve
+	// Retry-After after same-account retries are exhausted instead of masking
+	// them as an account credential or balance problem.
+	if err.StatusCode == http.StatusTooManyRequests && err.RetryableOnSameAccount {
+		return false
+	}
 	if isOpenAIAdaptiveInsufficientBalanceError(err) || err.IsCredentialFailure() {
 		return true
 	}

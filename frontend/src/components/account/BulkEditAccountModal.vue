@@ -82,6 +82,57 @@
         </div>
       </div>
 
+      <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
+      <div
+        v-if="allOpenAIOAuthOnly"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex-1 pr-4">
+            <label
+              id="bulk-edit-openai-flatten-namespaces-label"
+              class="input-label mb-0"
+              for="bulk-edit-openai-flatten-namespaces-enabled"
+            >
+              {{ t('admin.accounts.openai.flattenNamespaces') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.flattenNamespacesDesc') }}
+            </p>
+          </div>
+          <input
+            v-model="enableOpenAIFlattenNamespaces"
+            id="bulk-edit-openai-flatten-namespaces-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-openai-flatten-namespaces-body"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          id="bulk-edit-openai-flatten-namespaces-body"
+          :class="!enableOpenAIFlattenNamespaces && 'pointer-events-none opacity-50'"
+          role="group"
+          aria-labelledby="bulk-edit-openai-flatten-namespaces-label"
+        >
+          <button
+            id="bulk-edit-openai-flatten-namespaces-toggle"
+            type="button"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openaiFlattenNamespacesEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+            @click="openaiFlattenNamespacesEnabled = !openaiFlattenNamespacesEnabled"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openaiFlattenNamespacesEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- Base URL (API Key only) -->
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -683,7 +734,6 @@
               v-model="enableRateMultiplier"
               id="bulk-edit-rate-multiplier-enabled"
               type="checkbox"
-              :disabled="enableUpstreamBillingRateSync && upstreamBillingRateSyncMode === 'enabled'"
               aria-controls="bulk-edit-rate-multiplier"
               class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
@@ -693,13 +743,21 @@
             id="bulk-edit-rate-multiplier"
             type="number"
             min="0"
-            step="0.0001"
-            :disabled="!enableRateMultiplier || (enableUpstreamBillingRateSync && upstreamBillingRateSyncMode === 'enabled')"
+            step="0.01"
+            :disabled="!enableRateMultiplier"
             class="input"
             :class="!enableRateMultiplier && 'cursor-not-allowed opacity-50'"
             aria-labelledby="bulk-edit-rate-multiplier-label"
           />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
+          <p
+            v-if="enableRateMultiplier"
+            class="mt-2 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-300"
+            data-testid="bulk-rate-sync-warning"
+          >
+            <Icon name="exclamationTriangle" size="xs" class="mt-0.5 flex-shrink-0" />
+            <span>{{ t('admin.accounts.bulkEdit.rateSyncWarning') }}</span>
+          </p>
         </div>
       </div>
 
@@ -855,8 +913,8 @@
         </div>
       </div>
 
-      <!-- Upstream billing auto probe (supported provider API keys only) -->
-      <div v-if="allUpstreamBillingAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- Upstream billing auto probe (any API-key platform) -->
+      <div v-if="allBillingProbeCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <div class="flex-1 pr-4">
             <label
@@ -890,45 +948,6 @@
             data-testid="bulk-edit-upstream-billing-auto-probe-select"
             :options="upstreamBillingAutoProbeOptions"
             aria-labelledby="bulk-edit-upstream-billing-auto-probe-label"
-          />
-        </div>
-      </div>
-
-      <!-- Upstream billing rate sync (supported provider API keys only) -->
-      <div v-if="allUpstreamBillingAPIKey" class="border-t border-gray-200 pt-4 dark:border-dark-600">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-upstream-billing-rate-sync-label"
-              class="input-label mb-0"
-              for="bulk-edit-upstream-billing-rate-sync-enabled"
-            >
-              {{ t('admin.accounts.upstreamBilling.rateSync') }}
-            </label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.upstreamBilling.rateSyncHint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableUpstreamBillingRateSync"
-            id="bulk-edit-upstream-billing-rate-sync-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-upstream-billing-rate-sync"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          />
-        </div>
-        <div
-          id="bulk-edit-upstream-billing-rate-sync"
-          :class="!enableUpstreamBillingRateSync && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-upstream-billing-rate-sync-label"
-        >
-          <Select
-            v-model="upstreamBillingRateSyncMode"
-            :disabled="!enableUpstreamBillingRateSync"
-            data-testid="bulk-edit-upstream-billing-rate-sync-select"
-            :options="upstreamBillingAutoProbeOptions"
-            aria-labelledby="bulk-edit-upstream-billing-rate-sync-label"
           />
         </div>
       </div>
@@ -967,59 +986,6 @@
             :options="openAIWSModeOptions"
             aria-labelledby="bulk-edit-openai-apikey-ws-mode-label"
           />
-        </div>
-      </div>
-
-      <!-- OpenAI 上游图片流式响应能力 -->
-      <div v-if="allOpenAIImagesCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="min-w-0 flex-1 pr-4">
-            <label
-              id="bulk-edit-openai-images-stream-supported-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-images-stream-supported-enabled"
-            >
-              {{ t('admin.accounts.openai.imagesStreamSupported') }}
-            </label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.imagesStreamSupportedDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAIImagesStreamSupported"
-            id="bulk-edit-openai-images-stream-supported-enabled"
-            data-testid="bulk-edit-openai-images-stream-supported-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-images-stream-supported"
-            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-images-stream-supported"
-          class="flex items-center justify-between"
-          :class="!enableOpenAIImagesStreamSupported && 'pointer-events-none opacity-50'"
-        >
-          <span class="text-sm text-gray-700 dark:text-gray-300">
-            {{ t('admin.accounts.openai.imagesStreamSupportedValue') }}
-          </span>
-          <button
-            type="button"
-            data-testid="bulk-edit-openai-images-stream-supported-toggle"
-            :aria-pressed="openAIImagesStreamSupported"
-            aria-labelledby="bulk-edit-openai-images-stream-supported-label"
-            @click="openAIImagesStreamSupported = !openAIImagesStreamSupported"
-            :class="[
-              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              openAIImagesStreamSupported ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                openAIImagesStreamSupported ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
         </div>
       </div>
 
@@ -1368,7 +1334,6 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
-import { supportsUpstreamBilling } from '@/utils/upstreamBilling'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1416,21 +1381,22 @@ const allOpenAIPassthroughCapable = computed(() => {
   )
 })
 
-const allOpenAIImagesCapable = computed(() => {
-  return (
-    targetSelectedPlatforms.value.length === 1 &&
-    targetSelectedPlatforms.value[0] === 'openai' &&
-    targetSelectedTypes.value.length > 0 &&
-    targetSelectedTypes.value.every(t => t === 'oauth' || t === 'apikey')
-  )
-})
-
 const allOpenAIOAuth = computed(() => {
   return (
     targetSelectedPlatforms.value.length === 1 &&
     targetSelectedPlatforms.value[0] === 'openai' &&
     targetSelectedTypes.value.length > 0 &&
     targetSelectedTypes.value.every(t => t === 'oauth' || t === 'setup-token')
+  )
+})
+
+// 严格 OAuth（不含 setup-token）：namespace 摊平兼容开关只对 OAuth 账号生效
+const allOpenAIOAuthOnly = computed(() => {
+  return (
+    targetSelectedPlatforms.value.length === 1 &&
+    targetSelectedPlatforms.value[0] === 'openai' &&
+    targetSelectedTypes.value.length > 0 &&
+    targetSelectedTypes.value.every(t => t === 'oauth')
   )
 })
 
@@ -1443,13 +1409,12 @@ const allOpenAIAPIKey = computed(() => {
   )
 })
 
-const allUpstreamBillingAPIKey = computed(() => {
+// 上游倍率自动探测已放宽到全部 API-key 平台：只要求所选类型全为 apikey，
+// 平台不限（sub2api 上游即可应答 /v1/sub2api/billing）。
+const allBillingProbeCapable = computed(() => {
   return (
-    targetSelectedPlatforms.value.length > 0 &&
     targetSelectedTypes.value.length > 0 &&
-    targetSelectedPlatforms.value.every(platform =>
-      targetSelectedTypes.value.every(type => supportsUpstreamBilling(platform, type))
-    )
+    targetSelectedTypes.value.every(t => t === 'apikey')
   )
 })
 
@@ -1511,11 +1476,10 @@ const enableRateMultiplier = ref(false)
 const enableStatus = ref(false)
 const enableGroups = ref(false)
 const enableOpenAIPassthrough = ref(false)
-const enableOpenAIImagesStreamSupported = ref(false)
+const enableOpenAIFlattenNamespaces = ref(false)
 const enableOpenAIWSMode = ref(false)
 const enableOpenAIAPIKeyWSMode = ref(false)
 const enableUpstreamBillingAutoProbe = ref(false)
-const enableUpstreamBillingRateSync = ref(false)
 const enableCodexCLIOnly = ref(false)
 const enableCodexCLIOnlyAppServer = ref(false)
 const enableOpenAICompactMode = ref(false)
@@ -1544,11 +1508,11 @@ const rateMultiplier = ref(1)
 const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const openaiPassthroughEnabled = ref(false)
-const openAIImagesStreamSupported = ref(true)
+// Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
+const openaiFlattenNamespacesEnabled = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const upstreamBillingAutoProbeMode = ref<'enabled' | 'disabled'>('enabled')
-const upstreamBillingRateSyncMode = ref<'enabled' | 'disabled'>('enabled')
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
@@ -1583,18 +1547,6 @@ const upstreamBillingAutoProbeOptions = computed(() => [
   { value: 'enabled', label: t('common.enabled') },
   { value: 'disabled', label: t('common.disabled') }
 ])
-
-watch([enableUpstreamBillingRateSync, upstreamBillingRateSyncMode], ([enabled, mode]) => {
-  if (!enabled || mode !== 'enabled') return
-  enableRateMultiplier.value = false
-  enableUpstreamBillingAutoProbe.value = true
-  upstreamBillingAutoProbeMode.value = 'enabled'
-})
-watch([enableUpstreamBillingAutoProbe, upstreamBillingAutoProbeMode], ([enabled, mode]) => {
-  if (enabled && mode === 'disabled' && enableUpstreamBillingRateSync.value) {
-    upstreamBillingRateSyncMode.value = 'disabled'
-  }
-})
 const isOpenAIModelRestrictionDisabled = computed(
   () =>
     allOpenAIPassthroughCapable.value &&
@@ -1767,8 +1719,10 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     }
   }
 
-  if (enableOpenAIImagesStreamSupported.value) {
-    ensureExtra().openai_images_stream_supported = openAIImagesStreamSupported.value
+  // 同时校验可见性：勾选后又改了目标筛选条件时，不应把该键写到非 OAuth 账号上
+  if (enableOpenAIFlattenNamespaces.value && allOpenAIOAuthOnly.value) {
+    const extra = ensureExtra()
+    extra.openai_responses_flatten_namespaces = openaiFlattenNamespacesEnabled.value
   }
 
   if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
@@ -1828,10 +1782,6 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (enableUpstreamBillingAutoProbe.value) {
     updates.upstream_billing_probe_enabled = upstreamBillingAutoProbeMode.value === 'enabled'
-  }
-
-  if (enableUpstreamBillingRateSync.value) {
-    updates.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncMode.value === 'enabled'
   }
 
   if (enableCodexCLIOnly.value) {
@@ -1943,7 +1893,7 @@ const handleSubmit = async () => {
   const hasAnyFieldEnabled =
     enableBaseUrl.value ||
     enableOpenAIPassthrough.value ||
-    enableOpenAIImagesStreamSupported.value ||
+    enableOpenAIFlattenNamespaces.value ||
     enableModelRestriction.value ||
     enableCustomErrorCodes.value ||
     enableInterceptWarmup.value ||
@@ -1958,7 +1908,6 @@ const handleSubmit = async () => {
     enableOpenAIWSMode.value ||
     enableOpenAIAPIKeyWSMode.value ||
     enableUpstreamBillingAutoProbe.value ||
-    enableUpstreamBillingRateSync.value ||
     enableCodexCLIOnly.value ||
     enableCodexCLIOnlyAppServer.value ||
     enableOpenAICompactMode.value ||
@@ -2044,6 +1993,10 @@ const submitBulkUpdate = async (baseUpdates: Record<string, unknown>) => {
       pendingUpdatesForConfirm.value = baseUpdates
       mixedChannelWarningMessage.value = error.message
       showMixedChannelWarning.value = true
+    } else if (error.reason === 'UPSTREAM_BILLING_RATE_SYNC_BULK_CONFLICT') {
+      appStore.showError(t('admin.accounts.bulkEdit.rateSyncConflict', {
+        count: error.metadata?.count ?? 1
+      }))
     } else {
       appStore.showError(error.message || t('admin.accounts.bulkEdit.failed'))
       console.error('Error bulk updating accounts:', error)
@@ -2085,11 +2038,10 @@ watch(
       enableStatus.value = false
       enableGroups.value = false
       enableOpenAIPassthrough.value = false
-      enableOpenAIImagesStreamSupported.value = false
+      enableOpenAIFlattenNamespaces.value = false
       enableOpenAIWSMode.value = false
       enableOpenAIAPIKeyWSMode.value = false
       enableUpstreamBillingAutoProbe.value = false
-      enableUpstreamBillingRateSync.value = false
       enableCodexCLIOnly.value = false
       enableCodexCLIOnlyAppServer.value = false
       enableOpenAICompactMode.value = false
@@ -2099,7 +2051,7 @@ watch(
       // Reset all values
       baseUrl.value = ''
       openaiPassthroughEnabled.value = false
-      openAIImagesStreamSupported.value = true
+      openaiFlattenNamespacesEnabled.value = false
       modelRestrictionMode.value = 'whitelist'
       allowedModels.value = []
       modelMappings.value = []
@@ -2118,7 +2070,6 @@ watch(
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       upstreamBillingAutoProbeMode.value = 'enabled'
-      upstreamBillingRateSyncMode.value = 'enabled'
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAppServerEnabled.value = false
       openAICompactMode.value = 'auto'

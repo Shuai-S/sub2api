@@ -24,7 +24,6 @@ type upstreamBillingProbeAccountRepo struct {
 	accounts    map[int64]*Account
 	updates     map[int64][]map[string]any
 	bulkUpdates []AccountBulkUpdate
-	rateTargets map[int64][]*float64
 }
 
 type staleDueUpstreamBillingProbeAccountRepo struct {
@@ -111,15 +110,12 @@ func (r *upstreamBillingProbeAccountRepo) UpdateExtra(_ context.Context, id int6
 	return nil
 }
 
-func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(_ context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot) error {
-	return r.applyUpstreamBillingProbeResult(expected, snapshot, nil)
-}
-
-func (r *upstreamBillingProbeAccountRepo) ApplyUpstreamBillingProbeResult(_ context.Context, expected *Account, snapshot *UpstreamBillingProbeSnapshot, targetRate *float64) error {
-	return r.applyUpstreamBillingProbeResult(expected, snapshot, targetRate)
-}
-
-func (r *upstreamBillingProbeAccountRepo) applyUpstreamBillingProbeResult(expected *Account, snapshot *UpstreamBillingProbeSnapshot, targetRate *float64) error {
+func (r *upstreamBillingProbeAccountRepo) UpdateUpstreamBillingProbeSnapshot(
+	_ context.Context,
+	expected *Account,
+	snapshot *UpstreamBillingProbeSnapshot,
+	rateMultiplier *float64,
+) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	account := r.accounts[expected.ID]
@@ -130,16 +126,12 @@ func (r *upstreamBillingProbeAccountRepo) applyUpstreamBillingProbeResult(expect
 		account.Extra = make(map[string]any)
 	}
 	account.Extra[UpstreamBillingProbeExtraKey] = snapshot
-	if r.rateTargets == nil {
-		r.rateTargets = make(map[int64][]*float64)
-	}
-	var recorded *float64
-	if targetRate != nil {
-		value := *targetRate
-		recorded = &value
+	if snapshot.Status == UpstreamBillingProbeStatusOK &&
+		rateMultiplier != nil &&
+		upstreamBillingRateSyncEnabled(account) {
+		value := *rateMultiplier
 		account.RateMultiplier = &value
 	}
-	r.rateTargets[expected.ID] = append(r.rateTargets[expected.ID], recorded)
 	return nil
 }
 
@@ -153,144 +145,6 @@ func (r *upstreamBillingProbeAccountRepo) FindByExtraField(_ context.Context, ke
 		}
 	}
 	return result, nil
-}
-
-func TestIsUpstreamBillingProbeAccountSupportsOnlyProviderAPIKeys(t *testing.T) {
-	tests := []struct {
-		name     string
-		platform string
-		typeName string
-		want     bool
-	}{
-		{name: "openai api key", platform: PlatformOpenAI, typeName: AccountTypeAPIKey, want: true},
-		{name: "anthropic api key", platform: PlatformAnthropic, typeName: AccountTypeAPIKey, want: true},
-		{name: "gemini api key", platform: PlatformGemini, typeName: AccountTypeAPIKey, want: true},
-		{name: "grok api key", platform: PlatformGrok, typeName: AccountTypeAPIKey, want: true},
-		{name: "openai oauth", platform: PlatformOpenAI, typeName: AccountTypeOAuth, want: false},
-		{name: "anthropic bedrock", platform: PlatformAnthropic, typeName: AccountTypeBedrock, want: false},
-		{name: "gemini service account", platform: PlatformGemini, typeName: AccountTypeServiceAccount, want: false},
-		{name: "grok oauth", platform: PlatformGrok, typeName: AccountTypeOAuth, want: false},
-		{name: "other api key", platform: PlatformAntigravity, typeName: AccountTypeAPIKey, want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			account := &Account{Platform: tt.platform, Type: tt.typeName}
-			require.Equal(t, tt.want, IsUpstreamBillingProbeAccount(account))
-		})
-	}
-}
-
-func TestBuildUpstreamBillingProbeRequestUsesProviderAuthentication(t *testing.T) {
-	tests := []struct {
-		name          string
-		platform      string
-		baseURL       string
-		extra         map[string]any
-		wantURL       string
-		wantAuth      string
-		wantXAPIKey   string
-		wantGoogleKey string
-		wantProfile   HTTPUpstreamProfile
-	}{
-		{
-			name:        "openai bearer and v1 path",
-			platform:    PlatformOpenAI,
-			baseURL:     "https://relay.example/v1",
-			wantURL:     "https://relay.example/v1/sub2api/billing",
-			wantAuth:    "Bearer test-key",
-			wantProfile: HTTPUpstreamProfileOpenAI,
-		},
-		{
-			name:        "anthropic x api key",
-			platform:    PlatformAnthropic,
-			baseURL:     "https://relay.example",
-			wantURL:     "https://relay.example/v1/sub2api/billing",
-			wantXAPIKey: "test-key",
-		},
-		{
-			name:     "anthropic bearer override",
-			platform: PlatformAnthropic,
-			baseURL:  "https://relay.example/anthropic/v1",
-			extra: map[string]any{
-				anthropicAPIKeyAuthSchemeExtraKey: AnthropicAPIKeyAuthSchemeAuthorizationBearer,
-			},
-			wantURL:     "https://relay.example/anthropic/v1/sub2api/billing",
-			wantAuth:    "Bearer test-key",
-			wantProfile: HTTPUpstreamProfileDefault,
-		},
-		{
-			name:          "gemini google api key",
-			platform:      PlatformGemini,
-			baseURL:       "https://relay.example/v1beta",
-			wantURL:       "https://relay.example/v1beta/sub2api/billing",
-			wantGoogleKey: "test-key",
-		},
-		{
-			name:        "grok bearer",
-			platform:    PlatformGrok,
-			baseURL:     "https://api.x.ai/v1",
-			wantURL:     "https://api.x.ai/v1/sub2api/billing",
-			wantAuth:    "Bearer test-key",
-			wantProfile: HTTPUpstreamProfileDefault,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			account := &Account{
-				Platform:    tt.platform,
-				Type:        AccountTypeAPIKey,
-				Credentials: map[string]any{"api_key": "test-key"},
-				Extra:       tt.extra,
-			}
-			req, err := buildUpstreamBillingProbeRequest(context.Background(), account, tt.baseURL, "test-key")
-			require.NoError(t, err)
-			require.Equal(t, tt.wantURL, req.URL.String())
-			require.Equal(t, http.MethodGet, req.Method)
-			require.Equal(t, "application/json", req.Header.Get("Accept"))
-			require.Equal(t, tt.wantAuth, req.Header.Get("Authorization"))
-			require.Equal(t, tt.wantXAPIKey, req.Header.Get("x-api-key"))
-			require.Equal(t, tt.wantGoogleKey, req.Header.Get("x-goog-api-key"))
-			require.Equal(t, tt.wantProfile, HTTPUpstreamProfileFromContext(req.Context()))
-			require.True(t, HTTPUpstreamRedirectsDisabled(req.Context()))
-		})
-	}
-}
-
-func TestUpstreamBillingProbeSupportedPlatformsApplyResolvedRate(t *testing.T) {
-	for index, platform := range []string{PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok} {
-		t.Run(platform, func(t *testing.T) {
-			currentRate := 1.25
-			account := &Account{
-				ID:             int64(index + 1),
-				Platform:       platform,
-				Type:           AccountTypeAPIKey,
-				Status:         StatusActive,
-				RateMultiplier: &currentRate,
-				Credentials: map[string]any{
-					"api_key":  "test-key",
-					"base_url": "https://relay.example/v1",
-				},
-				Extra: map[string]any{
-					UpstreamBillingRateSyncEnabledExtraKey: true,
-				},
-			}
-			repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
-			svc := newUpstreamBillingProbeTestService(repo, &upstreamBillingProbeHTTPStub{}, &upstreamBillingProbeSettingRepo{})
-
-			snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
-
-			require.NoError(t, err)
-			require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
-			require.NotNil(t, snapshot.RateSync)
-			require.Equal(t, UpstreamBillingRateSyncStatusApplied, snapshot.RateSync.Status)
-			require.InDelta(t, 0.8, account.BillingRateMultiplier(), 1e-12)
-			require.Len(t, repo.rateTargets[account.ID], 1)
-			require.NotNil(t, repo.rateTargets[account.ID][0])
-			require.InDelta(t, 0.8, *repo.rateTargets[account.ID][0], 1e-12)
-		})
-	}
 }
 
 type upstreamBillingProbeSettingRepo struct {
@@ -372,64 +226,6 @@ func newUpstreamBillingProbeTestService(
 	return NewUpstreamBillingProbeService(repo, accountTestService, NewSettingService(settingRepo, cfg))
 }
 
-func TestPrepareUpstreamBillingRateSyncUsesResolvedRateAndNormalizesPrecision(t *testing.T) {
-	current := 1.25
-	account := &Account{
-		RateMultiplier: &current,
-		Extra: map[string]any{
-			UpstreamBillingRateSyncEnabledExtraKey: true,
-		},
-	}
-	snapshot := &UpstreamBillingProbeSnapshot{
-		Status: UpstreamBillingProbeStatusOK,
-		Data: map[string]any{
-			"resolved_rate_multiplier":  0.812345,
-			"effective_rate_multiplier": 8.12345,
-		},
-	}
-	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
-
-	target := prepareUpstreamBillingRateSync(account, snapshot, now)
-
-	require.NotNil(t, target)
-	require.Equal(t, 0.8123, *target)
-	require.NotNil(t, snapshot.RateSync)
-	require.Equal(t, UpstreamBillingRateSyncStatusApplied, snapshot.RateSync.Status)
-	require.Equal(t, 0.812345, *snapshot.RateSync.SourceRateMultiplier)
-	require.Equal(t, 0.8123, *snapshot.RateSync.AppliedRateMultiplier)
-}
-
-func TestPrepareUpstreamBillingRateSyncMarksUnchangedAndRejectsOutOfBounds(t *testing.T) {
-	current := 0.8123
-	account := &Account{RateMultiplier: &current, Extra: map[string]any{UpstreamBillingRateSyncEnabledExtraKey: true}}
-	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
-
-	unchanged := &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK, Data: map[string]any{"resolved_rate_multiplier": 0.81234}}
-	target := prepareUpstreamBillingRateSync(account, unchanged, now)
-	require.NotNil(t, target)
-	require.Equal(t, UpstreamBillingRateSyncStatusUnchanged, unchanged.RateSync.Status)
-
-	invalid := &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK, Data: map[string]any{"resolved_rate_multiplier": 1000000.0}}
-	require.Nil(t, prepareUpstreamBillingRateSync(account, invalid, now))
-	require.Equal(t, UpstreamBillingRateSyncStatusInvalid, invalid.RateSync.Status)
-}
-
-func TestPrepareUpstreamBillingRateSyncDoesNotApplyFailedProbe(t *testing.T) {
-	previousSync := &UpstreamBillingRateSyncSnapshot{Status: UpstreamBillingRateSyncStatusApplied, SyncedAt: time.Now().Add(-time.Hour)}
-	account := &Account{Extra: map[string]any{
-		UpstreamBillingRateSyncEnabledExtraKey: true,
-		UpstreamBillingProbeExtraKey: &UpstreamBillingProbeSnapshot{
-			Status:   UpstreamBillingProbeStatusOK,
-			RateSync: previousSync,
-		},
-	}}
-	snapshot := &UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusFailed}
-
-	require.Nil(t, prepareUpstreamBillingRateSync(account, snapshot, time.Now()))
-	require.Equal(t, previousSync.Status, snapshot.RateSync.Status)
-	require.True(t, previousSync.SyncedAt.Equal(snapshot.RateSync.SyncedAt))
-}
-
 func TestUpstreamBillingProbeSettingsDefaultsAndValidation(t *testing.T) {
 	repo := &upstreamBillingProbeSettingRepo{}
 	settingsService := NewSettingService(repo, &config.Config{})
@@ -474,6 +270,7 @@ func TestUpstreamBillingProbeSettingsDefaultsAndValidation(t *testing.T) {
 }
 
 func TestUpstreamBillingProbeSuccessPersistsSanitizedSnapshot(t *testing.T) {
+	initialRate := 0.25
 	account := &Account{
 		ID:          17,
 		Platform:    PlatformOpenAI,
@@ -484,6 +281,11 @@ func TestUpstreamBillingProbeSuccessPersistsSanitizedSnapshot(t *testing.T) {
 			"api_key":  "sk-sensitive",
 			"base_url": "https://upstream.example/v1",
 		},
+		Extra: map[string]any{
+			UpstreamBillingProbeEnabledExtraKey:    true,
+			UpstreamBillingRateSyncEnabledExtraKey: true,
+		},
+		RateMultiplier: &initialRate,
 	}
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -522,6 +324,12 @@ func TestUpstreamBillingProbeSuccessPersistsSanitizedSnapshot(t *testing.T) {
 	require.Equal(t, fixedNow.Add(time.Hour), *snapshot.FreshUntil)
 	require.False(t, snapshot.NextProbeAt.Before(fixedNow.Add(24*time.Minute)))
 	require.False(t, snapshot.NextProbeAt.After(fixedNow.Add(36*time.Minute)))
+	// 写回的是不含高峰因子的 resolved 倍率（0.6），不是探测那一刻含高峰的
+	// effective 倍率（0.9）——否则一个探测周期的峰值会被冻结进静态列。
+	require.NotNil(t, account.RateMultiplier)
+	require.Equal(t, 0.6, *account.RateMultiplier)
+	require.NotNil(t, snapshot.SyncedRateMultiplier)
+	require.Equal(t, 0.6, *snapshot.SyncedRateMultiplier)
 	require.Equal(t, "https://upstream.example/v1/sub2api/billing", upstream.lastReq.URL.String())
 	require.Equal(t, http.MethodGet, upstream.lastReq.Method)
 	require.Equal(t, "Bearer sk-sensitive", upstream.lastReq.Header.Get("Authorization"))
@@ -530,6 +338,217 @@ func TestUpstreamBillingProbeSuccessPersistsSanitizedSnapshot(t *testing.T) {
 	persisted := decodeUpstreamBillingProbeSnapshot(account.Extra)
 	require.NotNil(t, persisted)
 	require.Equal(t, snapshot.Status, persisted.Status)
+}
+
+func TestUpstreamBillingProbeSyncsResolvedRateForAllAPIKeyPlatforms(t *testing.T) {
+	for _, platform := range []string{
+		PlatformOpenAI,
+		PlatformAnthropic,
+		PlatformGemini,
+		PlatformAntigravity,
+		PlatformGrok,
+	} {
+		t.Run(platform, func(t *testing.T) {
+			initialRate := 0.25
+			account := &Account{
+				ID:             17,
+				Platform:       platform,
+				Type:           AccountTypeAPIKey,
+				Status:         StatusActive,
+				Concurrency:    1,
+				RateMultiplier: &initialRate,
+				Credentials: map[string]any{
+					"api_key":  "sk-sensitive",
+					"base_url": "https://upstream.example",
+				},
+				Extra: map[string]any{
+					UpstreamBillingProbeEnabledExtraKey:    true,
+					UpstreamBillingRateSyncEnabledExtraKey: true,
+				},
+			}
+			repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+			svc := newUpstreamBillingProbeTestService(repo, &upstreamBillingProbeHTTPStub{}, &upstreamBillingProbeSettingRepo{})
+
+			snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+
+			require.NoError(t, err)
+			require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+			require.NotNil(t, account.RateMultiplier)
+			require.Equal(t, 0.8, *account.RateMultiplier)
+		})
+	}
+}
+
+func TestUpstreamBillingProbeOnlyDoesNotChangeAccountRate(t *testing.T) {
+	initialRate := 0.25
+	account := &Account{
+		ID:             18,
+		Platform:       PlatformGrok,
+		Type:           AccountTypeAPIKey,
+		Status:         StatusActive,
+		Concurrency:    1,
+		RateMultiplier: &initialRate,
+		Credentials: map[string]any{
+			"api_key":  "sk-sensitive",
+			"base_url": "https://upstream.example",
+		},
+		Extra: map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	svc := newUpstreamBillingProbeTestService(repo, &upstreamBillingProbeHTTPStub{}, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+	require.NotNil(t, account.RateMultiplier)
+	require.Equal(t, initialRate, *account.RateMultiplier)
+	require.Contains(t, account.Extra, UpstreamBillingProbeExtraKey)
+}
+
+func TestUpstreamBillingProbeSyncRateRangeAndPrecision(t *testing.T) {
+	tests := []struct {
+		name  string
+		value float64
+		want  float64
+		ok    bool
+	}{
+		{name: "round to four decimals", value: 0.07654, want: 0.0765, ok: true},
+		{name: "maximum", value: upstreamBillingRateSyncMaxMultiplier, want: upstreamBillingRateSyncMaxMultiplier, ok: true},
+		// 0 会让 accountCost 恒为 0，账号配额与成本告警全部静默失效，
+		// 自动写回一律拒绝（管理员手工设 0 仍然允许）。
+		{name: "zero is rejected", value: 0, ok: false},
+		{name: "positive below database precision rounds to zero", value: 0.00001, ok: false},
+		{name: "just above the write-back ceiling", value: 100.0001, ok: false},
+		{name: "column ceiling is far above the write-back ceiling", value: 999999.9999, ok: false},
+		{name: "negative", value: -1, ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := upstreamBillingProbeSyncRate(map[string]any{"resolved_rate_multiplier": tt.value})
+			require.Equal(t, tt.ok, ok)
+			if tt.ok {
+				require.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+// 只读取 resolved（时间无关的基准倍率）：effective 含探测那一刻的高峰系数，
+// 写回它会把一个探测周期的峰值/谷值冻结进静态列。
+func TestUpstreamBillingProbeSyncRateIgnoresEffectiveRate(t *testing.T) {
+	got, ok := upstreamBillingProbeSyncRate(map[string]any{
+		"resolved_rate_multiplier":  0.6,
+		"effective_rate_multiplier": 0.9,
+	})
+	require.True(t, ok)
+	require.Equal(t, 0.6, got)
+
+	_, ok = upstreamBillingProbeSyncRate(map[string]any{"effective_rate_multiplier": 0.9})
+	require.False(t, ok)
+}
+
+// 上游声明超出自动写回值域时保持原倍率，但探测本身是成功的：
+// 快照照常记 ok，不累计 failure_count、不进入退避。
+func TestUpstreamBillingProbeKeepsRateWhenDeclarationOutOfSyncRange(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		declared string
+	}{
+		{name: "zero", declared: "0"},
+		{name: "above ceiling", declared: "1000"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			initialRate := 0.25
+			account := &Account{
+				ID:             21,
+				Platform:       PlatformOpenAI,
+				Type:           AccountTypeAPIKey,
+				Status:         StatusActive,
+				Concurrency:    1,
+				RateMultiplier: &initialRate,
+				Credentials: map[string]any{
+					"api_key":  "sk-sensitive",
+					"base_url": "https://upstream.example",
+				},
+				Extra: map[string]any{
+					UpstreamBillingProbeEnabledExtraKey:    true,
+					UpstreamBillingRateSyncEnabledExtraKey: true,
+				},
+			}
+			repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{
+					"object":"sub2api.key_billing",
+					"schema_version":1,
+					"billing_scope":"token",
+					"group_rate_multiplier":%[1]s,
+					"resolved_rate_multiplier":%[1]s,
+					"peak_rate_enabled":false,
+					"effective_rate_multiplier":%[1]s,
+					"observed_at":"2026-07-13T01:00:00Z"
+				}`, tt.declared))),
+			}}
+			svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+			snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+
+			require.NoError(t, err)
+			require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+			require.Zero(t, snapshot.FailureCount)
+			require.Nil(t, snapshot.SyncedRateMultiplier)
+			require.NotNil(t, account.RateMultiplier)
+			require.Equal(t, initialRate, *account.RateMultiplier)
+			// 原始声明仍进快照供展示。
+			require.Equal(t, snapshot.Data["resolved_rate_multiplier"], snapshot.Data["effective_rate_multiplier"])
+		})
+	}
+}
+
+// 未开启同步的账号只观察上游声明：声明值不适配 accounts.rate_multiplier
+// 不得被记成探测失败（否则会累计 failure_count 并进入指数退避）。
+func TestUpstreamBillingProbeWithoutSyncIgnoresUnusableDeclaredRate(t *testing.T) {
+	account := &Account{
+		ID:          22,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-sensitive",
+			"base_url": "https://upstream.example",
+		},
+		Extra: map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{
+			"object":"sub2api.key_billing",
+			"schema_version":1,
+			"billing_scope":"token",
+			"group_rate_multiplier":0,
+			"resolved_rate_multiplier":0,
+			"peak_rate_enabled":false,
+			"effective_rate_multiplier":0,
+			"observed_at":"2026-07-13T01:00:00Z"
+		}`)),
+	}}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, &upstreamBillingProbeSettingRepo{})
+
+	snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
+	require.Zero(t, snapshot.FailureCount)
+	require.Empty(t, snapshot.LastError)
+	require.Nil(t, snapshot.SyncedRateMultiplier)
+	require.Equal(t, float64(0), snapshot.Data["resolved_rate_multiplier"])
+	require.Nil(t, account.RateMultiplier)
 }
 
 func TestUpstreamBillingProbeRejectsMissingRequiredMultiplier(t *testing.T) {
@@ -671,6 +690,7 @@ func TestUpstreamBillingRateAtHandlesDST(t *testing.T) {
 
 func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing.T) {
 	receivedAt := time.Date(2026, time.July, 12, 12, 0, 0, 0, time.UTC)
+	initialRate := 0.35
 	previous := &UpstreamBillingProbeSnapshot{
 		Status:       UpstreamBillingProbeStatusOK,
 		Data:         map[string]any{"effective_rate_multiplier": 0.5},
@@ -678,13 +698,17 @@ func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing
 		FailureCount: 1,
 	}
 	account := &Account{
-		ID:          18,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
-		Extra:       map[string]any{UpstreamBillingProbeExtraKey: previous},
+		ID:             18,
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		Status:         StatusActive,
+		Concurrency:    1,
+		RateMultiplier: &initialRate,
+		Credentials:    map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+		Extra: map[string]any{
+			UpstreamBillingProbeEnabledExtraKey: true,
+			UpstreamBillingProbeExtraKey:        previous,
+		},
 	}
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -707,11 +731,76 @@ func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing
 	require.Equal(t, "http_error", snapshot.LastError)
 	require.False(t, snapshot.NextProbeAt.Before(fixedNow.Add(4*time.Hour)))
 	require.NotContains(t, snapshot.LastError, "do not persist")
+	require.NotNil(t, account.RateMultiplier)
+	require.Equal(t, initialRate, *account.RateMultiplier)
 }
 
 func TestUpstreamBillingProbeRetryAfterIsNotShortened(t *testing.T) {
 	delay := nextProbeDelay(30, 48*time.Hour)
 	require.Equal(t, 48*time.Hour, delay)
+}
+
+// unsupported 的重探间隔明显长于普通失败，但始终有上界：上游后来接入 sub2api
+// 时最迟一天内会被重新发现，且不会缩短上游 Retry-After 指令。
+func TestUpstreamBillingProbeUnsupportedDelayIsStretchedAndBounded(t *testing.T) {
+	// 默认 30 分钟 interval：普通失败 24~36 分钟，unsupported 为其 8 倍。
+	stretched := unsupportedProbeDelay(30, 0)
+	require.Greater(t, stretched, 36*time.Minute)
+	require.GreaterOrEqual(t, stretched, 192*time.Minute)
+	require.LessOrEqual(t, stretched, 288*time.Minute)
+
+	// 永不超过封顶值，因此 unsupported 账号不会被永久排除在重探之外。
+	require.LessOrEqual(t, unsupportedProbeDelay(upstreamBillingProbeMaxIntervalMinutes, 0), upstreamBillingProbeMaxDelay)
+	require.Positive(t, unsupportedProbeDelay(upstreamBillingProbeMinIntervalMinutes, 0))
+
+	// Retry-After 更长时原样保留，不被封顶缩短；更短时至少不早于该指令。
+	require.Equal(t, 48*time.Hour, unsupportedProbeDelay(30, 48*time.Hour))
+	require.GreaterOrEqual(t, unsupportedProbeDelay(30, time.Hour), time.Hour)
+}
+
+// 加长退避只把 unsupported 账号移出周期性热队列，手动探测不受影响。
+func TestUpstreamBillingProbeUnsupportedBackoffDefersRunnerButNotManualProbe(t *testing.T) {
+	// Ollama Cloud 形态：官方域，不发请求直接落 unsupported。
+	account := &Account{
+		ID:          31,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-ollama", "base_url": "https://ollama.com/v1"},
+		Extra:       map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
+	}
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	upstream := &upstreamBillingProbeHTTPStub{}
+	settingsRepo := &upstreamBillingProbeSettingRepo{values: map[string]string{
+		SettingKeyUpstreamBillingProbeSettings: `{"enabled":true,"interval_minutes":30}`,
+	}}
+	svc := newUpstreamBillingProbeTestService(repo, upstream, settingsRepo)
+	start := time.Date(2026, time.July, 26, 2, 0, 0, 0, time.UTC)
+	now := start
+	svc.now = func() time.Time { return now }
+
+	require.NoError(t, svc.RunDue(context.Background()))
+	first := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	require.NotNil(t, first)
+	require.Equal(t, UpstreamBillingProbeStatusUnsupported, first.Status)
+	require.Equal(t, start, first.LastAttemptAt)
+	require.False(t, first.NextProbeAt.Before(start.Add(192*time.Minute)))
+	require.Zero(t, upstream.calls.Load())
+
+	// 一个普通失败早就该重探的时间点（远超 36 分钟），runner 仍跳过该账号。
+	now = start.Add(90 * time.Minute)
+	require.NoError(t, svc.RunDue(context.Background()))
+	deferred := decodeUpstreamBillingProbeSnapshot(account.Extra)
+	require.NotNil(t, deferred)
+	require.Equal(t, first.LastAttemptAt, deferred.LastAttemptAt)
+
+	// 手动探测无视退避窗口，管理员随时可以重试。
+	manual, err := svc.ProbeAccount(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, UpstreamBillingProbeStatusUnsupported, manual.Status)
+	require.Equal(t, now, manual.LastAttemptAt)
+	require.Equal(t, 2, manual.FailureCount)
 }
 
 func TestUpstreamBillingProbeEmptyResponseIsPersistedAsFailure(t *testing.T) {
@@ -763,18 +852,23 @@ func TestUpstreamBillingProbeUnsupportedAndAccountToggle(t *testing.T) {
 
 	require.NoError(t, svc.SetAccountEnabled(context.Background(), account.ID, true))
 	require.Equal(t, true, account.Extra[UpstreamBillingProbeEnabledExtraKey])
+	account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = true
 	snapshot, err := svc.ProbeAccount(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.Equal(t, UpstreamBillingProbeStatusUnsupported, snapshot.Status)
 	require.Equal(t, "unsupported", snapshot.LastError)
-	require.False(t, snapshot.NextProbeAt.Before(fixedNow.Add(24*time.Minute)))
-	require.False(t, snapshot.NextProbeAt.After(fixedNow.Add(36*time.Minute)))
+	// unsupported 走加长退避：默认 30 分钟 interval ⇒ (24~36) * 8 分钟。
+	require.False(t, snapshot.NextProbeAt.Before(fixedNow.Add(192*time.Minute)))
+	require.False(t, snapshot.NextProbeAt.After(fixedNow.Add(288*time.Minute)))
 
 	snapshot, err = svc.ProbeAccount(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.Equal(t, 2, snapshot.FailureCount)
-	require.False(t, snapshot.NextProbeAt.Before(fixedNow.Add(24*time.Minute)))
-	require.False(t, snapshot.NextProbeAt.After(fixedNow.Add(36*time.Minute)))
+	require.False(t, snapshot.NextProbeAt.Before(fixedNow.Add(192*time.Minute)))
+	require.False(t, snapshot.NextProbeAt.After(fixedNow.Add(288*time.Minute)))
+	require.NoError(t, svc.SetAccountEnabled(context.Background(), account.ID, false))
+	require.Equal(t, false, account.Extra[UpstreamBillingProbeEnabledExtraKey])
+	require.Equal(t, false, account.Extra[UpstreamBillingRateSyncEnabledExtraKey])
 
 	invalid := &Account{ID: 20, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	repo.accounts[invalid.ID] = invalid
@@ -813,10 +907,14 @@ func TestUpstreamBillingProbeRunnerIsBoundedAndManualProbeIgnoresSwitches(t *tes
 	require.Equal(t, int64(20), upstream.calls.Load())
 
 	accounts[25].Extra[UpstreamBillingProbeEnabledExtraKey] = false
+	manualRate := 0.25
+	accounts[25].RateMultiplier = &manualRate
 	snapshot, err := svc.ProbeAccount(context.Background(), 25)
 	require.NoError(t, err)
 	require.Equal(t, UpstreamBillingProbeStatusOK, snapshot.Status)
 	require.Equal(t, int64(21), upstream.calls.Load())
+	require.NotNil(t, accounts[25].RateMultiplier)
+	require.Equal(t, manualRate, *accounts[25].RateMultiplier)
 }
 
 func TestUpstreamBillingProbeRunnerRechecksEnabledAfterDueSelection(t *testing.T) {
