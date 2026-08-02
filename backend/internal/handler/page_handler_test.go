@@ -1,10 +1,85 @@
 package handler
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
+
+type pageSettingRepo struct {
+	customMenuItems string
+}
+
+func (r *pageSettingRepo) Get(context.Context, string) (*service.Setting, error) {
+	return nil, service.ErrSettingNotFound
+}
+
+func (r *pageSettingRepo) GetValue(_ context.Context, key string) (string, error) {
+	if key == service.SettingKeyCustomMenuItems {
+		return r.customMenuItems, nil
+	}
+	return "", service.ErrSettingNotFound
+}
+
+func (r *pageSettingRepo) Set(context.Context, string, string) error { return nil }
+
+func (r *pageSettingRepo) GetMultiple(context.Context, []string) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+func (r *pageSettingRepo) SetMultiple(context.Context, map[string]string) error { return nil }
+func (r *pageSettingRepo) GetAll(context.Context) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+func (r *pageSettingRepo) Delete(context.Context, string) error { return nil }
+
+func runCustomMenuModalRequest(t *testing.T, raw, id, role string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	svc := service.NewSettingService(&pageSettingRepo{customMenuItems: raw}, &config.Config{})
+	h := NewPageHandler(t.TempDir(), svc)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/custom-menu-items/"+id+"/modal", nil)
+	c.Params = gin.Params{{Key: "id", Value: id}}
+	if role != "" {
+		c.Set(string(middleware.ContextKeyUserRole), role)
+	}
+	h.GetCustomMenuModal(c)
+	return rec
+}
+
+func TestGetCustomMenuModalChecksPlacementAndVisibility(t *testing.T) {
+	raw := `[
+		{"id":"notice","label":"Notice","visibility":"user","placement":"header","modal_content":"# Body"},
+		{"id":"admin-notice","label":"Admin","visibility":"admin","placement":"header","modal_title":"Admin title","modal_content":"Secret"},
+		{"id":"sidebar","label":"Sidebar","visibility":"user","placement":"sidebar","url":"https://example.com"}
+	]`
+
+	userResponse := runCustomMenuModalRequest(t, raw, "notice", service.RoleUser)
+	require.Equal(t, http.StatusOK, userResponse.Code)
+	require.Contains(t, userResponse.Body.String(), `"title":"Notice"`)
+	require.Contains(t, userResponse.Body.String(), `"content":"# Body"`)
+
+	deniedResponse := runCustomMenuModalRequest(t, raw, "admin-notice", service.RoleUser)
+	require.Equal(t, http.StatusNotFound, deniedResponse.Code)
+
+	adminResponse := runCustomMenuModalRequest(t, raw, "admin-notice", service.RoleAdmin)
+	require.Equal(t, http.StatusOK, adminResponse.Code)
+	require.Contains(t, adminResponse.Body.String(), `"title":"Admin title"`)
+
+	sidebarResponse := runCustomMenuModalRequest(t, raw, "sidebar", service.RoleAdmin)
+	require.Equal(t, http.StatusNotFound, sidebarResponse.Code)
+}
 
 func TestCleanPageImageRelativePath(t *testing.T) {
 	tests := []struct {

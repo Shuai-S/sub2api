@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -18,6 +19,11 @@ import (
 var validSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 const maxPageFileSize = 1 << 20 // 1MB
+
+const (
+	customMenuPlacementSidebar = "sidebar"
+	customMenuPlacementHeader  = "header"
+)
 
 type PageHandler struct {
 	pagesDir       string
@@ -92,6 +98,39 @@ func (h *PageHandler) ListPages(c *gin.Context) {
 		}
 	}
 	response.Success(c, slugs)
+}
+
+// GetCustomMenuModal returns protected Markdown content for a header menu item.
+// GET /api/v1/custom-menu-items/:id/modal
+func (h *PageHandler) GetCustomMenuModal(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" || len(id) > 32 || !validSlugPattern.MatchString(id) {
+		response.NotFound(c, "Custom menu item not found")
+		return
+	}
+
+	item, ok := h.findCustomMenuItem(c, id)
+	if !ok || effectiveCustomMenuPlacement(item.Placement) != customMenuPlacementHeader {
+		response.NotFound(c, "Custom menu item not found")
+		return
+	}
+	if item.Visibility == "admin" {
+		role, _ := middleware2.GetUserRoleFromContext(c)
+		if role != service.RoleAdmin {
+			response.NotFound(c, "Custom menu item not found")
+			return
+		}
+	}
+
+	title := strings.TrimSpace(item.ModalTitle)
+	if title == "" {
+		title = item.Label
+	}
+	response.Success(c, gin.H{
+		"id":      item.ID,
+		"title":   title,
+		"content": item.ModalContent,
+	})
 }
 
 // ServePageImage serves images from data/pages/{slug}/ directory.
@@ -201,6 +240,26 @@ func isPathWithinBase(path, base string) bool {
 	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+func effectiveCustomMenuPlacement(placement string) string {
+	if strings.TrimSpace(placement) == "" {
+		return customMenuPlacementSidebar
+	}
+	return placement
+}
+
+func (h *PageHandler) findCustomMenuItem(c *gin.Context, id string) (dto.CustomMenuItem, bool) {
+	if h.settingService == nil {
+		return dto.CustomMenuItem{}, false
+	}
+	items := dto.ParseCustomMenuItems(h.settingService.GetCustomMenuItemsRaw(c.Request.Context()))
+	for _, item := range items {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return dto.CustomMenuItem{}, false
+}
+
 // findSlugVisibility looks up the slug in custom_menu_items and returns (visibility, found).
 func (h *PageHandler) findSlugVisibility(c *gin.Context, slug string) (string, bool) {
 	if h.settingService == nil {
@@ -216,12 +275,16 @@ func (h *PageHandler) findSlugVisibility(c *gin.Context, slug string) (string, b
 		URL        string `json:"url"`
 		PageSlug   string `json:"page_slug"`
 		Visibility string `json:"visibility"`
+		Placement  string `json:"placement"`
 	}
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return "", false
 	}
 
 	for _, item := range items {
+		if effectiveCustomMenuPlacement(item.Placement) != customMenuPlacementSidebar {
+			continue
+		}
 		itemSlug := item.PageSlug
 		if itemSlug == "" && strings.HasPrefix(item.URL, "md:") {
 			itemSlug = strings.TrimPrefix(item.URL, "md:")
@@ -266,6 +329,12 @@ func RegisterPageRoutes(v1 *gin.RouterGroup, dataDir string, jwtAuth gin.Handler
 	pages.Use(jwtAuth)
 	{
 		pages.GET("/:slug", h.GetPageContent)
+	}
+
+	customMenuItems := v1.Group("/custom-menu-items")
+	customMenuItems.Use(jwtAuth)
+	{
+		customMenuItems.GET("/:id/modal", h.GetCustomMenuModal)
 	}
 
 	// Images: no JWT (browser img tags can't carry tokens), visibility check in handler

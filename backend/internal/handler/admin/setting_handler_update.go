@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -1108,11 +1110,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	// 自定义菜单项验证
 	const (
-		maxCustomMenuItems    = 20
-		maxMenuItemLabelLen   = 50
-		maxMenuItemURLLen     = 2048
-		maxMenuItemIconSVGLen = 10 * 1024 // 10KB
-		maxMenuItemIDLen      = 32
+		maxCustomMenuItems         = 20
+		maxMenuItemLabelLen        = 50
+		maxHeaderMenuItemLabelLen  = 20
+		maxMenuItemURLLen          = 2048
+		maxMenuItemIconSVGLen      = 10 * 1024 // 10KB
+		maxMenuItemIDLen           = 32
+		maxMenuItemModalTitleLen   = 100
+		maxMenuItemModalContentLen = 50_000
+		menuPlacementSidebar       = "sidebar"
+		menuPlacementHeader        = "header"
+		menuOpenModeEmbedded       = "embedded"
+		menuOpenModeNewTab         = "new_tab"
 	)
 
 	customMenuJSON := previousSettings.CustomMenuItems
@@ -1127,32 +1136,78 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.BadRequest(c, "Custom menu item label is required")
 				return
 			}
-			if len(item.Label) > maxMenuItemLabelLen {
-				response.BadRequest(c, "Custom menu item label is too long (max 50 characters)")
+
+			placement := strings.TrimSpace(item.Placement)
+			if placement == "" {
+				placement = menuPlacementSidebar
+			}
+			if placement != menuPlacementSidebar && placement != menuPlacementHeader {
+				response.BadRequest(c, "Custom menu item placement must be 'sidebar' or 'header'")
 				return
 			}
-			urlTrimmed := strings.TrimSpace(item.URL)
-			if strings.HasPrefix(urlTrimmed, "md:") {
-				// Markdown page mode: URL = "md:<slug>"
-				slug := strings.TrimPrefix(urlTrimmed, "md:")
-				if slug == "" {
-					response.BadRequest(c, "Custom menu item markdown slug cannot be empty (use md:slug format)")
+			items[i].Placement = placement
+
+			labelLimit := maxMenuItemLabelLen
+			if placement == menuPlacementHeader {
+				labelLimit = maxHeaderMenuItemLabelLen
+			}
+			if utf8.RuneCountInString(item.Label) > labelLimit {
+				response.BadRequest(c, fmt.Sprintf("Custom menu item label is too long (max %d characters)", labelLimit))
+				return
+			}
+
+			if placement == menuPlacementSidebar {
+				openMode := strings.TrimSpace(item.OpenMode)
+				if openMode == "" {
+					openMode = menuOpenModeEmbedded
+				}
+				if openMode != menuOpenModeEmbedded && openMode != menuOpenModeNewTab {
+					response.BadRequest(c, "Custom menu item open mode must be 'embedded' or 'new_tab'")
 					return
+				}
+				items[i].OpenMode = openMode
+
+				urlTrimmed := strings.TrimSpace(item.URL)
+				if strings.HasPrefix(urlTrimmed, "md:") {
+					slug := strings.TrimPrefix(urlTrimmed, "md:")
+					if slug == "" {
+						response.BadRequest(c, "Custom menu item markdown slug cannot be empty (use md:slug format)")
+						return
+					}
+					if openMode == menuOpenModeNewTab {
+						response.BadRequest(c, "Markdown custom menu items cannot open in a new tab")
+						return
+					}
+				} else {
+					if urlTrimmed == "" {
+						response.BadRequest(c, "Custom menu item URL is required (use md:slug for markdown pages)")
+						return
+					}
+					if len(item.URL) > maxMenuItemURLLen {
+						response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
+						return
+					}
+					if err := config.ValidateAbsoluteHTTPURL(urlTrimmed); err != nil {
+						response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL or md:<slug>")
+						return
+					}
 				}
 			} else {
-				if urlTrimmed == "" {
-					response.BadRequest(c, "Custom menu item URL is required (use md:slug for markdown pages)")
+				items[i].OpenMode = ""
+				if utf8.RuneCountInString(item.ModalTitle) > maxMenuItemModalTitleLen {
+					response.BadRequest(c, "Custom menu item modal title is too long (max 100 characters)")
 					return
 				}
-				if len(item.URL) > maxMenuItemURLLen {
-					response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
+				if strings.TrimSpace(item.ModalContent) == "" {
+					response.BadRequest(c, "Custom menu item modal content is required")
 					return
 				}
-				if err := config.ValidateAbsoluteHTTPURL(urlTrimmed); err != nil {
-					response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL or md:<slug>")
+				if utf8.RuneCountInString(item.ModalContent) > maxMenuItemModalContentLen {
+					response.BadRequest(c, "Custom menu item modal content is too long (max 50000 characters)")
 					return
 				}
 			}
+
 			if item.Visibility != "user" && item.Visibility != "admin" {
 				response.BadRequest(c, "Custom menu item visibility must be 'user' or 'admin'")
 				return
@@ -1165,7 +1220,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			if strings.TrimSpace(item.ID) == "" {
 				id, err := generateMenuItemID()
 				if err != nil {
-					response.Error(c, http.StatusInternalServerError, "Failed to generate menu item ID")
+					response.Error(c, http.StatusInternalServerError, "Failed to generate custom menu item ID")
 					return
 				}
 				items[i].ID = id

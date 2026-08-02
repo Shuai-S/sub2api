@@ -427,6 +427,11 @@ export default {
     invalidOrExpiredToken: 'The password reset link is invalid or has expired. Please request a new one.'
   },
 
+  customMenuModal: {
+    loadFailed: 'Failed to load the content. Please try again.',
+    retry: 'Retry'
+  },
+
   // Step-up (sudo) 2FA prompt
   stepUp: {
     title: 'Two-Factor Verification Required',

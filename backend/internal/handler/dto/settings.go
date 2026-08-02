@@ -9,13 +9,17 @@ import (
 
 // CustomMenuItem represents a user-configured custom menu entry.
 type CustomMenuItem struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	IconSVG    string `json:"icon_svg"`
-	URL        string `json:"url"`
-	PageSlug   string `json:"page_slug,omitempty"`
-	Visibility string `json:"visibility"` // "user" or "admin"
-	SortOrder  int    `json:"sort_order"`
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	IconSVG      string `json:"icon_svg"`
+	URL          string `json:"url"`
+	PageSlug     string `json:"page_slug,omitempty"`
+	Visibility   string `json:"visibility"` // "user" or "admin"
+	SortOrder    int    `json:"sort_order"`
+	Placement    string `json:"placement,omitempty"`     // "sidebar" or "header"; empty means sidebar
+	OpenMode     string `json:"open_mode,omitempty"`     // "embedded" or "new_tab"; sidebar only
+	ModalTitle   string `json:"modal_title,omitempty"`   // header only; falls back to Label
+	ModalContent string `json:"modal_content,omitempty"` // header only; Markdown
 }
 
 // CustomEndpoint represents an admin-configured API endpoint for quick copy.
@@ -550,6 +554,8 @@ func ParseUserVisibleMenuItems(raw string) []CustomMenuItem {
 	filtered := make([]CustomMenuItem, 0, len(items))
 	for _, item := range items {
 		if item.Visibility != "admin" {
+			item.ModalTitle = ""
+			item.ModalContent = ""
 			filtered = append(filtered, item)
 		}
 	}

@@ -605,8 +605,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 	}, nil
 }
 
-// filterUserVisibleMenuItems filters out admin-only menu items from a raw JSON
-// array string, returning only items with visibility != "admin".
+// filterUserVisibleMenuItems filters out admin-only items and removes protected
+// modal content before custom menu metadata is exposed through public settings.
 func filterUserVisibleMenuItems(raw string) json.RawMessage {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "[]" {
@@ -619,15 +619,16 @@ func filterUserVisibleMenuItems(raw string) json.RawMessage {
 		return json.RawMessage("[]")
 	}
 
-	// Parse full items to preserve all fields
-	var fullItems []json.RawMessage
+	var fullItems []map[string]any
 	if err := json.Unmarshal([]byte(raw), &fullItems); err != nil {
 		return json.RawMessage("[]")
 	}
 
-	var filtered []json.RawMessage
+	filtered := make([]map[string]any, 0, len(fullItems))
 	for i, item := range items {
 		if item.Visibility != "admin" {
+			delete(fullItems[i], "modal_title")
+			delete(fullItems[i], "modal_content")
 			filtered = append(filtered, fullItems[i])
 		}
 	}

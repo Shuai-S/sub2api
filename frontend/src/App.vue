@@ -6,7 +6,8 @@ import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
-import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
+import CustomMenuModal from '@/components/common/CustomMenuModal.vue'
+import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useCustomMenuModalStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
 
@@ -16,6 +17,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
+const customMenuModalStore = useCustomMenuModalStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
 
@@ -95,6 +97,7 @@ watch(
       // User logged out: clear data and stop polling
       subscriptionStore.clear()
       announcementStore.reset()
+      customMenuModalStore.reset()
       adminComplianceStore.reset()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
@@ -141,5 +144,6 @@ onMounted(async () => {
   <RouterView />
   <Toast />
   <AnnouncementPopup />
+  <CustomMenuModal />
   <AdminComplianceDialog />
 </template>

@@ -6622,182 +6622,145 @@
                 {{ t("admin.settings.customMenu.description") }}
               </p>
             </div>
-            <div class="space-y-4 p-6">
-              <!-- Existing menu items -->
-              <div
-                v-for="(item, index) in form.custom_menu_items"
-                :key="item.id || index"
-                class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
-              >
-                <div class="mb-3 flex items-center justify-between">
-                  <span
-                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    {{
-                      t("admin.settings.customMenu.itemLabel", { n: index + 1 })
-                    }}
-                  </span>
-                  <div class="flex items-center gap-2">
-                    <!-- Move up -->
-                    <button
-                      v-if="index > 0"
-                      type="button"
-                      class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700"
-                      :title="t('admin.settings.customMenu.moveUp')"
-                      @click="moveMenuItem(index, -1)"
-                    >
-                      <svg
-                        class="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M5 15l7-7 7 7"
-                        />
-                      </svg>
-                    </button>
-                    <!-- Move down -->
-                    <button
-                      v-if="index < form.custom_menu_items.length - 1"
-                      type="button"
-                      class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700"
-                      :title="t('admin.settings.customMenu.moveDown')"
-                      @click="moveMenuItem(index, 1)"
-                    >
-                      <svg
-                        class="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
-                    <!-- Delete -->
-                    <button
-                      type="button"
-                      class="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
-                      :title="t('admin.settings.customMenu.remove')"
-                      @click="removeMenuItem(index)"
-                    >
-                      <svg
-                        class="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+            <div class="divide-y divide-gray-100 dark:divide-dark-700">
+              <section class="space-y-4 p-6">
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ t("admin.settings.customMenu.sidebarTitle") }}
+                  </h3>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.customMenu.sidebarDescription") }}
+                  </p>
                 </div>
 
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <!-- Label -->
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                    >
-                      {{ t("admin.settings.customMenu.name") }}
-                    </label>
-                    <input
-                      v-model="item.label"
-                      type="text"
-                      class="input text-sm"
-                      :placeholder="
-                        t('admin.settings.customMenu.namePlaceholder')
-                      "
-                    />
-                  </div>
-
-                  <!-- Visibility -->
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                    >
-                      {{ t("admin.settings.customMenu.visibility") }}
-                    </label>
-                    <select v-model="item.visibility" class="input text-sm">
-                      <option value="user">
-                        {{ t("admin.settings.customMenu.visibilityUser") }}
-                      </option>
-                      <option value="admin">
-                        {{ t("admin.settings.customMenu.visibilityAdmin") }}
-                      </option>
-                    </select>
-                  </div>
-
-                  <!-- URL (full width) -->
-                  <div class="sm:col-span-2">
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                    >
-                      {{ t("admin.settings.customMenu.url") }}
-                    </label>
-                    <input
-                      v-model="item.url"
-                      type="url"
-                      class="input font-mono text-sm"
-                      :placeholder="
-                        t('admin.settings.customMenu.urlPlaceholder')
-                      "
-                    />
-                  </div>
-
-                  <!-- SVG Icon (full width) -->
-                  <div class="sm:col-span-2">
-                    <label
-                      class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400"
-                    >
-                      {{ t("admin.settings.customMenu.iconSvg") }}
-                    </label>
-                    <ImageUpload
-                      :model-value="item.icon_svg"
-                      mode="svg"
-                      size="sm"
-                      :upload-label="t('admin.settings.customMenu.uploadSvg')"
-                      :remove-label="t('admin.settings.customMenu.removeSvg')"
-                      @update:model-value="(v: string) => (item.icon_svg = v)"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Add button -->
-              <button
-                type="button"
-                class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 py-3 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
-                @click="addMenuItem"
-              >
-                <svg
-                  class="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  stroke-width="2"
+                <div
+                  v-for="(entry, positionIndex) in sidebarMenuEntries"
+                  :key="entry.item.id || entry.index"
+                  class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
                 >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                {{ t("admin.settings.customMenu.add") }}
-              </button>
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.customMenu.itemLabel", { n: positionIndex + 1 }) }}
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <button v-if="positionIndex > 0" type="button" class="btn-ghost btn-icon" :title="t('admin.settings.customMenu.moveUp')" @click="moveMenuItem(entry.index, -1)">
+                        <Icon name="chevronUp" size="sm" />
+                      </button>
+                      <button v-if="positionIndex < sidebarMenuEntries.length - 1" type="button" class="btn-ghost btn-icon" :title="t('admin.settings.customMenu.moveDown')" @click="moveMenuItem(entry.index, 1)">
+                        <Icon name="chevronDown" size="sm" />
+                      </button>
+                      <button type="button" class="btn-ghost btn-icon text-red-500" :title="t('admin.settings.customMenu.remove')" @click="removeMenuItem(entry.index)">
+                        <Icon name="trash" size="sm" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label class="input-label">{{ t("admin.settings.customMenu.name") }}</label>
+                      <input v-model="entry.item.label" type="text" maxlength="50" class="input text-sm" :placeholder="t('admin.settings.customMenu.namePlaceholder')" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t("admin.settings.customMenu.visibility") }}</label>
+                      <select v-model="entry.item.visibility" class="input text-sm">
+                        <option value="user">{{ t("admin.settings.customMenu.visibilityUser") }}</option>
+                        <option value="admin">{{ t("admin.settings.customMenu.visibilityAdmin") }}</option>
+                      </select>
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="input-label">{{ t("admin.settings.customMenu.url") }}</label>
+                      <input v-model="entry.item.url" type="text" class="input font-mono text-sm" :placeholder="t('admin.settings.customMenu.urlPlaceholder')" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t("admin.settings.customMenu.openMode") }}</label>
+                      <select v-model="entry.item.open_mode" class="input text-sm">
+                        <option value="embedded">{{ t("admin.settings.customMenu.openModeEmbedded") }}</option>
+                        <option value="new_tab" :disabled="entry.item.url.trim().startsWith('md:')">{{ t("admin.settings.customMenu.openModeNewTab") }}</option>
+                      </select>
+                      <p class="input-hint">{{ t("admin.settings.customMenu.openModeHint") }}</p>
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t("admin.settings.customMenu.iconSvg") }}</label>
+                      <ImageUpload :model-value="entry.item.icon_svg" mode="svg" size="sm" :upload-label="t('admin.settings.customMenu.uploadSvg')" :remove-label="t('admin.settings.customMenu.removeSvg')" @update:model-value="(v: string) => (entry.item.icon_svg = v)" />
+                    </div>
+                  </div>
+                </div>
+
+                <button type="button" class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 py-3 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400" @click="addMenuItem('sidebar')">
+                  <Icon name="plus" size="sm" />
+                  {{ t("admin.settings.customMenu.addSidebar") }}
+                </button>
+              </section>
+
+              <section class="space-y-4 p-6">
+                <div>
+                  <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ t("admin.settings.customMenu.headerTitle") }}
+                  </h3>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.customMenu.headerDescription") }}
+                  </p>
+                </div>
+
+                <div
+                  v-for="(entry, positionIndex) in headerMenuEntries"
+                  :key="entry.item.id || entry.index"
+                  class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
+                >
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ t("admin.settings.customMenu.itemLabel", { n: positionIndex + 1 }) }}
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn-ghost btn-icon" :title="t('admin.settings.customMenu.preview')" @click="previewMenuItem = entry.item">
+                        <Icon name="eye" size="sm" />
+                      </button>
+                      <button v-if="positionIndex > 0" type="button" class="btn-ghost btn-icon" :title="t('admin.settings.customMenu.moveUp')" @click="moveMenuItem(entry.index, -1)">
+                        <Icon name="chevronUp" size="sm" />
+                      </button>
+                      <button v-if="positionIndex < headerMenuEntries.length - 1" type="button" class="btn-ghost btn-icon" :title="t('admin.settings.customMenu.moveDown')" @click="moveMenuItem(entry.index, 1)">
+                        <Icon name="chevronDown" size="sm" />
+                      </button>
+                      <button type="button" class="btn-ghost btn-icon text-red-500" :title="t('admin.settings.customMenu.remove')" @click="removeMenuItem(entry.index)">
+                        <Icon name="trash" size="sm" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label class="input-label">{{ t("admin.settings.customMenu.name") }}</label>
+                      <input v-model="entry.item.label" type="text" maxlength="20" class="input text-sm" :placeholder="t('admin.settings.customMenu.headerNamePlaceholder')" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t("admin.settings.customMenu.visibility") }}</label>
+                      <select v-model="entry.item.visibility" class="input text-sm">
+                        <option value="user">{{ t("admin.settings.customMenu.visibilityUser") }}</option>
+                        <option value="admin">{{ t("admin.settings.customMenu.visibilityAdmin") }}</option>
+                      </select>
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="input-label">{{ t("admin.settings.customMenu.modalTitle") }}</label>
+                      <input v-model="entry.item.modal_title" type="text" maxlength="100" class="input text-sm" :placeholder="t('admin.settings.customMenu.modalTitlePlaceholder')" />
+                      <p class="input-hint">{{ t("admin.settings.customMenu.modalTitleHint") }}</p>
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="input-label">{{ t("admin.settings.customMenu.modalContent") }}</label>
+                      <textarea v-model="entry.item.modal_content" rows="8" maxlength="50000" class="input font-mono text-sm" :placeholder="t('admin.settings.customMenu.modalContentPlaceholder')"></textarea>
+                      <p class="input-hint">{{ t("admin.settings.customMenu.modalContentHint") }}</p>
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="input-label">{{ t("admin.settings.customMenu.iconSvg") }}</label>
+                      <ImageUpload :model-value="entry.item.icon_svg" mode="svg" size="sm" :upload-label="t('admin.settings.customMenu.uploadSvg')" :remove-label="t('admin.settings.customMenu.removeSvg')" @update:model-value="(v: string) => (entry.item.icon_svg = v)" />
+                    </div>
+                  </div>
+                </div>
+
+                <button type="button" class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 py-3 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400" @click="addMenuItem('header')">
+                  <Icon name="plus" size="sm" />
+                  {{ t("admin.settings.customMenu.addHeader") }}
+                </button>
+              </section>
             </div>
           </div>
 	        </div>
@@ -8694,6 +8657,11 @@
       />
       <!-- 关闭 step-up 开关等敏感保存操作触发的 TOTP 二次验证 -->
       <TotpStepUpDialog :controller="settingsStepUp" />
+      <CustomMenuModal
+        v-if="previewMenuItem"
+        :preview-item="previewMenuItem"
+        @close="previewMenuItem = null"
+      />
     </div>
   </AppLayout>
 </template>
@@ -8727,6 +8695,7 @@ import type {
 } from "@/api/admin/settings";
 import type {
   AdminGroup,
+  CustomMenuItem,
   LoginAgreementDocument,
   NotifyEmailEntry,
   Proxy,
@@ -8744,6 +8713,7 @@ import HelpTooltip from "@/components/common/HelpTooltip.vue";
 import Toggle from "@/components/common/Toggle.vue";
 import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
+import CustomMenuModal from "@/components/common/CustomMenuModal.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import OpenAIFastPolicyUserSelector from "@/views/admin/settings/OpenAIFastPolicyUserSelector.vue";
@@ -9982,14 +9952,7 @@ const form = reactive<SettingsForm>({
   payment_alipay_mobile_precreate_deep_link: false,
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
-  custom_menu_items: [] as Array<{
-    id: string;
-    label: string;
-    icon_svg: string;
-    url: string;
-    visibility: "user" | "admin";
-    sort_order: number;
-  }>,
+  custom_menu_items: [] as CustomMenuItem[],
   custom_endpoints: [] as Array<{
     name: string;
     endpoint: string;
@@ -10972,36 +10935,66 @@ async function setAndCopyOIDCRedirectUrl() {
 }
 
 // Custom menu item management
-function addMenuItem() {
+const previewMenuItem = ref<CustomMenuItem | null>(null);
+
+function effectiveMenuPlacement(item: CustomMenuItem): "sidebar" | "header" {
+  return item.placement || "sidebar";
+}
+
+function menuEntriesFor(placement: "sidebar" | "header") {
+  return form.custom_menu_items
+    .map((item, index) => ({ item, index }))
+    .filter((entry) => effectiveMenuPlacement(entry.item) === placement)
+    .sort((a, b) => a.item.sort_order - b.item.sort_order);
+}
+
+const sidebarMenuEntries = computed(() => menuEntriesFor("sidebar"));
+const headerMenuEntries = computed(() => menuEntriesFor("header"));
+
+function normalizeMenuItemPositions() {
+  for (const placement of ["sidebar", "header"] as const) {
+    menuEntriesFor(placement).forEach((entry, index) => {
+      entry.item.placement = placement;
+      entry.item.sort_order = index;
+      if (placement === "sidebar") {
+        entry.item.open_mode = entry.item.open_mode || "embedded";
+      }
+    });
+  }
+}
+
+function addMenuItem(placement: "sidebar" | "header") {
   form.custom_menu_items.push({
     id: "",
     label: "",
     icon_svg: "",
     url: "",
     visibility: "user",
-    sort_order: form.custom_menu_items.length,
+    sort_order: menuEntriesFor(placement).length,
+    placement,
+    ...(placement === "sidebar"
+      ? { open_mode: "embedded" as const }
+      : { modal_title: "", modal_content: "" }),
   });
 }
 
 function removeMenuItem(index: number) {
   form.custom_menu_items.splice(index, 1);
-  // Re-index sort_order
-  form.custom_menu_items.forEach((item, i) => {
-    item.sort_order = i;
-  });
+  normalizeMenuItemPositions();
 }
 
 function moveMenuItem(index: number, direction: -1 | 1) {
-  const targetIndex = index + direction;
-  if (targetIndex < 0 || targetIndex >= form.custom_menu_items.length) return;
-  const items = form.custom_menu_items;
-  const temp = items[index];
-  items[index] = items[targetIndex];
-  items[targetIndex] = temp;
-  // Re-index sort_order
-  items.forEach((item, i) => {
-    item.sort_order = i;
-  });
+  const item = form.custom_menu_items[index];
+  if (!item) return;
+  const entries = menuEntriesFor(effectiveMenuPlacement(item));
+  const currentPosition = entries.findIndex((entry) => entry.index === index);
+  const targetPosition = currentPosition + direction;
+  if (currentPosition < 0 || targetPosition < 0 || targetPosition >= entries.length) return;
+
+  const target = entries[targetPosition].item;
+  const currentOrder = item.sort_order;
+  item.sort_order = target.sort_order;
+  target.sort_order = currentOrder;
 }
 
 // Custom endpoint management
@@ -11170,6 +11163,17 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.custom_menu_items = Array.isArray(form.custom_menu_items)
+      ? form.custom_menu_items.map((item) => ({
+          ...item,
+          placement: item.placement || "sidebar",
+          open_mode:
+            (item.placement || "sidebar") === "sidebar"
+              ? item.open_mode || "embedded"
+              : undefined,
+        }))
+      : [];
+    normalizeMenuItemPositions();
     form.anthropic_adaptive_scheduler_mode =
       form.anthropic_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow";
     form.gemini_adaptive_scheduler_mode =
@@ -12065,6 +12069,7 @@ async function saveSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    normalizeMenuItemPositions();
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
     registrationEmailSuffixWhitelistTags.value =

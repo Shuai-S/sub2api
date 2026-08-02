@@ -2,29 +2,54 @@
   <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
     <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
-      <div class="flex shrink-0 items-center gap-2 sm:gap-4">
+      <div class="flex min-w-0 items-center gap-2 sm:gap-4">
         <button
           @click="toggleMobileSidebar"
-          class="btn-ghost btn-icon lg:hidden"
+          class="btn-ghost btn-icon flex-shrink-0 lg:hidden"
           :aria-label="t('common.toggleMenu')"
         >
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden lg:block">
-          <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+        <div class="hidden min-w-0 lg:block">
+          <h1 class="truncate text-lg font-semibold text-gray-900 dark:text-white">
             {{ pageTitle }}
           </h1>
-          <p v-if="pageDescription" class="text-xs text-gray-500 dark:text-dark-400">
+          <p v-if="pageDescription" class="truncate text-xs text-gray-500 dark:text-dark-400">
             {{ pageDescription }}
           </p>
         </div>
       </div>
 
-      <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
-      <div class="flex min-w-0 items-center gap-1 sm:gap-3">
-        <!-- Announcement Bell -->
-        <AnnouncementBell v-if="user" />
+      <!-- Right: custom header buttons + built-in system entries -->
+      <div class="flex min-w-0 items-center gap-1 sm:gap-3 xl:flex-shrink-0">
+        <div
+          v-if="user && headerMenuItems.length > 0"
+          ref="customMenuRef"
+          class="scrollbar-hide flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap sm:gap-2 xl:w-24 xl:min-w-24 xl:flex-none"
+          data-testid="custom-header-menu"
+          @wheel="handleCustomMenuWheel"
+        >
+          <button
+            v-for="item in headerMenuItems"
+            :key="item.id"
+            type="button"
+            class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            @click="customMenuModalStore.open(item)"
+          >
+            <span
+              v-if="item.icon_svg"
+              class="header-custom-svg-icon h-4 w-4 flex-shrink-0"
+              v-html="sanitizeSvg(item.icon_svg)"
+            ></span>
+            <span>{{ item.label }}</span>
+          </button>
+        </div>
+
+        <!-- Built-in entries retain their existing order and visibility rules. -->
+        <div class="flex flex-shrink-0 items-center gap-1 sm:gap-3">
+          <!-- Announcement Bell -->
+          <AnnouncementBell v-if="user" />
 
         <!-- Docs Link -->
         <a
@@ -244,6 +269,7 @@
             </div>
           </transition>
         </div>
+        </div>
       </div>
     </div>
   </header>
@@ -253,14 +279,16 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { useAppStore, useAuthStore, useCustomMenuModalStore, useOnboardingStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import type { CustomMenuItem } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -268,11 +296,13 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
+const customMenuModalStore = useCustomMenuModalStore()
 const onboardingStore = useOnboardingStore()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const customMenuRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
@@ -284,6 +314,22 @@ const balanceAvailableText = computed(() => t('common.availableBalance') === 'co
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
 const balanceFrozenLabel = computed(() => `${balanceFrozenText.value} ${formatHeaderMoney(frozenBalance.value)}`)
+
+function isHeaderMenuItem(item: CustomMenuItem) {
+  return item.placement === 'header'
+}
+
+const headerMenuItems = computed(() => {
+  const userItems = (appStore.cachedPublicSettings?.custom_menu_items ?? [])
+    .filter((item) => item.visibility === 'user' && isHeaderMenuItem(item))
+  const adminItems = authStore.isAdmin
+    ? adminSettingsStore.customMenuItems.filter(
+        (item) => item.visibility === 'admin' && isHeaderMenuItem(item),
+      )
+    : []
+
+  return [...userItems, ...adminItems].sort((a, b) => a.sort_order - b.sort_order)
+})
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {
@@ -345,6 +391,15 @@ function closeDropdown() {
   dropdownOpen.value = false
 }
 
+function handleCustomMenuWheel(event: WheelEvent) {
+  const element = customMenuRef.value
+  if (!element || element.scrollWidth <= element.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+    return
+  }
+  element.scrollLeft += event.deltaY
+  event.preventDefault()
+}
+
 async function handleLogout() {
   closeDropdown()
   try {
@@ -391,5 +446,11 @@ onBeforeUnmount(() => {
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+.header-custom-svg-icon :deep(svg) {
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 </style>

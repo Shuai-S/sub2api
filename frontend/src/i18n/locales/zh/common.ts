@@ -426,6 +426,11 @@ export default {
     invalidOrExpiredToken: '密码重置链接无效或已过期。请重新请求一个新链接。'
   },
 
+  customMenuModal: {
+    loadFailed: '内容加载失败，请重试。',
+    retry: '重试'
+  },
+
   // Step-up（敏感操作二次验证）
   stepUp: {
     title: '需要二次验证',

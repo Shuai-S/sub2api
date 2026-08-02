@@ -165,6 +165,9 @@ export interface SendVerifyCodeResponse {
   countdown: number
 }
 
+export type CustomMenuPlacement = 'sidebar' | 'header'
+export type CustomMenuOpenMode = 'embedded' | 'new_tab'
+
 export interface CustomMenuItem {
   id: string
   label: string
@@ -173,6 +176,16 @@ export interface CustomMenuItem {
   page_slug?: string
   visibility: 'user' | 'admin'
   sort_order: number
+  placement?: CustomMenuPlacement
+  open_mode?: CustomMenuOpenMode
+  modal_title?: string
+  modal_content?: string
+}
+
+export interface CustomMenuModalContent {
+  id: string
+  title: string
+  content: string
 }
 
 export interface CustomEndpoint {
