@@ -1194,9 +1194,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			adaptiveBlocked = false
 		}
 		adaptiveEnforced := anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce || geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce
-		if adaptiveBlocked {
-			available = nil
-		} else if adaptiveEnforced && len(adaptiveOrder) > 0 {
+		if !adaptiveBlocked && adaptiveEnforced && len(adaptiveOrder) > 0 {
 			for _, selected := range adaptiveOrder {
 				maxConcurrency := adaptiveCapacities[selected.account.ID]
 				result, releaseGeminiProbe, acquireErr := s.tryAcquireGeminiAdaptiveAccountSlot(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, selected.account, requestedModel, maxConcurrency)
@@ -1240,7 +1238,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				}
 				return selection, nil
 			}
-		} else {
+		} else if !adaptiveBlocked {
 			// baseline 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
 			for len(available) > 0 {
 				// 1. 取优先级最小的集合
