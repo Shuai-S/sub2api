@@ -327,6 +327,63 @@ func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	require.Nil(t, got.Extra["unused_large_field"])
 }
 
+func TestBuildSchedulerMetadataAccount_KeepsGeminiQuotaIdentity(t *testing.T) {
+	tests := []struct {
+		name        string
+		credentials map[string]any
+		assertQuota func(t *testing.T, account *service.Account)
+	}{
+		{
+			name: "pool mode remains upstream managed after cache round trip",
+			credentials: map[string]any{
+				"api_key":                    "secret",
+				"pool_mode":                  true,
+				"pool_mode_retry_count":      5,
+				"custom_error_codes_enabled": true,
+			},
+			assertQuota: func(t *testing.T, account *service.Account) {
+				t.Helper()
+				require.True(t, account.IsPoolMode())
+				_, ok := service.NewGeminiQuotaService(nil, nil).QuotaForAccount(context.Background(), account)
+				require.False(t, ok)
+			},
+		},
+		{
+			name: "native tier remains available after cache round trip",
+			credentials: map[string]any{
+				"api_key": "secret",
+				"tier_id": service.GeminiTierAIStudioPaid,
+			},
+			assertQuota: func(t *testing.T, account *service.Account) {
+				t.Helper()
+				require.False(t, account.IsPoolMode())
+				quota, ok := service.NewGeminiQuotaService(nil, nil).QuotaForAccount(context.Background(), account)
+				require.True(t, ok)
+				require.Equal(t, int64(-1), quota.FlashRPD)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := service.Account{
+				ID:          45,
+				Platform:    service.PlatformGemini,
+				Type:        service.AccountTypeAPIKey,
+				Credentials: tt.credentials,
+			}
+			_, metadata, err := marshalSchedulerCacheAccount(account)
+			require.NoError(t, err)
+
+			var cached service.Account
+			require.NoError(t, json.Unmarshal(metadata, &cached))
+			tt.assertQuota(t, &cached)
+			require.Nil(t, cached.Credentials["pool_mode_retry_count"])
+			require.Nil(t, cached.Credentials["custom_error_codes_enabled"])
+		})
+	}
+}
+
 func TestBuildSchedulerMetadataAccount_KeepsGrokMediaEligibility(t *testing.T) {
 	t.Run("explicit override", func(t *testing.T) {
 		account := service.Account{
