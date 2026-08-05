@@ -107,6 +107,21 @@ func (s *GatewayService) anthropicAdaptiveCapacity(mode string, settings Anthrop
 	return s.anthropicAdaptiveScheduler.state.effectiveCapacity(account, settings)
 }
 
+func (s *GatewayService) anthropicAdaptiveCircuitAllowed(mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) bool {
+	if mode != AnthropicAdaptiveSchedulerModeEnforce || s == nil || s.anthropicAdaptiveScheduler == nil || account == nil || account.Platform != PlatformAnthropic {
+		return true
+	}
+	now := time.Now()
+	if s.anthropicAdaptiveScheduler.now != nil {
+		now = s.anthropicAdaptiveScheduler.now()
+	}
+	return s.anthropicAdaptiveScheduler.state.claimCircuitProbe(account, now, settings)
+}
+
+func (s *GatewayService) anthropicAdaptiveStickyAllowed(mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) bool {
+	return s.anthropicAdaptiveCircuitAllowed(mode, settings, account)
+}
+
 func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicAdaptiveSchedulerSettings, requestedModel string, candidates []accountWithLoad) ([]accountWithLoad, map[int64]int, *AnthropicAdaptiveDecision) {
 	if mode == "" || s == nil || s.anthropicAdaptiveScheduler == nil || len(candidates) == 0 {
 		return candidates, nil, nil
@@ -118,6 +133,12 @@ func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicA
 	})
 	if len(decision.Order) == 0 {
 		s.anthropicAdaptiveScheduler.fallbackTotal.Add(1)
+		if mode == AnthropicAdaptiveSchedulerModeEnforce && decision.FallbackReason == "all_circuits_open" {
+			// Do not hand the original candidates back to callers in enforce
+			// mode. That would silently bypass the account circuit in the
+			// subsequent baseline/fallback paths.
+			return nil, nil, &decision
+		}
 		return candidates, nil, &decision
 	}
 	capacities := make(map[int64]int, len(decision.Order))

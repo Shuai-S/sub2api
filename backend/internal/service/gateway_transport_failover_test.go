@@ -77,7 +77,7 @@ func TestGatewayAnthropicTransportErrorsFailOverWithoutWritingResponse(t *testin
 			require.True(t, failoverErr.ShouldRetryNextAccount())
 			require.False(t, failoverErr.RetryableOnSameAccount)
 			require.NotNil(t, failoverErr.HealthSample)
-			require.False(t, *failoverErr.HealthSample)
+			require.True(t, *failoverErr.HealthSample)
 
 			require.Equal(t, http.StatusOK, rec.Code, "service must not commit a response before handler failover")
 			require.Empty(t, rec.Body.String())

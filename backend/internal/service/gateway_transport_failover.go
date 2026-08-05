@@ -43,7 +43,10 @@ func newGatewayTransportFailoverError(
 	if errors.Is(err, context.Canceled) || (ctx != nil && ctx.Err() != nil) {
 		return fmt.Errorf("upstream request failed: %s", safeErr)
 	}
-	accountHealthSample := false
+	// A transport failure scoped to an account is evidence that this account
+	// path is unhealthy. Request cancellation is handled above and does not
+	// enter failover or adaptive learning.
+	accountHealthSample := true
 
 	return &UpstreamFailoverError{
 		StatusCode:        http.StatusBadGateway,

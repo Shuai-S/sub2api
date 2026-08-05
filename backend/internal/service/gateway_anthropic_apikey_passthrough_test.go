@@ -1219,7 +1219,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_UpstreamRequest
 	require.True(t, failoverErr.ShouldRetryNextAccount())
 	require.False(t, failoverErr.RetryableOnSameAccount)
 	require.NotNil(t, failoverErr.HealthSample)
-	require.False(t, *failoverErr.HealthSample)
+	require.True(t, *failoverErr.HealthSample)
 	require.Equal(t, http.StatusOK, rec.Code, "service must leave the response uncommitted for account failover")
 	require.Empty(t, rec.Body.String())
 	require.NotContains(t, string(failoverErr.ResponseBody), "account-secret.example")

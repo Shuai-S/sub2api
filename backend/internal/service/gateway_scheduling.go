@@ -519,8 +519,15 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					// 粘性账号在路由列表中，优先使用
 					if stickyAccount, ok := accountByID[stickyAccountID]; ok {
 						var stickyCacheMissReason string
+						adaptiveStickyAllowed := s.anthropicAdaptiveStickyAllowed(anthropicAdaptiveMode, anthropicAdaptiveSettings, stickyAccount)
+						if !adaptiveStickyAllowed {
+							anthropicStickyWouldBypass = true
+							preserveStickyBinding = true
+							stickyCacheMissReason = "adaptive_circuit_open"
+						}
 
-						gatePass := s.isAccountSchedulableForSelection(stickyAccount) &&
+						gatePass := adaptiveStickyAllowed &&
+							s.isAccountSchedulableForSelection(stickyAccount) &&
 							s.isGatewayAccountProfitEligible(ctx, stickyAccount) &&
 							s.isAccountAllowedForPlatform(stickyAccount, platform, useMixed) &&
 							(requestedModel == "" || s.isModelSupportedByAccountWithContext(ctx, stickyAccount, requestedModel)) &&
@@ -666,7 +673,10 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 
 			if len(routingAvailable) > 0 {
 				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(routingAdaptiveMode, anthropicAdaptiveSettings, requestedModel, routingAvailable)
-				if routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveRoutingOrder) > 0 {
+				adaptiveRoutingBlocked := routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && adaptiveRoutingDecision != nil && adaptiveRoutingDecision.FallbackReason == "all_circuits_open"
+				if adaptiveRoutingBlocked {
+					routingAvailable = nil
+				} else if routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(adaptiveRoutingOrder) > 0 {
 					routingAvailable = adaptiveRoutingOrder
 				} else {
 					// baseline 排序：优先级 > 负载率 > 最后使用时间
@@ -801,6 +811,11 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				windowCostOK := s.isAccountSchedulableForWindowCost(ctx, account, true)
 				rpmOK := s.isAccountSchedulableForRPM(ctx, account, true)
 				schedulable := s.isAccountSchedulableForSelection(account)
+				adaptiveStickyAllowed := s.anthropicAdaptiveStickyAllowed(anthropicAdaptiveMode, anthropicAdaptiveSettings, account)
+				if !adaptiveStickyAllowed {
+					anthropicStickyWouldBypass = true
+					preserveStickyBinding = true
+				}
 
 				slog.Debug("sticky.layer1_5_no_routing_checks",
 					"account_id", accountID,
@@ -817,7 +832,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					"rpm_ok", rpmOK,
 				)
 
-				if !clearSticky && platformOK && profitOK && modelSupported && modelSchedulable && quotaOK && adaptiveQuotaOK && windowCostOK && rpmOK && schedulable {
+				if !clearSticky && adaptiveStickyAllowed && platformOK && profitOK && modelSupported && modelSchedulable && quotaOK && adaptiveQuotaOK && windowCostOK && rpmOK && schedulable {
 					stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, anthropicAdaptiveSettings, account)
 					if geminiAdaptiveMode != "" {
 						stickyCapacity = s.geminiAdaptiveCapacity(geminiAdaptiveMode, geminiAdaptiveSettings, account)
@@ -1067,6 +1082,19 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
 			slog.Warn("gemini_adaptive_load_snapshot_failed", fields...)
 		}
+		legacyCandidates := candidates
+		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
+			legacyCandidates = make([]*Account, 0, len(candidates))
+			for _, account := range candidates {
+				if s.anthropicAdaptiveCircuitAllowed(anthropicAdaptiveMode, anthropicAdaptiveSettings, account) {
+					legacyCandidates = append(legacyCandidates, account)
+				}
+			}
+			if len(legacyCandidates) == 0 {
+				logAnthropicSelection("load_balance", "all_circuits_open", nil, nil, false, anthropicStickyWouldBypass, true, ErrNoAvailableAccounts)
+				return nil, ErrNoAvailableAccounts
+			}
+		}
 		bindLegacySticky := geminiAdaptiveMode != GeminiAdaptiveSchedulerModeEnforce
 		capacityFor := func(account *Account) int {
 			if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
@@ -1077,7 +1105,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 			return account.Concurrency
 		}
-		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, candidates, groupID, sessionHash, preferOAuth, bindLegacySticky, capacityFor); legacyErr != nil {
+		if result, ok, legacyErr := s.tryAcquireByLegacyOrder(ctx, legacyCandidates, groupID, sessionHash, preferOAuth, bindLegacySticky, capacityFor); legacyErr != nil {
 			logAnthropicSelection("load_balance", "legacy_fallback_failed", nil, nil, false, anthropicStickyWouldBypass, true, legacyErr)
 			return nil, legacyErr
 		} else if ok {
@@ -1117,6 +1145,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 
 		adaptiveOrder, adaptiveCapacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, available)
 		adaptiveNormalDecision = decision
+		adaptiveBlocked := anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && decision != nil && decision.FallbackReason == "all_circuits_open"
 		geminiBaseline := append([]accountWithLoad(nil), available...)
 		sortGeminiAdaptiveBaseline(geminiBaseline, preferOAuth)
 		geminiOrder, geminiCapacities, geminiDecision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "load_balance", groupID, sessionHash, geminiBaseline, geminiQuotaSnapshots)
@@ -1124,9 +1153,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && len(geminiOrder) > 0 {
 			adaptiveOrder = geminiOrder
 			adaptiveCapacities = geminiCapacities
+			adaptiveBlocked = false
 		}
 		adaptiveEnforced := anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce || geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce
-		if adaptiveEnforced && len(adaptiveOrder) > 0 {
+		if adaptiveBlocked {
+			available = nil
+		} else if adaptiveEnforced && len(adaptiveOrder) > 0 {
 			for _, selected := range adaptiveOrder {
 				maxConcurrency := adaptiveCapacities[selected.account.ID]
 				result, acquireErr := s.tryAcquireAccountSlot(ctx, selected.account.ID, maxConcurrency)
@@ -1236,7 +1268,10 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		ordered, capacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, fallbackWithLoad)
 		adaptiveFallbackDecision = decision
 		fallbackCapacities = capacities
-		if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(ordered) > 0 {
+		adaptiveFallbackBlocked := anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && decision != nil && decision.FallbackReason == "all_circuits_open"
+		if adaptiveFallbackBlocked {
+			fallbackCandidates = nil
+		} else if anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && len(ordered) > 0 {
 			fallbackCandidates = make([]*Account, 0, len(ordered))
 			for _, item := range ordered {
 				fallbackCandidates = append(fallbackCandidates, item.account)

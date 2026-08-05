@@ -24,6 +24,7 @@ type anthropicAdaptivePersistedState struct {
 
 	EstimatedCapacity    int                                      `json:"estimated_capacity"`
 	SuccessEMA           float64                                  `json:"success_ema"`
+	HealthByModelFamily  map[string]anthropicAdaptiveHealthState  `json:"health_by_model_family,omitempty"`
 	LatencyByModelFamily map[string]anthropicAdaptiveLatencyState `json:"latency_by_model_family,omitempty"`
 
 	ConsecutiveSuccess         int   `json:"consecutive_success"`
@@ -34,12 +35,17 @@ type anthropicAdaptivePersistedState struct {
 	RecentHealthFailures       int   `json:"recent_health_failures"`
 	RecentCapacitySamples      int   `json:"recent_capacity_samples"`
 	RecentCapacityFailures     int   `json:"recent_capacity_failures"`
+	AccountHealthSamples       int   `json:"account_health_samples"`
+	AccountHealthFailures      int   `json:"account_health_failures"`
+	AccountConsecutiveFailure  int   `json:"account_consecutive_failure"`
 
 	LastSuccessAtUnix         int64 `json:"last_success_at,omitempty"`
 	LastFailureAtUnix         int64 `json:"last_failure_at,omitempty"`
 	LastCapacityFailureAtUnix int64 `json:"last_capacity_failure_at,omitempty"`
 	RecentWindowStartedAtUnix int64 `json:"recent_window_started_at,omitempty"`
 	CooldownUntilUnix         int64 `json:"cooldown_until,omitempty"`
+	CircuitOpenUntilUnix      int64 `json:"circuit_open_until,omitempty"`
+	CircuitProbeUntilUnix     int64 `json:"circuit_probe_until,omitempty"`
 }
 
 type anthropicAdaptiveDirtySnapshot struct {
@@ -185,6 +191,7 @@ func encodeAnthropicAdaptivePersistedState(state anthropicAdaptiveAccountState, 
 		UpdatedAtUnix:              state.UpdatedAt.UnixMilli(),
 		EstimatedCapacity:          state.EstimatedCapacity,
 		SuccessEMA:                 state.SuccessEMA,
+		HealthByModelFamily:        cloneAnthropicAdaptiveHealthMap(state.HealthByModelFamily),
 		LatencyByModelFamily:       cloneAnthropicAdaptiveLatencyMap(state.LatencyByModelFamily),
 		ConsecutiveSuccess:         state.ConsecutiveSuccess,
 		ConsecutiveFailure:         state.ConsecutiveFailure,
@@ -194,11 +201,16 @@ func encodeAnthropicAdaptivePersistedState(state anthropicAdaptiveAccountState, 
 		RecentHealthFailures:       state.RecentHealthFailures,
 		RecentCapacitySamples:      state.RecentCapacitySamples,
 		RecentCapacityFailures:     state.RecentCapacityFailures,
+		AccountHealthSamples:       state.AccountHealthSamples,
+		AccountHealthFailures:      state.AccountHealthFailures,
+		AccountConsecutiveFailure:  state.AccountConsecutiveFailure,
 		LastSuccessAtUnix:          unixMilliOrZero(state.LastSuccessAt),
 		LastFailureAtUnix:          unixMilliOrZero(state.LastFailureAt),
 		LastCapacityFailureAtUnix:  unixMilliOrZero(state.LastCapacityFailureAt),
 		RecentWindowStartedAtUnix:  unixMilliOrZero(state.RecentWindowStartedAt),
 		CooldownUntilUnix:          unixMilliOrZero(state.CooldownUntil),
+		CircuitOpenUntilUnix:       unixMilliOrZero(state.CircuitOpenUntil),
+		CircuitProbeUntilUnix:      unixMilliOrZero(state.CircuitProbeUntil),
 	}
 	return json.Marshal(persisted)
 }
@@ -218,6 +230,7 @@ func decodeAnthropicAdaptivePersistedState(accountID int64, payload []byte, now 
 		AccountID:                  accountID,
 		EstimatedCapacity:          persisted.EstimatedCapacity,
 		SuccessEMA:                 persisted.SuccessEMA,
+		HealthByModelFamily:        cloneAnthropicAdaptiveHealthMap(persisted.HealthByModelFamily),
 		LatencyByModelFamily:       cloneAnthropicAdaptiveLatencyMap(persisted.LatencyByModelFamily),
 		ConsecutiveSuccess:         persisted.ConsecutiveSuccess,
 		ConsecutiveFailure:         persisted.ConsecutiveFailure,
@@ -227,12 +240,26 @@ func decodeAnthropicAdaptivePersistedState(accountID int64, payload []byte, now 
 		RecentHealthFailures:       persisted.RecentHealthFailures,
 		RecentCapacitySamples:      persisted.RecentCapacitySamples,
 		RecentCapacityFailures:     persisted.RecentCapacityFailures,
+		AccountHealthSamples:       persisted.AccountHealthSamples,
+		AccountHealthFailures:      persisted.AccountHealthFailures,
+		AccountConsecutiveFailure:  persisted.AccountConsecutiveFailure,
 		LastSuccessAt:              timeFromUnixMilli(persisted.LastSuccessAtUnix),
 		LastFailureAt:              timeFromUnixMilli(persisted.LastFailureAtUnix),
 		LastCapacityFailureAt:      timeFromUnixMilli(persisted.LastCapacityFailureAtUnix),
 		RecentWindowStartedAt:      timeFromUnixMilli(persisted.RecentWindowStartedAtUnix),
 		CooldownUntil:              timeFromUnixMilli(persisted.CooldownUntilUnix),
+		CircuitOpenUntil:           timeFromUnixMilli(persisted.CircuitOpenUntilUnix),
+		CircuitProbeUntil:          timeFromUnixMilli(persisted.CircuitProbeUntilUnix),
 		UpdatedAt:                  timeFromUnixMilli(persisted.UpdatedAtUnix),
+	}
+	if state.AccountHealthSamples == 0 && state.AccountHealthFailures == 0 && state.ConsecutiveFailure > 0 {
+		// Migrate schema-v1 account-level counters into explicit circuit counters.
+		state.AccountHealthSamples = state.RecentHealthSamples
+		state.AccountHealthFailures = state.RecentHealthFailures
+		state.AccountConsecutiveFailure = state.ConsecutiveFailure
+	}
+	if state.HealthByModelFamily == nil {
+		state.HealthByModelFamily = make(map[string]anthropicAdaptiveHealthState, 4)
 	}
 	if state.LatencyByModelFamily == nil {
 		state.LatencyByModelFamily = make(map[string]anthropicAdaptiveLatencyState, 4)
@@ -259,8 +286,14 @@ func validateAnthropicAdaptiveAccountState(state anthropicAdaptiveAccountState) 
 	if state.ConsecutiveSuccess < 0 || state.ConsecutiveFailure < 0 || state.ConsecutiveCapacityFailure < 0 ||
 		state.TotalSamples < 0 || state.RecentHealthSamples < 0 || state.RecentHealthFailures < 0 ||
 		state.RecentCapacitySamples < 0 || state.RecentCapacityFailures < 0 ||
+		state.AccountHealthSamples < 0 || state.AccountHealthFailures < 0 || state.AccountConsecutiveFailure < 0 ||
 		state.RecentHealthFailures > state.RecentHealthSamples || state.RecentCapacityFailures > state.RecentCapacitySamples {
 		return fmt.Errorf("invalid sample counters")
+	}
+	for family, health := range state.HealthByModelFamily {
+		if family == "" || len(family) > 64 || health.TotalSamples < 0 || !finiteInRange(health.SuccessEMA, 0, 1) || health.ConsecutiveFailure < 0 {
+			return fmt.Errorf("invalid health state for model family %q", family)
+		}
 	}
 	for family, latency := range state.LatencyByModelFamily {
 		if family == "" || len(family) > 64 || latency.Samples < 0 ||
@@ -276,6 +309,17 @@ func cloneAnthropicAdaptiveLatencyMap(in map[string]anthropicAdaptiveLatencyStat
 		return make(map[string]anthropicAdaptiveLatencyState, 4)
 	}
 	out := make(map[string]anthropicAdaptiveLatencyState, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneAnthropicAdaptiveHealthMap(in map[string]anthropicAdaptiveHealthState) map[string]anthropicAdaptiveHealthState {
+	if len(in) == 0 {
+		return make(map[string]anthropicAdaptiveHealthState, 4)
+	}
+	out := make(map[string]anthropicAdaptiveHealthState, len(in))
 	for key, value := range in {
 		out[key] = value
 	}
@@ -326,6 +370,7 @@ func (s *anthropicAdaptiveStateStore) restoreAtStartup(incoming anthropicAdaptiv
 	defer s.mu.Unlock()
 
 	incoming.LatencyByModelFamily = cloneAnthropicAdaptiveLatencyMap(incoming.LatencyByModelFamily)
+	incoming.HealthByModelFamily = cloneAnthropicAdaptiveHealthMap(incoming.HealthByModelFamily)
 	incoming.revision = 1
 	incoming.persistedRevision = 1
 	local := s.accounts[incoming.AccountID]
@@ -336,7 +381,7 @@ func (s *anthropicAdaptiveStateStore) restoreAtStartup(incoming anthropicAdaptiv
 	}
 	localHasFailure := local.ConsecutiveFailure > 0 || local.ConsecutiveCapacityFailure > 0 ||
 		local.RecentHealthFailures > 0 || local.RecentCapacityFailures > 0 ||
-		!local.LastFailureAt.IsZero() || local.CooldownUntil.After(now)
+		local.AccountConsecutiveFailure > 0 || !local.LastFailureAt.IsZero() || local.CooldownUntil.After(now) || local.CircuitOpenUntil.After(now)
 	if local.TotalSamples == 0 && !localHasFailure {
 		restored := incoming
 		s.accounts[incoming.AccountID] = &restored
@@ -352,6 +397,8 @@ func (s *anthropicAdaptiveStateStore) restoreAtStartup(incoming anthropicAdaptiv
 	merged.RecentHealthFailures += local.RecentHealthFailures
 	merged.RecentCapacitySamples += local.RecentCapacitySamples
 	merged.RecentCapacityFailures += local.RecentCapacityFailures
+	merged.AccountHealthSamples += local.AccountHealthSamples
+	merged.AccountHealthFailures += local.AccountHealthFailures
 	merged.UpdatedAt = laterTime(incoming.UpdatedAt, local.UpdatedAt)
 	merged.LastSuccessAt = laterTime(incoming.LastSuccessAt, local.LastSuccessAt)
 	merged.LastFailureAt = laterTime(incoming.LastFailureAt, local.LastFailureAt)
@@ -361,14 +408,33 @@ func (s *anthropicAdaptiveStateStore) restoreAtStartup(incoming anthropicAdaptiv
 			merged.LatencyByModelFamily[family] = latency
 		}
 	}
+	for family, health := range local.HealthByModelFamily {
+		current, ok := merged.HealthByModelFamily[family]
+		if !ok || current.TotalSamples == 0 {
+			merged.HealthByModelFamily[family] = health
+			continue
+		}
+		// EMA histories cannot be reconstructed from aggregate counters. Keep
+		// the more conservative reliability and failure streak while retaining
+		// both sample counts, so a fresh local failure cannot be washed out by
+		// a stale persisted snapshot.
+		current.SuccessEMA = math.Min(current.SuccessEMA, health.SuccessEMA)
+		current.ConsecutiveFailure = max(current.ConsecutiveFailure, health.ConsecutiveFailure)
+		current.TotalSamples += health.TotalSamples
+		merged.HealthByModelFamily[family] = current
+	}
 	if localHasFailure {
 		if local.EstimatedCapacity > 0 && local.EstimatedCapacity < merged.EstimatedCapacity {
 			merged.EstimatedCapacity = local.EstimatedCapacity
 		}
 		merged.SuccessEMA = math.Min(merged.SuccessEMA, local.SuccessEMA)
 		merged.ConsecutiveFailure = max(merged.ConsecutiveFailure, local.ConsecutiveFailure)
+		merged.AccountConsecutiveFailure = max(merged.AccountConsecutiveFailure, local.AccountConsecutiveFailure)
 		merged.ConsecutiveCapacityFailure = max(merged.ConsecutiveCapacityFailure, local.ConsecutiveCapacityFailure)
 		merged.CooldownUntil = laterTime(merged.CooldownUntil, local.CooldownUntil)
+		merged.CircuitOpenUntil = laterTime(merged.CircuitOpenUntil, local.CircuitOpenUntil)
+		merged.CircuitProbeUntil = laterTime(merged.CircuitProbeUntil, local.CircuitProbeUntil)
+		merged.CircuitProbeInFlight = merged.CircuitProbeInFlight || local.CircuitProbeInFlight
 	} else {
 		merged.ConsecutiveSuccess += local.ConsecutiveSuccess
 	}

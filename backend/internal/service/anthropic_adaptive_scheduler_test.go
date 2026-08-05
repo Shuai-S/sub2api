@@ -145,6 +145,149 @@ func TestAnthropicAdaptiveBuildOrderUsesConfiguredTopKAndScores(t *testing.T) {
 	require.Greater(t, decision.Order[0].ReliabilityScore, decision.Order[1].ReliabilityScore)
 }
 
+func TestAnthropicAdaptiveBuildOrderExcludesOpenCircuitAndAllowsHalfOpenProbe(t *testing.T) {
+	scheduler := newAnthropicAdaptiveScheduler()
+	now := time.Date(2026, 8, 5, 3, 0, 0, 0, time.UTC)
+	scheduler.now = func() time.Time { return now }
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	settings.AnthropicAdaptiveSchedulerEnabled = true
+	settings.AnthropicAdaptiveSchedulerMode = AnthropicAdaptiveSchedulerModeEnforce
+	open := &Account{ID: 1, Platform: PlatformAnthropic, Priority: 1, Concurrency: 5}
+	healthy := &Account{ID: 2, Platform: PlatformAnthropic, Priority: 1, Concurrency: 5}
+
+	scheduler.state.mu.Lock()
+	state := scheduler.state.ensureLocked(open, now, settings)
+	state.CircuitOpenUntil = now.Add(time.Minute)
+	state.CircuitProbeInFlight = true
+	state.CircuitProbeUntil = now.Add(time.Minute)
+	scheduler.state.mu.Unlock()
+
+	decision := scheduler.BuildOrder(AnthropicAdaptiveScheduleRequest{
+		RequestedModel: "claude-sonnet-4-6",
+		Candidates: []accountWithLoad{
+			{account: open, loadInfo: &AccountLoadInfo{AccountID: open.ID}},
+			{account: healthy, loadInfo: &AccountLoadInfo{AccountID: healthy.ID}},
+		},
+		Settings: &settings,
+	})
+	require.Len(t, decision.Order, 1)
+	require.Equal(t, healthy.ID, decision.Order[0].Account.ID)
+
+	scheduler.state.mu.Lock()
+	state.CircuitProbeInFlight = false
+	state.CircuitProbeUntil = time.Time{}
+	scheduler.state.mu.Unlock()
+	now = now.Add(time.Minute + time.Second)
+	decision = scheduler.BuildOrder(AnthropicAdaptiveScheduleRequest{
+		RequestedModel: "claude-sonnet-4-6",
+		Candidates:     []accountWithLoad{{account: open, loadInfo: &AccountLoadInfo{AccountID: open.ID}}},
+		Settings:       &settings,
+	})
+	require.Len(t, decision.Order, 1)
+	require.Equal(t, open.ID, decision.Order[0].Account.ID)
+}
+
+func TestAnthropicAdaptiveEnforceDoesNotFallBackToOpenCircuitCandidates(t *testing.T) {
+	scheduler := newAnthropicAdaptiveScheduler()
+	now := time.Date(2026, 8, 5, 3, 0, 0, 0, time.UTC)
+	scheduler.now = func() time.Time { return now }
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	settings.AnthropicAdaptiveSchedulerEnabled = true
+	settings.AnthropicAdaptiveSchedulerMode = AnthropicAdaptiveSchedulerModeEnforce
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Priority: 1, Concurrency: 5}
+	scheduler.state.mu.Lock()
+	state := scheduler.state.ensureLocked(account, now, settings)
+	state.CircuitOpenUntil = now.Add(time.Minute)
+	state.CircuitProbeInFlight = true
+	state.CircuitProbeUntil = now.Add(time.Minute)
+	scheduler.state.mu.Unlock()
+
+	service := &GatewayService{anthropicAdaptiveScheduler: scheduler}
+	ordered, capacities, decision := service.anthropicAdaptiveOrder(
+		AnthropicAdaptiveSchedulerModeEnforce,
+		settings,
+		"claude-sonnet-4-6",
+		[]accountWithLoad{{account: account, loadInfo: &AccountLoadInfo{AccountID: account.ID}}},
+	)
+
+	require.Empty(t, ordered)
+	require.Empty(t, capacities)
+	require.NotNil(t, decision)
+	require.Equal(t, "all_circuits_open", decision.FallbackReason)
+}
+
+func TestAnthropicAdaptiveModelHealthOverridesAccountHealthForScoring(t *testing.T) {
+	scheduler := newAnthropicAdaptiveScheduler()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	settings.AnthropicAdaptiveSchedulerTopK = 1
+	settings.AnthropicAdaptiveSchedulerWeightReliability = 1
+	settings.AnthropicAdaptiveSchedulerWeightCapacity = 0
+	settings.AnthropicAdaptiveSchedulerWeightLatency = 0
+	settings.AnthropicAdaptiveSchedulerWeightExploration = 0
+	now := time.Now()
+
+	scheduler.state.mu.Lock()
+	first := scheduler.state.ensureLocked(&Account{ID: 1, Concurrency: 5}, now, settings)
+	first.SuccessEMA = 0.95
+	first.HealthByModelFamily["haiku"] = anthropicAdaptiveHealthState{SuccessEMA: 0.05, TotalSamples: 20, ConsecutiveFailure: 3}
+	second := scheduler.state.ensureLocked(&Account{ID: 2, Concurrency: 5}, now, settings)
+	second.SuccessEMA = 0.60
+	second.HealthByModelFamily["haiku"] = anthropicAdaptiveHealthState{SuccessEMA: 0.60, TotalSamples: 20}
+	scheduler.state.mu.Unlock()
+
+	decision := scheduler.BuildOrder(AnthropicAdaptiveScheduleRequest{
+		RequestedModel: "claude-haiku-4-5-20251001",
+		Candidates: []accountWithLoad{
+			{account: &Account{ID: 1, Priority: 1, Concurrency: 5}, loadInfo: &AccountLoadInfo{AccountID: 1}},
+			{account: &Account{ID: 2, Priority: 1, Concurrency: 5}, loadInfo: &AccountLoadInfo{AccountID: 2}},
+		},
+		Settings: &settings,
+	})
+	require.Equal(t, int64(2), decision.SelectedAccountID)
+	require.InDelta(t, 0.05/1.75, decision.Order[1].ReliabilityScore, 1e-9)
+}
+
+func TestAnthropicAdaptiveModelHealthDoesNotPolluteAccountHealth(t *testing.T) {
+	store := newAnthropicAdaptiveStateStore()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 5}
+	now := time.Now()
+
+	store.report(AnthropicAdaptiveScheduleReport{
+		Account:        account,
+		RequestedModel: "claude-haiku-4-5-20251001",
+		HealthSample:   true,
+		HealthScope:    "model",
+	}, now, settings)
+
+	state := store.snapshot(account, settings)
+	require.Equal(t, settings.AnthropicAdaptiveSchedulerInitialReliability, state.SuccessEMA)
+	require.Zero(t, state.AccountHealthSamples)
+	require.Zero(t, state.AccountHealthFailures)
+	require.Zero(t, state.AccountConsecutiveFailure)
+	require.Equal(t, int64(1), state.HealthByModelFamily["haiku"].TotalSamples)
+	require.Equal(t, 1, state.HealthByModelFamily["haiku"].ConsecutiveFailure)
+}
+
+func TestAnthropicAdaptiveFailureSampleDeduplicatesSameRequestRetry(t *testing.T) {
+	store := newAnthropicAdaptiveStateStore()
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 5}
+	now := time.Now()
+	require.True(t, store.claimFailureSample(account.ID, "request-1", "claude-sonnet-4-6", now))
+	store.report(AnthropicAdaptiveScheduleReport{
+		Account:        account,
+		RequestID:      "request-1",
+		RequestedModel: "claude-sonnet-4-6",
+		HealthSample:   true,
+		HealthScope:    "account",
+	}, now, settings)
+	require.False(t, store.claimFailureSample(account.ID, "request-1", "claude-sonnet-4-6", now.Add(time.Second)))
+	state := store.snapshot(account, settings)
+	require.Equal(t, int64(1), state.TotalSamples)
+	require.Equal(t, 1, state.AccountHealthFailures)
+}
+
 func TestAnthropicAdaptiveCapacityLearningUsesConfiguredGrowthAndShrink(t *testing.T) {
 	store := newAnthropicAdaptiveStateStore()
 	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
@@ -292,7 +435,7 @@ func TestClassifyAnthropicAdaptiveResultHonorsHealthSampleOverride(t *testing.T)
 	require.True(t, providerOverload.HealthSample)
 }
 
-func TestClassifyAnthropicAdaptiveTransportFailoverDoesNotPenalizeAccount(t *testing.T) {
+func TestClassifyAnthropicAdaptiveTransportFailoverPenalizesAccount(t *testing.T) {
 	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
 	healthSample := false
 
@@ -305,7 +448,7 @@ func TestClassifyAnthropicAdaptiveTransportFailoverDoesNotPenalizeAccount(t *tes
 	})
 
 	require.Equal(t, "transport_error", report.TerminalReason)
-	require.False(t, report.HealthSample)
+	require.True(t, report.HealthSample)
 	require.False(t, report.CapacitySample)
 	require.False(t, report.Success)
 }
@@ -335,6 +478,39 @@ func TestClassifyAnthropicAdaptiveResultTreatsPolicyFailureAsRequestScopedBefore
 			require.False(t, report.CapacitySample)
 		})
 	}
+}
+
+func TestClassifyAnthropicAdaptiveAnthropicRequestErrorsAreNotAccountHealth(t *testing.T) {
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	for _, message := range []string{
+		`upstream error: 400 message=thinking.adaptive.output_config: Extra inputs are not permitted`,
+		`upstream error: 400 message=messages.8.content.4: each tool_use must have a single result`,
+	} {
+		report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-sonnet-4-6", nil, errors.New(message))
+		require.Equal(t, "request_policy", report.TerminalReason)
+		require.False(t, report.HealthSample)
+	}
+}
+
+func TestClassifyAnthropicAdaptiveModelStatusUsesModelHealthScope(t *testing.T) {
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	for _, status := range []int{http.StatusBadRequest, http.StatusNotFound} {
+		report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-haiku-4-5-20251001", nil, &UpstreamFailoverError{
+			StatusCode: status,
+			Scope:      GatewayFailureScopeAccount,
+		})
+		require.Equal(t, "model_upstream_error", report.TerminalReason)
+		require.True(t, report.HealthSample)
+		require.Equal(t, "model", report.HealthScope)
+	}
+}
+
+func TestClassifyAnthropicAdaptiveIncompleteStreamUsesModelHealthScope(t *testing.T) {
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Concurrency: 10}
+	report := classifyAnthropicAdaptiveResult(context.Background(), account, "claude-fable-5", nil, errors.New("stream usage incomplete: missing terminal event"))
+	require.Equal(t, "stream_incomplete", report.TerminalReason)
+	require.True(t, report.HealthSample)
+	require.Equal(t, "model", report.HealthScope)
 }
 
 func TestClassifyAnthropicAdaptiveSyntheticSuccessKeepsLearningSemantics(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
 
 func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, account *Account, requestedModel string, result *ForwardResult, err error) {
@@ -16,12 +18,23 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 		return
 	}
 	report := classifyAnthropicAdaptiveResult(ctx, account, requestedModel, result, err)
+	report.RequestID = contextStringValue(ctx, ctxkey.RequestID)
 	before := s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
 	after := before
 	decreased := false
 	if report.HealthSample || report.CapacitySample || report.Success {
-		_, decreased = s.anthropicAdaptiveScheduler.state.report(report, s.anthropicAdaptiveScheduler.now(), settings)
-		after = s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
+		learningReport := report
+		now := s.anthropicAdaptiveScheduler.now()
+		if report.HealthSample && !report.Success && !s.anthropicAdaptiveScheduler.state.claimFailureSample(report.Account.ID, report.RequestID, report.RequestedModel, now) {
+			// Same-account retries are correlated observations of one client
+			// request. Keep the diagnostic event, but apply health/capacity once.
+			learningReport.HealthSample = false
+			learningReport.CapacitySample = false
+		}
+		if learningReport.HealthSample || learningReport.CapacitySample || learningReport.Success {
+			_, decreased = s.anthropicAdaptiveScheduler.state.report(learningReport, now, settings)
+			after = s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
+		}
 	}
 	if decreased {
 		s.anthropicAdaptiveScheduler.capacityDecreaseTotal.Add(1)
@@ -33,6 +46,7 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 	report := AnthropicAdaptiveScheduleReport{
 		Account:        account,
 		RequestedModel: requestedModel,
+		HealthScope:    "account",
 	}
 	if result != nil {
 		report.MappedModel = result.UpstreamModel
@@ -69,8 +83,20 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 		report.TerminalReason = "local_queue"
 		return report
 	}
+	if strings.Contains(strings.ToLower(err.Error()), "stream usage incomplete: missing terminal event") {
+		report.HealthSample = true
+		report.HealthScope = "model"
+		report.TerminalReason = "stream_incomplete"
+		return report
+	}
 	if isAnthropicAdaptiveRequestPolicyFailure(nil, err) {
 		report.TerminalReason = "request_policy"
+		return report
+	}
+	if isAnthropicAdaptiveModelScopedUpstreamError(err.Error()) {
+		report.HealthSample = true
+		report.HealthScope = "model"
+		report.TerminalReason = "model_upstream_error"
 		return report
 	}
 
@@ -79,6 +105,9 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 		if failoverErr.FailureKind == UpstreamFailureKindTransport {
 			if failoverErr.HealthSample != nil {
 				report.HealthSample = *failoverErr.HealthSample
+			}
+			if failoverErr.Scope == GatewayFailureScopeAccount && !report.HealthSample {
+				report.HealthSample = true
 			}
 			report.TerminalReason = "transport_error"
 			return report
@@ -132,6 +161,12 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 				report.HealthSample = true
 			}
 			report.TerminalReason = "account_auth"
+		case statusCode == http.StatusBadRequest || statusCode == http.StatusNotFound:
+			if !hasHealthSampleOverride {
+				report.HealthSample = true
+			}
+			report.HealthScope = "model"
+			report.TerminalReason = "model_upstream_error"
 		case statusCode >= 500:
 			if !hasHealthSampleOverride && failoverErr.Scope != GatewayFailureScopeProvider {
 				report.HealthSample = true
@@ -149,6 +184,13 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 	return report
 }
 
+func isAnthropicAdaptiveModelScopedUpstreamError(message string) bool {
+	lower := strings.ToLower(strings.TrimSpace(message))
+	return strings.Contains(lower, "upstream error: 400 message=upstream request failed") ||
+		strings.Contains(lower, "upstream error: 404 message=upstream request failed") ||
+		strings.Contains(lower, "model not found")
+}
+
 func isAnthropicAdaptiveRequestPolicyFailure(failoverErr *UpstreamFailoverError, err error) bool {
 	parts := make([]string, 0, 4)
 	if failoverErr != nil {
@@ -157,7 +199,18 @@ func isAnthropicAdaptiveRequestPolicyFailure(failoverErr *UpstreamFailoverError,
 	if err != nil {
 		parts = append(parts, err.Error())
 	}
-	return isOpenAIAdaptiveRequestPolicyFailure(strings.Join(parts, " "))
+	message := strings.ToLower(strings.Join(parts, " "))
+	for _, marker := range []string{
+		"invalid_request_error",
+		"each tool_use must have a single result",
+		"thinking.adaptive.output_config",
+		"extra inputs are not permitted",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return isOpenAIAdaptiveRequestPolicyFailure(message)
 }
 
 func isAnthropicAdaptiveLocalQueueFailure(err error) bool {

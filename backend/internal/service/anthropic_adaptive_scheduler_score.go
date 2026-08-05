@@ -59,6 +59,16 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 			load = &AccountLoadInfo{AccountID: item.account.ID}
 		}
 		state := s.state.observeLoad(item.account, load, now, settings)
+		if settings.AnthropicAdaptiveSchedulerMode == AnthropicAdaptiveSchedulerModeEnforce &&
+			!s.state.claimCircuitProbe(item.account, now, settings) {
+			continue
+		}
+		if settings.AnthropicAdaptiveSchedulerMode == AnthropicAdaptiveSchedulerModeEnforce {
+			// claimCircuitProbe may transition an expired circuit into half-open;
+			// refresh the copy used by scoring/diagnostics so it reflects that
+			// lease rather than the pre-claim snapshot.
+			state = s.state.snapshot(item.account, settings)
+		}
 		candidates = append(candidates, AnthropicAdaptiveCandidate{
 			Account:           item.account,
 			LoadInfo:          load,
@@ -67,7 +77,7 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 		})
 	}
 	if len(candidates) == 0 {
-		decision.FallbackReason = "no_candidates"
+		decision.FallbackReason = "all_circuits_open"
 		return decision
 	}
 	applyAnthropicAdaptiveScores(candidates, req.RequestedModel, settings)
@@ -101,9 +111,16 @@ func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, reque
 
 	for i := range candidates {
 		candidate := &candidates[i]
-		candidate.ReliabilityScore = clamp01(candidate.state.SuccessEMA)
-		if candidate.state.ConsecutiveFailure > 0 {
-			candidate.ReliabilityScore /= 1 + settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty*float64(candidate.state.ConsecutiveFailure)
+		health := candidate.state.HealthByModelFamily[family]
+		reliability := candidate.state.SuccessEMA
+		consecutiveFailure := candidate.state.ConsecutiveFailure
+		if health.TotalSamples > 0 {
+			reliability = health.SuccessEMA
+			consecutiveFailure = health.ConsecutiveFailure
+		}
+		candidate.ReliabilityScore = clamp01(reliability)
+		if consecutiveFailure > 0 {
+			candidate.ReliabilityScore /= 1 + settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty*float64(consecutiveFailure)
 		}
 		if candidate.EffectiveCapacity <= 0 {
 			candidate.CapacityScore = 1

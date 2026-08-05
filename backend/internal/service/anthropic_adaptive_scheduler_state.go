@@ -2,9 +2,16 @@ package service
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	anthropicAdaptiveCircuitFailureThreshold = 3
+	anthropicAdaptiveCircuitProbeLease       = 30 * time.Second
+	anthropicAdaptiveFailureSampleRetention  = 10 * time.Minute
 )
 
 type anthropicAdaptiveLatencyState struct {
@@ -13,14 +20,24 @@ type anthropicAdaptiveLatencyState struct {
 	Samples    int64   `json:"samples"`
 }
 
+type anthropicAdaptiveHealthState struct {
+	SuccessEMA         float64 `json:"success_ema"`
+	ConsecutiveFailure int     `json:"consecutive_failure"`
+	TotalSamples       int64   `json:"total_samples"`
+}
+
 type anthropicAdaptiveAccountState struct {
 	AccountID                  int64
 	EstimatedCapacity          int
 	SuccessEMA                 float64
+	HealthByModelFamily        map[string]anthropicAdaptiveHealthState
 	LatencyByModelFamily       map[string]anthropicAdaptiveLatencyState
 	ConsecutiveSuccess         int
 	ConsecutiveFailure         int
 	ConsecutiveCapacityFailure int
+	AccountHealthSamples       int
+	AccountHealthFailures      int
+	AccountConsecutiveFailure  int
 	TotalSamples               int64
 	RecentHealthSamples        int
 	RecentHealthFailures       int
@@ -31,6 +48,9 @@ type anthropicAdaptiveAccountState struct {
 	LastCapacityFailureAt      time.Time
 	RecentWindowStartedAt      time.Time
 	CooldownUntil              time.Time
+	CircuitOpenUntil           time.Time
+	CircuitProbeUntil          time.Time
+	CircuitProbeInFlight       bool
 	UpdatedAt                  time.Time
 
 	revision          uint64
@@ -38,12 +58,16 @@ type anthropicAdaptiveAccountState struct {
 }
 
 type anthropicAdaptiveStateStore struct {
-	mu       sync.RWMutex
-	accounts map[int64]*anthropicAdaptiveAccountState
+	mu                  sync.RWMutex
+	accounts            map[int64]*anthropicAdaptiveAccountState
+	failureSampleClaims map[string]time.Time
 }
 
 func newAnthropicAdaptiveStateStore() *anthropicAdaptiveStateStore {
-	return &anthropicAdaptiveStateStore{accounts: make(map[int64]*anthropicAdaptiveAccountState)}
+	return &anthropicAdaptiveStateStore{
+		accounts:            make(map[int64]*anthropicAdaptiveAccountState),
+		failureSampleClaims: make(map[string]time.Time),
+	}
 }
 
 func defaultAnthropicAdaptiveAccountState(account *Account, now time.Time, settings AnthropicAdaptiveSchedulerSettings) anthropicAdaptiveAccountState {
@@ -59,6 +83,7 @@ func defaultAnthropicAdaptiveAccountState(account *Account, now time.Time, setti
 		AccountID:             accountID,
 		EstimatedCapacity:     capacity,
 		SuccessEMA:            settings.AnthropicAdaptiveSchedulerInitialReliability,
+		HealthByModelFamily:   make(map[string]anthropicAdaptiveHealthState, 4),
 		LatencyByModelFamily:  make(map[string]anthropicAdaptiveLatencyState, 4),
 		RecentWindowStartedAt: now,
 	}
@@ -69,6 +94,10 @@ func cloneAnthropicAdaptiveAccountState(state *anthropicAdaptiveAccountState) an
 		return anthropicAdaptiveAccountState{}
 	}
 	clone := *state
+	clone.HealthByModelFamily = make(map[string]anthropicAdaptiveHealthState, len(state.HealthByModelFamily))
+	for key, value := range state.HealthByModelFamily {
+		clone.HealthByModelFamily[key] = value
+	}
 	clone.LatencyByModelFamily = make(map[string]anthropicAdaptiveLatencyState, len(state.LatencyByModelFamily))
 	for key, value := range state.LatencyByModelFamily {
 		clone.LatencyByModelFamily[key] = value
@@ -105,6 +134,56 @@ func (s *anthropicAdaptiveStateStore) effectiveCapacity(account *Account, settin
 		capacity = account.Concurrency
 	}
 	return capacity
+}
+
+// claimCircuitProbe excludes an account while its circuit is open, except for
+// one short-lived half-open probe. The lease prevents concurrent requests from
+// stampeding a known-bad account and allows recovery if a result is lost.
+func (s *anthropicAdaptiveStateStore) claimCircuitProbe(account *Account, now time.Time, settings AnthropicAdaptiveSchedulerSettings) bool {
+	if s == nil || account == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.ensureLocked(account, now, settings)
+	if state.CircuitOpenUntil.IsZero() {
+		return true
+	}
+	if state.CircuitProbeInFlight && state.CircuitProbeUntil.After(now) {
+		return false
+	}
+	if state.CircuitOpenUntil.After(now) {
+		return false
+	}
+	state.CircuitProbeInFlight = true
+	state.CircuitProbeUntil = now.Add(anthropicAdaptiveCircuitProbeLease)
+	touchAnthropicAdaptiveAccountState(state, now)
+	return true
+}
+
+// claimFailureSample makes a same-account retry burst count as one health
+// observation. Different accounts in the same request still produce separate
+// samples, as they represent independent upstream paths.
+func (s *anthropicAdaptiveStateStore) claimFailureSample(accountID int64, requestID, requestedModel string, now time.Time) bool {
+	if s == nil || accountID <= 0 || strings.TrimSpace(requestID) == "" {
+		return true
+	}
+	key := strconv.FormatInt(accountID, 10) + ":" + requestID + ":" + anthropicAdaptiveModelFamily(requestedModel)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.failureSampleClaims == nil {
+		s.failureSampleClaims = make(map[string]time.Time)
+	}
+	for existingKey, claimedAt := range s.failureSampleClaims {
+		if now.Sub(claimedAt) > anthropicAdaptiveFailureSampleRetention {
+			delete(s.failureSampleClaims, existingKey)
+		}
+	}
+	if _, exists := s.failureSampleClaims[key]; exists {
+		return false
+	}
+	s.failureSampleClaims[key] = now
+	return true
 }
 
 func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *AccountLoadInfo, now time.Time, settings AnthropicAdaptiveSchedulerSettings) anthropicAdaptiveAccountState {
@@ -149,6 +228,7 @@ func (s *anthropicAdaptiveStateStore) observeLoad(account *Account, load *Accoun
 
 type AnthropicAdaptiveScheduleReport struct {
 	Account           *Account
+	RequestID         string
 	RequestedModel    string
 	UpstreamRequestID string
 	MappedModel       string
@@ -157,13 +237,14 @@ type AnthropicAdaptiveScheduleReport struct {
 	Success           bool
 	HealthSample      bool
 	CapacitySample    bool
+	HealthScope       string
 	FirstTokenMs      *int
 	DurationMs        int64
 	TerminalReason    string
 }
 
 func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleReport, now time.Time, settings AnthropicAdaptiveSchedulerSettings) (capacityIncreased bool, capacityDecreased bool) {
-	if report.Account == nil {
+	if report.Account == nil || (!report.HealthSample && !report.CapacitySample && !report.Success) {
 		return false, false
 	}
 	s.mu.Lock()
@@ -174,18 +255,61 @@ func (s *anthropicAdaptiveStateStore) report(report AnthropicAdaptiveScheduleRep
 
 	if report.HealthSample {
 		state.TotalSamples++
-		state.RecentHealthSamples++
+		accountScoped := report.HealthScope != "model"
+		if accountScoped {
+			state.RecentHealthSamples++
+			if report.Success {
+				state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 1, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
+				state.ConsecutiveSuccess++
+				state.ConsecutiveFailure = 0
+				state.LastSuccessAt = now
+			} else {
+				state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 0, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
+				state.ConsecutiveSuccess = 0
+				state.ConsecutiveFailure++
+				state.RecentHealthFailures++
+				state.LastFailureAt = now
+			}
+		}
+
+		family := anthropicAdaptiveModelFamily(report.RequestedModel)
+		modelHealth := state.HealthByModelFamily[family]
 		if report.Success {
-			state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 1, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
-			state.ConsecutiveSuccess++
-			state.ConsecutiveFailure = 0
-			state.LastSuccessAt = now
+			modelHealth.SuccessEMA = updateAnthropicAdaptiveEMA(modelHealth.SuccessEMA, 1, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
+			modelHealth.ConsecutiveFailure = 0
 		} else {
-			state.SuccessEMA = updateAnthropicAdaptiveEMA(state.SuccessEMA, 0, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
-			state.ConsecutiveSuccess = 0
-			state.ConsecutiveFailure++
-			state.RecentHealthFailures++
-			state.LastFailureAt = now
+			modelHealth.SuccessEMA = updateAnthropicAdaptiveEMA(modelHealth.SuccessEMA, 0, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
+			modelHealth.ConsecutiveFailure++
+		}
+		modelHealth.TotalSamples++
+		state.HealthByModelFamily[family] = modelHealth
+
+		if accountScoped {
+			state.AccountHealthSamples++
+			if report.Success {
+				state.AccountConsecutiveFailure = 0
+				state.CircuitOpenUntil = time.Time{}
+				state.CircuitProbeUntil = time.Time{}
+				state.CircuitProbeInFlight = false
+			} else {
+				state.AccountHealthFailures++
+				state.AccountConsecutiveFailure++
+				if state.AccountConsecutiveFailure >= anthropicAdaptiveCircuitFailureThreshold {
+					cooldown := time.Duration(settings.AnthropicAdaptiveSchedulerCooldownSeconds) * time.Second
+					if cooldown <= 0 {
+						cooldown = time.Minute
+					}
+					state.CircuitOpenUntil = now.Add(cooldown)
+					state.CircuitProbeUntil = time.Time{}
+					state.CircuitProbeInFlight = false
+				}
+			}
+		} else if report.Success && state.CircuitProbeInFlight {
+			// A successful half-open probe closes an account circuit even when
+			// the current model sample is model-scoped.
+			state.CircuitOpenUntil = time.Time{}
+			state.CircuitProbeUntil = time.Time{}
+			state.CircuitProbeInFlight = false
 		}
 	}
 
@@ -228,6 +352,12 @@ func (s *anthropicAdaptiveStateStore) ensureLocked(account *Account, now time.Ti
 		initial := defaultAnthropicAdaptiveAccountState(account, now, settings)
 		state = &initial
 		s.accounts[account.ID] = state
+	}
+	if state.HealthByModelFamily == nil {
+		state.HealthByModelFamily = make(map[string]anthropicAdaptiveHealthState, 4)
+	}
+	if state.LatencyByModelFamily == nil {
+		state.LatencyByModelFamily = make(map[string]anthropicAdaptiveLatencyState, 4)
 	}
 	if account.Concurrency <= 0 {
 		state.EstimatedCapacity = 0
