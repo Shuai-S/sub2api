@@ -48,6 +48,14 @@ type geminiAdaptiveDiagnosticCandidate struct {
 	ConsecutiveCapacityFailure int                         `json:"consecutive_capacity_failure"`
 	CooldownUntil              time.Time                   `json:"cooldown_until"`
 	CooldownStatus             string                      `json:"cooldown_status"`
+	CanonicalModel             string                      `json:"canonical_model"`
+	CircuitStatus              string                      `json:"circuit_status"`
+	CircuitScope               string                      `json:"circuit_scope,omitempty"`
+	CircuitOpenUntil           time.Time                   `json:"circuit_open_until"`
+	AccountCircuitStatus       string                      `json:"account_circuit_status"`
+	AccountCircuitOpenUntil    time.Time                   `json:"account_circuit_open_until"`
+	AccountConsecutiveFailure  int                         `json:"account_consecutive_failure"`
+	ModelConsecutiveFailure    int                         `json:"model_consecutive_failure"`
 }
 
 type geminiAdaptiveDecisionLog struct {
@@ -72,7 +80,7 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 	}
 
 	var plannedBaselineAccountID, baselineAccountID, adaptiveAccountID int64
-	var candidateCount, inputCandidateCount, hardRejectedCount, topK int
+	var candidateCount, inputCandidateCount, hardRejectedCount, circuitRejectedCount, accountCircuitRejectedCount, modelCircuitRejectedCount, halfOpenCandidateCount, topK int
 	var buildLatencyMs int64
 	var fallbackReason string
 	var candidates []geminiAdaptiveDiagnosticCandidate
@@ -83,6 +91,10 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 		candidateCount = entry.Decision.CandidateCount
 		inputCandidateCount = entry.Decision.InputCandidateCount
 		hardRejectedCount = entry.Decision.HardRejectedCount
+		circuitRejectedCount = entry.Decision.CircuitRejectedCount
+		accountCircuitRejectedCount = entry.Decision.AccountCircuitRejectedCount
+		modelCircuitRejectedCount = entry.Decision.ModelCircuitRejectedCount
+		halfOpenCandidateCount = entry.Decision.HalfOpenCandidateCount
 		topK = entry.Decision.TopK
 		buildLatencyMs = entry.Decision.BuildLatencyMs
 		fallbackReason = entry.Decision.FallbackReason
@@ -127,6 +139,10 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 		"candidate_count", candidateCount,
 		"native_candidate_count", candidateCount,
 		"hard_rejected_count", hardRejectedCount,
+		"circuit_rejected_count", circuitRejectedCount,
+		"account_circuit_rejected_count", accountCircuitRejectedCount,
+		"model_circuit_rejected_count", modelCircuitRejectedCount,
+		"half_open_candidate_count", halfOpenCandidateCount,
 		"top_k", topK,
 		"build_latency_ms", buildLatencyMs,
 		"fallback_reason", fallbackReason,
@@ -159,7 +175,9 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 		return
 	}
 	family := geminiAdaptiveModelFamily(firstNonEmpty(report.MappedModel, report.RequestedModel), report.Action)
+	canonicalModel := geminiAdaptiveCanonicalModel(report.Account, report.RequestedModel, report.MappedModel, report.Action)
 	modelState := after.ByModelFamily[family]
+	modelCircuit := after.ModelCircuits[canonicalModel]
 	accountSwitchCount, _ := AccountSwitchCountFromContext(ctx)
 	fields := []any{
 		"request_id", contextStringValue(ctx, ctxkey.RequestID),
@@ -173,6 +191,7 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 		"model", report.RequestedModel,
 		"mapped_model", report.MappedModel,
 		"model_family", family,
+		"canonical_model", canonicalModel,
 		"action", report.Action,
 		"stream", report.Stream,
 		"success", report.Success,
@@ -180,6 +199,8 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 		"path_sample", report.PathSample,
 		"model_sample", report.ModelSample,
 		"capacity_sample", report.CapacitySample,
+		"account_circuit_sample", report.AccountCircuitSample,
+		"model_circuit_sample", report.ModelCircuitSample,
 		"synthetic", report.Synthetic,
 		"first_token_ms", nullableIntForSlog(report.FirstTokenMs),
 		"first_token_status", geminiAdaptiveFirstTokenStatus(report),
@@ -205,6 +226,12 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 		"consecutive_capacity_failure", after.ConsecutiveCapacityFailure,
 		"cooldown_until", after.CooldownUntil,
 		"cooldown_status", geminiAdaptiveCooldownStatus(after, time.Now()),
+		"account_circuit_status", geminiAdaptiveCircuitStatus(after.AccountCircuit, time.Now()),
+		"account_circuit_open_until", after.AccountCircuit.OpenUntil,
+		"account_circuit_consecutive_failure", after.AccountCircuit.ConsecutiveFailure,
+		"model_circuit_status", geminiAdaptiveCircuitStatus(modelCircuit, time.Now()),
+		"model_circuit_open_until", modelCircuit.OpenUntil,
+		"model_circuit_consecutive_failure", modelCircuit.ConsecutiveFailure,
 		"diagnostic_sample_rate", settings.GeminiAdaptiveSchedulerDiagnosticLogSampleRate,
 	}
 	fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
@@ -258,6 +285,8 @@ func geminiAdaptiveDiagnosticCandidates(candidates []GeminiAdaptiveCandidate, re
 			loadRate = candidate.Load.LoadRate
 		}
 		modelState := candidate.state.ByModelFamily[family]
+		canonicalModel := geminiAdaptiveCanonicalModel(candidate.Account, requestedModel, "", action)
+		modelCircuit := candidate.state.ModelCircuits[canonicalModel]
 		out = append(out, geminiAdaptiveDiagnosticCandidate{
 			AccountID:                  candidate.Account.ID,
 			Platform:                   candidate.Account.Platform,
@@ -292,6 +321,14 @@ func geminiAdaptiveDiagnosticCandidates(candidates []GeminiAdaptiveCandidate, re
 			ConsecutiveCapacityFailure: candidate.state.ConsecutiveCapacityFailure,
 			CooldownUntil:              candidate.state.CooldownUntil,
 			CooldownStatus:             geminiAdaptiveCooldownStatus(candidate.state, now),
+			CanonicalModel:             canonicalModel,
+			CircuitStatus:              candidate.CircuitStatus,
+			CircuitScope:               candidate.CircuitScope,
+			CircuitOpenUntil:           candidate.CircuitOpenUntil,
+			AccountCircuitStatus:       geminiAdaptiveCircuitStatus(candidate.state.AccountCircuit, now),
+			AccountCircuitOpenUntil:    candidate.state.AccountCircuit.OpenUntil,
+			AccountConsecutiveFailure:  candidate.state.AccountCircuit.ConsecutiveFailure,
+			ModelConsecutiveFailure:    modelCircuit.ConsecutiveFailure,
 		})
 	}
 	return out
@@ -321,6 +358,11 @@ func geminiAdaptiveCooldownStatus(state geminiAdaptiveAccountState, now time.Tim
 		return "active"
 	}
 	return "expired"
+}
+
+func geminiAdaptiveCircuitStatus(circuit geminiAdaptiveCircuitState, now time.Time) string {
+	_, _, status := geminiAdaptiveCircuitAllows(circuit, now)
+	return status
 }
 
 func geminiAdaptiveErrorLogFields(err error) []any {

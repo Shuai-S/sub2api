@@ -115,7 +115,7 @@ func TestGeminiAdaptiveLearningAccountStatuses(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := settings
 			cfg.GeminiAdaptiveSchedulerEnabled = tt.enabled
-			got, _ := geminiAdaptiveLearningAccountStatus(tt.account, tt.state, cfg, tt.load, tt.quota, 10, tt.failRate, now)
+			got, _ := geminiAdaptiveLearningAccountStatus(tt.account, tt.state, cfg, tt.load, tt.quota, 10, tt.failRate, "gemini-2.5-pro", now)
 			require.Equal(t, tt.want, got)
 		})
 	}

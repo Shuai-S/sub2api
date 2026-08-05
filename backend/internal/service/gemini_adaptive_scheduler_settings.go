@@ -49,6 +49,10 @@ const (
 	SettingKeyGeminiAdaptiveSchedulerHardShrinkFailureMultiplier = geminiAdaptiveSchedulerSettingPrefix + "hard_shrink_failure_multiplier"
 	SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds       = geminiAdaptiveSchedulerSettingPrefix + "learning_window_seconds"
 	SettingKeyGeminiAdaptiveSchedulerCooldownSeconds             = geminiAdaptiveSchedulerSettingPrefix + "cooldown_seconds"
+	SettingKeyGeminiAdaptiveSchedulerCooldownMaxSeconds          = geminiAdaptiveSchedulerSettingPrefix + "cooldown_max_seconds"
+	SettingKeyGeminiAdaptiveSchedulerAccountFailureThreshold     = geminiAdaptiveSchedulerSettingPrefix + "account_failure_threshold"
+	SettingKeyGeminiAdaptiveSchedulerModelFailureThreshold       = geminiAdaptiveSchedulerSettingPrefix + "model_failure_threshold"
+	SettingKeyGeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds   = geminiAdaptiveSchedulerSettingPrefix + "half_open_probe_lease_seconds"
 	SettingKeyGeminiAdaptiveSchedulerDiagnosticLogEnabled        = geminiAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
 	SettingKeyGeminiAdaptiveSchedulerDiagnosticLogSampleRate     = geminiAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
 
@@ -87,6 +91,10 @@ type GeminiAdaptiveSchedulerSettings struct {
 	GeminiAdaptiveSchedulerHardShrinkFailureMultiplier int     `json:"gemini_adaptive_scheduler_hard_shrink_failure_multiplier"`
 	GeminiAdaptiveSchedulerLearningWindowSeconds       int     `json:"gemini_adaptive_scheduler_learning_window_seconds"`
 	GeminiAdaptiveSchedulerCooldownSeconds             int     `json:"gemini_adaptive_scheduler_cooldown_seconds"`
+	GeminiAdaptiveSchedulerCooldownMaxSeconds          int     `json:"gemini_adaptive_scheduler_cooldown_max_seconds"`
+	GeminiAdaptiveSchedulerAccountFailureThreshold     int     `json:"gemini_adaptive_scheduler_account_failure_threshold"`
+	GeminiAdaptiveSchedulerModelFailureThreshold       int     `json:"gemini_adaptive_scheduler_model_failure_threshold"`
+	GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds   int     `json:"gemini_adaptive_scheduler_half_open_probe_lease_seconds"`
 	GeminiAdaptiveSchedulerDiagnosticLogEnabled        bool    `json:"gemini_adaptive_scheduler_diagnostic_log_enabled"`
 	GeminiAdaptiveSchedulerDiagnosticLogSampleRate     float64 `json:"gemini_adaptive_scheduler_diagnostic_log_sample_rate"`
 }
@@ -105,8 +113,8 @@ func DefaultGeminiAdaptiveSchedulerSettings() GeminiAdaptiveSchedulerSettings {
 		GeminiAdaptiveSchedulerEnabled:                     false,
 		GeminiAdaptiveSchedulerMode:                        GeminiAdaptiveSchedulerModeShadow,
 		GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull:  false,
-		GeminiAdaptiveSchedulerTopK:                        8,
-		GeminiAdaptiveSchedulerSoftmaxTemperature:          0.35,
+		GeminiAdaptiveSchedulerTopK:                        4,
+		GeminiAdaptiveSchedulerSoftmaxTemperature:          0.12,
 		GeminiAdaptiveSchedulerInitialReliability:          0.50,
 		GeminiAdaptiveSchedulerConsecutiveFailurePenalty:   0.25,
 		GeminiAdaptiveSchedulerNeutralLatencyScore:         0.50,
@@ -114,12 +122,12 @@ func DefaultGeminiAdaptiveSchedulerSettings() GeminiAdaptiveSchedulerSettings {
 		GeminiAdaptiveSchedulerSuccessEMAAlpha:             0.05,
 		GeminiAdaptiveSchedulerLatencyEMAAlpha:             0.05,
 		GeminiAdaptiveSchedulerMinCostMultiplier:           0.03,
-		GeminiAdaptiveSchedulerWeightReliability:           0.30,
-		GeminiAdaptiveSchedulerWeightQuota:                 0.25,
-		GeminiAdaptiveSchedulerWeightCapacity:              0.20,
-		GeminiAdaptiveSchedulerWeightLatency:               0.15,
-		GeminiAdaptiveSchedulerWeightCost:                  0.05,
-		GeminiAdaptiveSchedulerWeightExploration:           0.05,
+		GeminiAdaptiveSchedulerWeightReliability:           0.55,
+		GeminiAdaptiveSchedulerWeightQuota:                 0.20,
+		GeminiAdaptiveSchedulerWeightCapacity:              0.10,
+		GeminiAdaptiveSchedulerWeightLatency:               0.10,
+		GeminiAdaptiveSchedulerWeightCost:                  0.03,
+		GeminiAdaptiveSchedulerWeightExploration:           0.02,
 		GeminiAdaptiveSchedulerCapacityProbeLoadThreshold:  0.80,
 		GeminiAdaptiveSchedulerCapacitySuccessThreshold:    0.97,
 		GeminiAdaptiveSchedulerCapacityIncreaseStep:        1,
@@ -132,6 +140,10 @@ func DefaultGeminiAdaptiveSchedulerSettings() GeminiAdaptiveSchedulerSettings {
 		GeminiAdaptiveSchedulerHardShrinkFailureMultiplier: 2,
 		GeminiAdaptiveSchedulerLearningWindowSeconds:       1200,
 		GeminiAdaptiveSchedulerCooldownSeconds:             60,
+		GeminiAdaptiveSchedulerCooldownMaxSeconds:          600,
+		GeminiAdaptiveSchedulerAccountFailureThreshold:     3,
+		GeminiAdaptiveSchedulerModelFailureThreshold:       3,
+		GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds:   600,
 		GeminiAdaptiveSchedulerDiagnosticLogEnabled:        false,
 		GeminiAdaptiveSchedulerDiagnosticLogSampleRate:     0.05,
 	}
@@ -164,6 +176,10 @@ func NormalizeGeminiAdaptiveSchedulerSettings(settings GeminiAdaptiveSchedulerSe
 	settings.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier = clampInt(settings.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier, 1, 100, defaults.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier)
 	settings.GeminiAdaptiveSchedulerLearningWindowSeconds = clampIntMin(settings.GeminiAdaptiveSchedulerLearningWindowSeconds, 1, defaults.GeminiAdaptiveSchedulerLearningWindowSeconds)
 	settings.GeminiAdaptiveSchedulerCooldownSeconds = clampIntMin(settings.GeminiAdaptiveSchedulerCooldownSeconds, 0, defaults.GeminiAdaptiveSchedulerCooldownSeconds)
+	settings.GeminiAdaptiveSchedulerCooldownMaxSeconds = clampIntMin(settings.GeminiAdaptiveSchedulerCooldownMaxSeconds, settings.GeminiAdaptiveSchedulerCooldownSeconds, defaults.GeminiAdaptiveSchedulerCooldownMaxSeconds)
+	settings.GeminiAdaptiveSchedulerAccountFailureThreshold = clampInt(settings.GeminiAdaptiveSchedulerAccountFailureThreshold, 1, 100, defaults.GeminiAdaptiveSchedulerAccountFailureThreshold)
+	settings.GeminiAdaptiveSchedulerModelFailureThreshold = clampInt(settings.GeminiAdaptiveSchedulerModelFailureThreshold, 1, 100, defaults.GeminiAdaptiveSchedulerModelFailureThreshold)
+	settings.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds = clampIntMin(settings.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds, 1, defaults.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds)
 	settings.GeminiAdaptiveSchedulerDiagnosticLogSampleRate = clampFloat(settings.GeminiAdaptiveSchedulerDiagnosticLogSampleRate, 0, 1, defaults.GeminiAdaptiveSchedulerDiagnosticLogSampleRate)
 
 	weights := []*float64{
@@ -230,6 +246,10 @@ var geminiAdaptiveSchedulerSettingKeys = []string{
 	SettingKeyGeminiAdaptiveSchedulerHardShrinkFailureMultiplier,
 	SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds,
 	SettingKeyGeminiAdaptiveSchedulerCooldownSeconds,
+	SettingKeyGeminiAdaptiveSchedulerCooldownMaxSeconds,
+	SettingKeyGeminiAdaptiveSchedulerAccountFailureThreshold,
+	SettingKeyGeminiAdaptiveSchedulerModelFailureThreshold,
+	SettingKeyGeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds,
 	SettingKeyGeminiAdaptiveSchedulerDiagnosticLogEnabled,
 	SettingKeyGeminiAdaptiveSchedulerDiagnosticLogSampleRate,
 }
@@ -266,6 +286,10 @@ func parseGeminiAdaptiveSchedulerSettings(values map[string]string) GeminiAdapti
 	s.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerHardShrinkFailureMultiplier, s.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier)
 	s.GeminiAdaptiveSchedulerLearningWindowSeconds = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds, s.GeminiAdaptiveSchedulerLearningWindowSeconds)
 	s.GeminiAdaptiveSchedulerCooldownSeconds = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerCooldownSeconds, s.GeminiAdaptiveSchedulerCooldownSeconds)
+	s.GeminiAdaptiveSchedulerCooldownMaxSeconds = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerCooldownMaxSeconds, s.GeminiAdaptiveSchedulerCooldownMaxSeconds)
+	s.GeminiAdaptiveSchedulerAccountFailureThreshold = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerAccountFailureThreshold, s.GeminiAdaptiveSchedulerAccountFailureThreshold)
+	s.GeminiAdaptiveSchedulerModelFailureThreshold = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerModelFailureThreshold, s.GeminiAdaptiveSchedulerModelFailureThreshold)
+	s.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds, s.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds)
 	s.GeminiAdaptiveSchedulerDiagnosticLogEnabled = parseBoolSetting(values, SettingKeyGeminiAdaptiveSchedulerDiagnosticLogEnabled, s.GeminiAdaptiveSchedulerDiagnosticLogEnabled)
 	s.GeminiAdaptiveSchedulerDiagnosticLogSampleRate = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerDiagnosticLogSampleRate, s.GeminiAdaptiveSchedulerDiagnosticLogSampleRate)
 	return NormalizeGeminiAdaptiveSchedulerSettings(s)
@@ -304,6 +328,10 @@ func geminiAdaptiveSchedulerSettingsToMap(s GeminiAdaptiveSchedulerSettings) map
 		SettingKeyGeminiAdaptiveSchedulerHardShrinkFailureMultiplier: strconv.Itoa(s.GeminiAdaptiveSchedulerHardShrinkFailureMultiplier),
 		SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds:       strconv.Itoa(s.GeminiAdaptiveSchedulerLearningWindowSeconds),
 		SettingKeyGeminiAdaptiveSchedulerCooldownSeconds:             strconv.Itoa(s.GeminiAdaptiveSchedulerCooldownSeconds),
+		SettingKeyGeminiAdaptiveSchedulerCooldownMaxSeconds:          strconv.Itoa(s.GeminiAdaptiveSchedulerCooldownMaxSeconds),
+		SettingKeyGeminiAdaptiveSchedulerAccountFailureThreshold:     strconv.Itoa(s.GeminiAdaptiveSchedulerAccountFailureThreshold),
+		SettingKeyGeminiAdaptiveSchedulerModelFailureThreshold:       strconv.Itoa(s.GeminiAdaptiveSchedulerModelFailureThreshold),
+		SettingKeyGeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds:   strconv.Itoa(s.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds),
 		SettingKeyGeminiAdaptiveSchedulerDiagnosticLogEnabled:        strconv.FormatBool(s.GeminiAdaptiveSchedulerDiagnosticLogEnabled),
 		SettingKeyGeminiAdaptiveSchedulerDiagnosticLogSampleRate:     formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerDiagnosticLogSampleRate),
 	}

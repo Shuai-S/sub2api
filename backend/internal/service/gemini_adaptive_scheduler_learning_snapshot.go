@@ -86,6 +86,10 @@ type GeminiAdaptiveSchedulerLearningSettingsSnapshot struct {
 	ShrinkErrorThreshold       float64 `json:"shrink_error_threshold"`
 	LearningWindowSeconds      int     `json:"learning_window_seconds"`
 	CooldownSeconds            int     `json:"cooldown_seconds"`
+	CooldownMaxSeconds         int     `json:"cooldown_max_seconds"`
+	AccountFailureThreshold    int     `json:"account_failure_threshold"`
+	ModelFailureThreshold      int     `json:"model_failure_threshold"`
+	HalfOpenProbeLeaseSeconds  int     `json:"half_open_probe_lease_seconds"`
 	CapacityIncreaseStep       int     `json:"capacity_increase_step"`
 	MinCapacity                int     `json:"min_capacity"`
 	DiagnosticLogEnabled       bool    `json:"diagnostic_log_enabled"`
@@ -171,6 +175,13 @@ type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
 	LastCapacityFailureAt   *time.Time `json:"last_capacity_failure_at,omitempty"`
 	CooldownUntil           *time.Time `json:"cooldown_until,omitempty"`
 	CooldownRemainingSec    int64      `json:"cooldown_remaining_sec"`
+	CanonicalModel          string     `json:"canonical_model,omitempty"`
+	AccountCircuitStatus    string     `json:"account_circuit_status"`
+	AccountCircuitOpenUntil *time.Time `json:"account_circuit_open_until,omitempty"`
+	AccountCircuitFailures  int        `json:"account_circuit_failures"`
+	ModelCircuitStatus      string     `json:"model_circuit_status"`
+	ModelCircuitOpenUntil   *time.Time `json:"model_circuit_open_until,omitempty"`
+	ModelCircuitFailures    int        `json:"model_circuit_failures"`
 }
 
 func (s *OpsService) GetGeminiAdaptiveSchedulerLearningSnapshot(ctx context.Context, filter *GeminiAdaptiveSchedulerLearningFilter) (*GeminiAdaptiveSchedulerLearningSnapshot, error) {
@@ -356,7 +367,7 @@ func buildGeminiAdaptiveLearningAccountSnapshot(account *Account, state geminiAd
 	capacity := normalizedGeminiAdaptiveCapacity(account, state)
 	healthFailureRate := adaptiveFailureRate(state.RecentHealthFailures, state.RecentHealthSamples)
 	capacityFailureRate := adaptiveFailureRate(state.RecentCapacityFailures, state.RecentCapacitySamples)
-	status, reason := geminiAdaptiveLearningAccountStatus(account, state, cfg, load, quota, capacity, capacityFailureRate, now)
+	status, reason := geminiAdaptiveLearningAccountStatus(account, state, cfg, load, quota, capacity, capacityFailureRate, requestedModel, now)
 	cooldownRemaining := int64(0)
 	if state.CooldownUntil.After(now) {
 		cooldownRemaining = int64(state.CooldownUntil.Sub(now).Seconds())
@@ -366,6 +377,8 @@ func buildGeminiAdaptiveLearningAccountSnapshot(account *Account, state geminiAd
 	}
 	family := geminiAdaptiveModelFamily(requestedModel, "generateContent")
 	modelState := state.ByModelFamily[family]
+	canonicalModel := geminiAdaptiveCanonicalModel(account, requestedModel, "", "generateContent")
+	modelCircuit := state.ModelCircuits[canonicalModel]
 	return GeminiAdaptiveSchedulerAccountLearningSnapshot{
 		AccountID: account.ID, AccountName: account.Name, Platform: account.Platform, Type: account.Type,
 		AccountStatus: account.Status, Schedulable: account.IsSchedulable(), Priority: account.Priority,
@@ -384,10 +397,15 @@ func buildGeminiAdaptiveLearningAccountSnapshot(account *Account, state geminiAd
 		LearningWindowStartedAt: geminiAdaptiveTimePtr(state.RecentWindowStartedAt), LastSuccessAt: geminiAdaptiveTimePtr(state.LastSuccessAt),
 		LastFailureAt: geminiAdaptiveTimePtr(state.LastFailureAt), LastCapacityFailureAt: geminiAdaptiveTimePtr(state.LastCapacityFailureAt),
 		CooldownUntil: geminiAdaptiveTimePtr(state.CooldownUntil), CooldownRemainingSec: cooldownRemaining,
+		CanonicalModel:       canonicalModel,
+		AccountCircuitStatus: geminiAdaptiveCircuitStatus(state.AccountCircuit, now), AccountCircuitOpenUntil: geminiAdaptiveTimePtr(state.AccountCircuit.OpenUntil),
+		AccountCircuitFailures: state.AccountCircuit.ConsecutiveFailure,
+		ModelCircuitStatus:     geminiAdaptiveCircuitStatus(modelCircuit, now), ModelCircuitOpenUntil: geminiAdaptiveTimePtr(modelCircuit.OpenUntil),
+		ModelCircuitFailures: modelCircuit.ConsecutiveFailure,
 	}
 }
 
-func geminiAdaptiveLearningAccountStatus(account *Account, state geminiAdaptiveAccountState, cfg GeminiAdaptiveSchedulerSettings, load *AccountLoadInfo, quota GeminiAdaptiveQuotaSnapshot, capacity int, capacityFailureRate float64, now time.Time) (string, string) {
+func geminiAdaptiveLearningAccountStatus(account *Account, state geminiAdaptiveAccountState, cfg GeminiAdaptiveSchedulerSettings, load *AccountLoadInfo, quota GeminiAdaptiveQuotaSnapshot, capacity int, capacityFailureRate float64, requestedModel string, now time.Time) (string, string) {
 	if !cfg.GeminiAdaptiveSchedulerEnabled {
 		return GeminiAdaptiveLearningStatusDisabled, "adaptive scheduler disabled"
 	}
@@ -399,6 +417,15 @@ func geminiAdaptiveLearningAccountStatus(account *Account, state geminiAdaptiveA
 	}
 	if quota.HardRejected {
 		return GeminiAdaptiveLearningStatusQuotaLimited, "local Gemini quota precheck rejected the account"
+	}
+	accountCircuitStatus := geminiAdaptiveCircuitStatus(state.AccountCircuit, now)
+	if accountCircuitStatus == geminiAdaptiveCircuitStatusOpen || accountCircuitStatus == geminiAdaptiveCircuitStatusProbeActive {
+		return GeminiAdaptiveLearningStatusCooldown, "account health circuit is " + accountCircuitStatus
+	}
+	modelKey := geminiAdaptiveCanonicalModel(account, requestedModel, "", "generateContent")
+	modelCircuitStatus := geminiAdaptiveCircuitStatus(state.ModelCircuits[modelKey], now)
+	if modelCircuitStatus == geminiAdaptiveCircuitStatusOpen || modelCircuitStatus == geminiAdaptiveCircuitStatusProbeActive {
+		return GeminiAdaptiveLearningStatusCooldown, "model health circuit is " + modelCircuitStatus
 	}
 	if state.CooldownUntil.After(now) {
 		return GeminiAdaptiveLearningStatusCooldown, "adaptive cooldown after concurrency failures"
@@ -677,7 +704,11 @@ func geminiAdaptiveLearningSettingsSnapshot(cfg GeminiAdaptiveSchedulerSettings)
 		MinRecentSamplesForShrink: cfg.GeminiAdaptiveSchedulerMinRecentSamplesForShrink,
 		ShrinkErrorThreshold:      cfg.GeminiAdaptiveSchedulerShrinkErrorThreshold, LearningWindowSeconds: cfg.GeminiAdaptiveSchedulerLearningWindowSeconds,
 		CooldownSeconds: cfg.GeminiAdaptiveSchedulerCooldownSeconds, CapacityIncreaseStep: cfg.GeminiAdaptiveSchedulerCapacityIncreaseStep,
-		MinCapacity: cfg.GeminiAdaptiveSchedulerMinCapacity, DiagnosticLogEnabled: cfg.GeminiAdaptiveSchedulerDiagnosticLogEnabled,
+		CooldownMaxSeconds:        cfg.GeminiAdaptiveSchedulerCooldownMaxSeconds,
+		AccountFailureThreshold:   cfg.GeminiAdaptiveSchedulerAccountFailureThreshold,
+		ModelFailureThreshold:     cfg.GeminiAdaptiveSchedulerModelFailureThreshold,
+		HalfOpenProbeLeaseSeconds: cfg.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds,
+		MinCapacity:               cfg.GeminiAdaptiveSchedulerMinCapacity, DiagnosticLogEnabled: cfg.GeminiAdaptiveSchedulerDiagnosticLogEnabled,
 		DiagnosticLogSampleRate: cfg.GeminiAdaptiveSchedulerDiagnosticLogSampleRate,
 	}
 }

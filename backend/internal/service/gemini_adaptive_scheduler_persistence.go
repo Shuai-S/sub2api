@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -20,22 +21,24 @@ type geminiAdaptivePersistedState struct {
 	AccountID      int64  `json:"account_id"`
 	UpdatedAtUnix  int64  `json:"updated_at"`
 
-	EstimatedCapacity          int                                 `json:"estimated_capacity"`
-	PathSuccessEMA             float64                             `json:"path_success_ema"`
-	ByModelFamily              map[string]geminiAdaptiveModelState `json:"by_model_family"`
-	ConsecutiveSuccess         int                                 `json:"consecutive_success"`
-	ConsecutiveFailure         int                                 `json:"consecutive_failure"`
-	ConsecutiveCapacityFailure int                                 `json:"consecutive_capacity_failure"`
-	TotalSamples               int64                               `json:"total_samples"`
-	RecentHealthSamples        int                                 `json:"recent_health_samples"`
-	RecentHealthFailures       int                                 `json:"recent_health_failures"`
-	RecentCapacitySamples      int                                 `json:"recent_capacity_samples"`
-	RecentCapacityFailures     int                                 `json:"recent_capacity_failures"`
-	LastSuccessAtUnix          int64                               `json:"last_success_at,omitempty"`
-	LastFailureAtUnix          int64                               `json:"last_failure_at,omitempty"`
-	LastCapacityFailureAtUnix  int64                               `json:"last_capacity_failure_at,omitempty"`
-	RecentWindowStartedAtUnix  int64                               `json:"recent_window_started_at,omitempty"`
-	CooldownUntilUnix          int64                               `json:"cooldown_until,omitempty"`
+	EstimatedCapacity          int                                   `json:"estimated_capacity"`
+	PathSuccessEMA             float64                               `json:"path_success_ema"`
+	ByModelFamily              map[string]geminiAdaptiveModelState   `json:"by_model_family"`
+	AccountCircuit             geminiAdaptiveCircuitState            `json:"account_circuit,omitempty"`
+	ModelCircuits              map[string]geminiAdaptiveCircuitState `json:"model_circuits,omitempty"`
+	ConsecutiveSuccess         int                                   `json:"consecutive_success"`
+	ConsecutiveFailure         int                                   `json:"consecutive_failure"`
+	ConsecutiveCapacityFailure int                                   `json:"consecutive_capacity_failure"`
+	TotalSamples               int64                                 `json:"total_samples"`
+	RecentHealthSamples        int                                   `json:"recent_health_samples"`
+	RecentHealthFailures       int                                   `json:"recent_health_failures"`
+	RecentCapacitySamples      int                                   `json:"recent_capacity_samples"`
+	RecentCapacityFailures     int                                   `json:"recent_capacity_failures"`
+	LastSuccessAtUnix          int64                                 `json:"last_success_at,omitempty"`
+	LastFailureAtUnix          int64                                 `json:"last_failure_at,omitempty"`
+	LastCapacityFailureAtUnix  int64                                 `json:"last_capacity_failure_at,omitempty"`
+	RecentWindowStartedAtUnix  int64                                 `json:"recent_window_started_at,omitempty"`
+	CooldownUntilUnix          int64                                 `json:"cooldown_until,omitempty"`
 }
 
 type geminiAdaptiveStatePersistence struct {
@@ -151,6 +154,8 @@ func encodeGeminiAdaptivePersistedState(state geminiAdaptiveAccountState, source
 		EstimatedCapacity:          state.EstimatedCapacity,
 		PathSuccessEMA:             state.PathSuccessEMA,
 		ByModelFamily:              cloneGeminiAdaptiveModelMap(state.ByModelFamily),
+		AccountCircuit:             persistedGeminiAdaptiveCircuit(state.AccountCircuit),
+		ModelCircuits:              persistedGeminiAdaptiveCircuitMap(state.ModelCircuits),
 		ConsecutiveSuccess:         state.ConsecutiveSuccess,
 		ConsecutiveFailure:         state.ConsecutiveFailure,
 		ConsecutiveCapacityFailure: state.ConsecutiveCapacityFailure,
@@ -184,6 +189,8 @@ func decodeGeminiAdaptivePersistedState(accountID int64, payload []byte, now tim
 		EstimatedCapacity:          persisted.EstimatedCapacity,
 		PathSuccessEMA:             persisted.PathSuccessEMA,
 		ByModelFamily:              cloneGeminiAdaptiveModelMap(persisted.ByModelFamily),
+		AccountCircuit:             persistedGeminiAdaptiveCircuit(persisted.AccountCircuit),
+		ModelCircuits:              persistedGeminiAdaptiveCircuitMap(persisted.ModelCircuits),
 		ConsecutiveSuccess:         persisted.ConsecutiveSuccess,
 		ConsecutiveFailure:         persisted.ConsecutiveFailure,
 		ConsecutiveCapacityFailure: persisted.ConsecutiveCapacityFailure,
@@ -225,6 +232,39 @@ func validateGeminiAdaptiveAccountState(state geminiAdaptiveAccountState) error 
 		if !isGeminiAdaptiveModelFamily(family) || modelState.Samples < 0 || modelState.Failures < 0 || modelState.Failures > modelState.Samples || !finiteInRange(modelState.SuccessEMA, 0, 1) || !finiteNonNegative(modelState.TTFTEMA) || !finiteNonNegative(modelState.LatencyEMA) {
 			return fmt.Errorf("invalid model state for family %q", family)
 		}
+	}
+	if err := validateGeminiAdaptiveCircuitState("account", state.AccountCircuit); err != nil {
+		return err
+	}
+	for model, circuit := range state.ModelCircuits {
+		if strings.TrimSpace(model) == "" || len(model) > 256 {
+			return fmt.Errorf("invalid circuit model key")
+		}
+		if err := validateGeminiAdaptiveCircuitState(model, circuit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func persistedGeminiAdaptiveCircuit(circuit geminiAdaptiveCircuitState) geminiAdaptiveCircuitState {
+	circuit.ProbeUntil = time.Time{}
+	circuit.ProbeInFlight = false
+	circuit.ProbeOwner = ""
+	return circuit
+}
+
+func persistedGeminiAdaptiveCircuitMap(in map[string]geminiAdaptiveCircuitState) map[string]geminiAdaptiveCircuitState {
+	out := make(map[string]geminiAdaptiveCircuitState, len(in))
+	for key, circuit := range in {
+		out[key] = persistedGeminiAdaptiveCircuit(circuit)
+	}
+	return out
+}
+
+func validateGeminiAdaptiveCircuitState(name string, circuit geminiAdaptiveCircuitState) error {
+	if circuit.ConsecutiveFailure < 0 {
+		return fmt.Errorf("invalid circuit failure count for %q", name)
 	}
 	return nil
 }

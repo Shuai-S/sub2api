@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -271,6 +272,303 @@ func TestGeminiAdaptiveCapacityShrinksAndProbesBackUp(t *testing.T) {
 	require.Contains(t, output.String(), "previous_capacity=10")
 	require.Contains(t, output.String(), "previous_capacity=8")
 	require.Equal(t, 2, strings.Count(output.String(), "request_id=capacity-request"))
+}
+
+func TestGeminiAdaptiveModelCircuitOpensAndAllowsSingleLocalProbe(t *testing.T) {
+	store := newGeminiAdaptiveStateStore()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	settings.GeminiAdaptiveSchedulerMode = GeminiAdaptiveSchedulerModeEnforce
+	account := &Account{ID: 81, Platform: PlatformGemini, Concurrency: 10}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+
+	for i := 1; i <= settings.GeminiAdaptiveSchedulerModelFailureThreshold; i++ {
+		store.report(GeminiAdaptiveScheduleReport{
+			Account:            account,
+			RequestID:          "failure-" + strconv.Itoa(i),
+			RequestedModel:     "gemini-3.1-flash-lite",
+			ModelSample:        true,
+			ModelCircuitSample: true,
+			TerminalReason:     "upstream_5xx",
+		}, now.Add(time.Duration(i)*time.Second), settings)
+	}
+
+	modelKey := geminiAdaptiveCanonicalModel(account, "gemini-3.1-flash-lite", "", "generateContent")
+	opened := store.snapshot(account, settings).ModelCircuits[modelKey]
+	require.Equal(t, settings.GeminiAdaptiveSchedulerModelFailureThreshold, opened.ConsecutiveFailure)
+	require.Equal(t, now.Add(3*time.Second+time.Minute), opened.OpenUntil)
+	require.False(t, store.circuitEligibility(account, "gemini-3.1-flash-lite", "generateContent", now.Add(30*time.Second), settings).Allowed)
+
+	probeAt := opened.OpenUntil.Add(time.Second)
+	allowed, claimed := store.claimCircuitProbe(account, "gemini-3.1-flash-lite", "generateContent", "probe-1", probeAt, settings)
+	require.True(t, allowed)
+	require.True(t, claimed)
+	allowed, claimed = store.claimCircuitProbe(account, "gemini-3.1-flash-lite", "generateContent", "probe-2", probeAt, settings)
+	require.False(t, allowed)
+	require.False(t, claimed)
+
+	store.report(GeminiAdaptiveScheduleReport{
+		Account:              account,
+		RequestID:            "probe-1",
+		RequestedModel:       "gemini-3.1-flash-lite",
+		Success:              true,
+		PathSample:           true,
+		ModelSample:          true,
+		AccountCircuitSample: true,
+		ModelCircuitSample:   true,
+		TerminalReason:       "success",
+	}, probeAt.Add(time.Second), settings)
+
+	closed := store.snapshot(account, settings).ModelCircuits[modelKey]
+	require.Zero(t, closed.ConsecutiveFailure)
+	require.True(t, closed.OpenUntil.IsZero())
+	require.True(t, store.circuitEligibility(account, "gemini-3.1-flash-lite", "generateContent", probeAt.Add(time.Second), settings).Allowed)
+}
+
+func TestGeminiAdaptiveCircuitDeduplicatesSameRequestRetryBurst(t *testing.T) {
+	store := newGeminiAdaptiveStateStore()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	account := &Account{ID: 82, Platform: PlatformGemini, Concurrency: 10}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	report := GeminiAdaptiveScheduleReport{
+		Account:            account,
+		RequestID:          "same-request",
+		RequestedModel:     "gemini-3.1-flash-lite",
+		ModelSample:        true,
+		ModelCircuitSample: true,
+		TerminalReason:     "upstream_5xx",
+	}
+
+	for i := 0; i < 3; i++ {
+		store.report(report, now.Add(time.Duration(i)*time.Second), settings)
+	}
+
+	modelKey := geminiAdaptiveCanonicalModel(account, report.RequestedModel, "", "generateContent")
+	state := store.snapshot(account, settings)
+	circuit := state.ModelCircuits[modelKey]
+	require.Equal(t, 1, circuit.ConsecutiveFailure)
+	require.True(t, circuit.OpenUntil.IsZero())
+	require.Equal(t, int64(1), state.TotalSamples)
+	require.Equal(t, int64(1), state.ByModelFamily["flash"].Samples)
+	require.Equal(t, int64(1), state.ByModelFamily["flash"].Failures)
+}
+
+func TestGeminiAdaptiveBuildOrderHardRejectsOpenCircuit(t *testing.T) {
+	scheduler := newGeminiAdaptiveScheduler()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	settings.GeminiAdaptiveSchedulerMode = GeminiAdaptiveSchedulerModeEnforce
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	scheduler.now = func() time.Time { return now }
+	failed := &Account{ID: 91, Platform: PlatformGemini, Priority: 1, Concurrency: 10}
+	healthy := &Account{ID: 92, Platform: PlatformGemini, Priority: 1, Concurrency: 10}
+	model := "gemini-3.1-flash-lite"
+	modelKey := geminiAdaptiveCanonicalModel(failed, model, "", "generateContent")
+	scheduler.state.mu.Lock()
+	state := scheduler.state.ensureLocked(failed, now, settings)
+	state.ModelCircuits[modelKey] = geminiAdaptiveCircuitState{
+		ConsecutiveFailure: settings.GeminiAdaptiveSchedulerModelFailureThreshold,
+		OpenUntil:          now.Add(time.Minute),
+	}
+	scheduler.state.mu.Unlock()
+
+	decision, err := scheduler.BuildOrder(GeminiAdaptiveScheduleRequest{
+		RequestedModel: model,
+		Action:         "generateContent",
+		Candidates: []GeminiAdaptiveCandidateInput{
+			{Account: failed},
+			{Account: healthy},
+		},
+		BaselineOrder: []int64{failed.ID, healthy.ID},
+		Settings:      &settings,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, decision.CircuitRejectedCount)
+	require.Equal(t, 1, decision.ModelCircuitRejectedCount)
+	require.Equal(t, []int64{healthy.ID}, geminiAdaptiveCandidateIDs(decision.Order))
+}
+
+func TestGeminiAdaptiveAuthFailureImmediatelyOpensAccountCircuit(t *testing.T) {
+	store := newGeminiAdaptiveStateStore()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	account := &Account{ID: 83, Platform: PlatformGemini, Concurrency: 10}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	report := classifyGeminiAdaptiveResult(
+		context.WithValue(context.Background(), ctxkey.RequestID, "auth-request"),
+		account,
+		"gemini-3.1-flash-lite",
+		"generateContent",
+		nil,
+		&UpstreamFailoverError{StatusCode: http.StatusUnauthorized, Scope: GatewayFailureScopeAccount},
+	)
+
+	store.report(report, now, settings)
+
+	state := store.snapshot(account, settings)
+	require.Equal(t, 1, state.AccountCircuit.ConsecutiveFailure)
+	require.Equal(t, now.Add(time.Minute), state.AccountCircuit.OpenUntil)
+	require.False(t, store.circuitEligibility(account, report.RequestedModel, report.Action, now.Add(time.Second), settings).Allowed)
+}
+
+func TestGeminiAdaptiveModelCircuitUsesCanonicalMappedModel(t *testing.T) {
+	store := newGeminiAdaptiveStateStore()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	account := &Account{
+		ID:          84,
+		Platform:    PlatformGemini,
+		Concurrency: 10,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"public-flash": "upstream-flash",
+			"public-pro":   "upstream-pro",
+		}},
+	}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < settings.GeminiAdaptiveSchedulerModelFailureThreshold; i++ {
+		store.report(GeminiAdaptiveScheduleReport{
+			Account:            account,
+			RequestID:          "mapped-failure-" + strconv.Itoa(i),
+			RequestedModel:     "public-flash",
+			ModelCircuitSample: true,
+			TerminalReason:     "upstream_5xx",
+		}, now.Add(time.Duration(i)*time.Second), settings)
+	}
+
+	require.False(t, store.circuitEligibility(account, "public-flash", "generateContent", now.Add(10*time.Second), settings).Allowed)
+	require.True(t, store.circuitEligibility(account, "public-pro", "generateContent", now.Add(10*time.Second), settings).Allowed)
+}
+
+func TestGeminiAdaptiveUnobservedProbeReleasesLease(t *testing.T) {
+	store := newGeminiAdaptiveStateStore()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	account := &Account{ID: 85, Platform: PlatformGemini, Concurrency: 10}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	model := "gemini-3.1-flash-lite"
+	modelKey := geminiAdaptiveCanonicalModel(account, model, "", "generateContent")
+	store.mu.Lock()
+	state := store.ensureLocked(account, now, settings)
+	state.ModelCircuits[modelKey] = geminiAdaptiveCircuitState{
+		ConsecutiveFailure: settings.GeminiAdaptiveSchedulerModelFailureThreshold,
+		OpenUntil:          now.Add(-time.Second),
+	}
+	store.mu.Unlock()
+
+	allowed, claimed := store.claimCircuitProbe(account, model, "generateContent", "cancelled-probe", now, settings)
+	require.True(t, allowed)
+	require.True(t, claimed)
+	store.report(GeminiAdaptiveScheduleReport{
+		Account:        account,
+		RequestID:      "cancelled-probe",
+		RequestedModel: model,
+		TerminalReason: "client_cancelled",
+	}, now.Add(time.Second), settings)
+
+	eligibility := store.circuitEligibility(account, model, "generateContent", now.Add(time.Second), settings)
+	require.True(t, eligibility.Allowed)
+	require.True(t, eligibility.HalfOpen)
+}
+
+func TestGeminiAdaptiveLegacyAcquireReturnsProbeRelease(t *testing.T) {
+	service := &GatewayService{}
+	account := &Account{ID: 851, Platform: PlatformGemini, Type: AccountTypeAPIKey, Concurrency: 1}
+	released := false
+
+	selection, acquired, releaseProbe, err := service.tryAcquireByLegacyOrderWithGate(
+		context.Background(),
+		[]*Account{account},
+		nil,
+		"",
+		false,
+		false,
+		nil,
+		func(*Account) (bool, func()) {
+			return true, func() { released = true }
+		},
+	)
+
+	require.NoError(t, err)
+	require.True(t, acquired)
+	require.NotNil(t, selection)
+	require.False(t, released, "a selected half-open probe must remain claimed until the request is observed")
+	releaseProbe()
+	require.True(t, released)
+}
+
+func TestGeminiAdaptiveProbeReleasesWhenRequestContextEnds(t *testing.T) {
+	scheduler := newGeminiAdaptiveScheduler()
+	service := &GatewayService{geminiAdaptiveScheduler: scheduler}
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	settings.GeminiAdaptiveSchedulerMode = GeminiAdaptiveSchedulerModeEnforce
+	account := &Account{ID: 852, Platform: PlatformGemini, Type: AccountTypeAPIKey, Concurrency: 1}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	model := "gemini-3.1-flash-lite"
+	modelKey := geminiAdaptiveCanonicalModel(account, model, "", "generateContent")
+	scheduler.now = func() time.Time { return now }
+	scheduler.state.mu.Lock()
+	state := scheduler.state.ensureLocked(account, now, settings)
+	state.ModelCircuits[modelKey] = geminiAdaptiveCircuitState{
+		ConsecutiveFailure: settings.GeminiAdaptiveSchedulerModelFailureThreshold,
+		OpenUntil:          now.Add(-time.Second),
+	}
+	scheduler.state.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), ctxkey.RequestID, "context-probe"))
+
+	allowed, _ := service.claimGeminiAdaptiveCircuitProbe(ctx, GeminiAdaptiveSchedulerModeEnforce, settings, account, model)
+	require.True(t, allowed)
+	require.False(t, scheduler.state.circuitEligibility(account, model, "generateContent", now, settings).Allowed)
+
+	cancel()
+	require.Eventually(t, func() bool {
+		eligibility := scheduler.state.circuitEligibility(account, model, "generateContent", now, settings)
+		return eligibility.Allowed && eligibility.HalfOpen
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestGeminiAdaptiveFailedProbeExtendsCooldownExponentially(t *testing.T) {
+	store := newGeminiAdaptiveStateStore()
+	settings := DefaultGeminiAdaptiveSchedulerSettings()
+	account := &Account{ID: 86, Platform: PlatformGemini, Concurrency: 10}
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	model := "gemini-3.1-flash-lite"
+	modelKey := geminiAdaptiveCanonicalModel(account, model, "", "generateContent")
+	store.mu.Lock()
+	state := store.ensureLocked(account, now, settings)
+	state.ModelCircuits[modelKey] = geminiAdaptiveCircuitState{
+		ConsecutiveFailure: settings.GeminiAdaptiveSchedulerModelFailureThreshold,
+		OpenUntil:          now.Add(-time.Second),
+	}
+	store.mu.Unlock()
+
+	allowed, claimed := store.claimCircuitProbe(account, model, "generateContent", "failed-probe", now, settings)
+	require.True(t, allowed)
+	require.True(t, claimed)
+	store.report(GeminiAdaptiveScheduleReport{
+		Account:            account,
+		RequestID:          "failed-probe",
+		RequestedModel:     model,
+		ModelCircuitSample: true,
+		TerminalReason:     "upstream_5xx",
+	}, now, settings)
+
+	circuit := store.snapshot(account, settings).ModelCircuits[modelKey]
+	require.Equal(t, settings.GeminiAdaptiveSchedulerModelFailureThreshold+1, circuit.ConsecutiveFailure)
+	require.Equal(t, now.Add(2*time.Minute), circuit.OpenUntil)
+}
+
+func TestGeminiPoolModeLimitsSameAccountRetries(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode":                    true,
+			"pool_mode_retry_count":        float64(5),
+			"pool_mode_retry_status_codes": []any{float64(401), float64(403), float64(429), float64(503)},
+		},
+	}
+
+	require.Equal(t, 1, account.GetPoolModeRetryCount())
+	require.False(t, account.IsPoolModeRetryableStatus(http.StatusUnauthorized))
+	require.False(t, account.IsPoolModeRetryableStatus(http.StatusForbidden))
+	require.True(t, account.IsPoolModeRetryableStatus(http.StatusTooManyRequests))
+	require.True(t, account.IsPoolModeRetryableStatus(http.StatusServiceUnavailable))
 }
 
 func geminiAdaptiveCandidateIDs(candidates []GeminiAdaptiveCandidate) []int64 {

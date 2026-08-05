@@ -153,6 +153,10 @@ type GeminiAdaptiveSchedulerSettingsUpdateRequest struct {
 	GeminiAdaptiveSchedulerHardShrinkFailureMultiplier *int     `json:"gemini_adaptive_scheduler_hard_shrink_failure_multiplier"`
 	GeminiAdaptiveSchedulerLearningWindowSeconds       *int     `json:"gemini_adaptive_scheduler_learning_window_seconds"`
 	GeminiAdaptiveSchedulerCooldownSeconds             *int     `json:"gemini_adaptive_scheduler_cooldown_seconds"`
+	GeminiAdaptiveSchedulerCooldownMaxSeconds          *int     `json:"gemini_adaptive_scheduler_cooldown_max_seconds"`
+	GeminiAdaptiveSchedulerAccountFailureThreshold     *int     `json:"gemini_adaptive_scheduler_account_failure_threshold"`
+	GeminiAdaptiveSchedulerModelFailureThreshold       *int     `json:"gemini_adaptive_scheduler_model_failure_threshold"`
+	GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds   *int     `json:"gemini_adaptive_scheduler_half_open_probe_lease_seconds"`
 	GeminiAdaptiveSchedulerDiagnosticLogEnabled        *bool    `json:"gemini_adaptive_scheduler_diagnostic_log_enabled"`
 	GeminiAdaptiveSchedulerDiagnosticLogSampleRate     *float64 `json:"gemini_adaptive_scheduler_diagnostic_log_sample_rate"`
 }
@@ -248,6 +252,18 @@ func mergeGeminiAdaptiveSchedulerSettings(previous service.GeminiAdaptiveSchedul
 	}
 	if req.GeminiAdaptiveSchedulerCooldownSeconds != nil {
 		settings.GeminiAdaptiveSchedulerCooldownSeconds = *req.GeminiAdaptiveSchedulerCooldownSeconds
+	}
+	if req.GeminiAdaptiveSchedulerCooldownMaxSeconds != nil {
+		settings.GeminiAdaptiveSchedulerCooldownMaxSeconds = *req.GeminiAdaptiveSchedulerCooldownMaxSeconds
+	}
+	if req.GeminiAdaptiveSchedulerAccountFailureThreshold != nil {
+		settings.GeminiAdaptiveSchedulerAccountFailureThreshold = *req.GeminiAdaptiveSchedulerAccountFailureThreshold
+	}
+	if req.GeminiAdaptiveSchedulerModelFailureThreshold != nil {
+		settings.GeminiAdaptiveSchedulerModelFailureThreshold = *req.GeminiAdaptiveSchedulerModelFailureThreshold
+	}
+	if req.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds != nil {
+		settings.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds = *req.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds
 	}
 	if req.GeminiAdaptiveSchedulerDiagnosticLogEnabled != nil {
 		settings.GeminiAdaptiveSchedulerDiagnosticLogEnabled = *req.GeminiAdaptiveSchedulerDiagnosticLogEnabled

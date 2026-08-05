@@ -25,7 +25,7 @@ return removed
 
 func adaptiveSchedulerStateKeys(namespace string) (hashKey string, expiryKey string, err error) {
 	switch namespace {
-	case "openai", "anthropic":
+	case "openai", "anthropic", "gemini":
 		prefix := "scheduler:adaptive:" + namespace + ":v1:"
 		return prefix + "states", prefix + "expires", nil
 	default:

@@ -609,6 +609,10 @@ export interface OpsGeminiAdaptiveLearningSettingsSnapshot {
   shrink_error_threshold: number
   learning_window_seconds: number
   cooldown_seconds: number
+  cooldown_max_seconds: number
+  account_failure_threshold: number
+  model_failure_threshold: number
+  half_open_probe_lease_seconds: number
   capacity_increase_step: number
   min_capacity: number
   diagnostic_log_enabled: boolean
@@ -703,6 +707,13 @@ export interface OpsGeminiAdaptiveLearningAccount {
   last_capacity_failure_at?: string
   cooldown_until?: string
   cooldown_remaining_sec: number
+  canonical_model?: string
+  account_circuit_status: string
+  account_circuit_open_until?: string
+  account_circuit_failures: number
+  model_circuit_status: string
+  model_circuit_open_until?: string
+  model_circuit_failures: number
 }
 
 export interface OpsGeminiAdaptiveLearningResponse {

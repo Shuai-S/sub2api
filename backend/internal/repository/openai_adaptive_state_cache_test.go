@@ -83,7 +83,7 @@ func TestAdaptiveSchedulerStateCacheKeepsNamespacesIsolated(t *testing.T) {
 	require.True(t, ok)
 	now := time.Now()
 
-	for _, namespace := range []string{"openai", "anthropic"} {
+	for _, namespace := range []string{"openai", "anthropic", "gemini"} {
 		require.NoError(t, cache.SaveAdaptiveSchedulerStates(t.Context(), namespace, []service.AdaptiveSchedulerStateCacheEntry{
 			{AccountID: 301, Payload: []byte(namespace), ExpiresAt: now.Add(-time.Minute)},
 		}, 24*time.Hour))
@@ -96,6 +96,9 @@ func TestAdaptiveSchedulerStateCacheKeepsNamespacesIsolated(t *testing.T) {
 	require.NoError(t, err)
 	anthropicHashKey, _, err := adaptiveSchedulerStateKeys("anthropic")
 	require.NoError(t, err)
+	geminiHashKey, _, err := adaptiveSchedulerStateKeys("gemini")
+	require.NoError(t, err)
 	require.Equal(t, "openai", mr.HGet(openAIHashKey, "301"))
 	require.False(t, mr.Exists(anthropicHashKey))
+	require.Equal(t, "gemini", mr.HGet(geminiHashKey, "301"))
 }

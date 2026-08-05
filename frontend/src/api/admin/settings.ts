@@ -717,6 +717,10 @@ export interface SystemSettings {
   gemini_adaptive_scheduler_hard_shrink_failure_multiplier?: number;
   gemini_adaptive_scheduler_learning_window_seconds?: number;
   gemini_adaptive_scheduler_cooldown_seconds?: number;
+  gemini_adaptive_scheduler_cooldown_max_seconds?: number;
+  gemini_adaptive_scheduler_account_failure_threshold?: number;
+  gemini_adaptive_scheduler_model_failure_threshold?: number;
+  gemini_adaptive_scheduler_half_open_probe_lease_seconds?: number;
   gemini_adaptive_scheduler_diagnostic_log_enabled?: boolean;
   gemini_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   openai_adaptive_scheduler_enabled?: boolean;
@@ -1108,6 +1112,10 @@ export interface UpdateSettingsRequest {
   gemini_adaptive_scheduler_hard_shrink_failure_multiplier?: number;
   gemini_adaptive_scheduler_learning_window_seconds?: number;
   gemini_adaptive_scheduler_cooldown_seconds?: number;
+  gemini_adaptive_scheduler_cooldown_max_seconds?: number;
+  gemini_adaptive_scheduler_account_failure_threshold?: number;
+  gemini_adaptive_scheduler_model_failure_threshold?: number;
+  gemini_adaptive_scheduler_half_open_probe_lease_seconds?: number;
   gemini_adaptive_scheduler_diagnostic_log_enabled?: boolean;
   gemini_adaptive_scheduler_diagnostic_log_sample_rate?: number;
   openai_adaptive_scheduler_enabled?: boolean;

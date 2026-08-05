@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -111,6 +112,56 @@ func (s *GatewayService) geminiAdaptiveCapacity(mode string, settings GeminiAdap
 	return s.geminiAdaptiveScheduler.state.effectiveCapacity(account, settings)
 }
 
+func (s *GatewayService) geminiAdaptiveCircuitAllowed(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, account *Account, requestedModel string) bool {
+	if mode != GeminiAdaptiveSchedulerModeEnforce || s == nil || s.geminiAdaptiveScheduler == nil || account == nil || account.Platform != PlatformGemini {
+		return true
+	}
+	now := s.geminiAdaptiveScheduler.now()
+	hint := geminiAdaptiveHintFromContext(ctx)
+	eligibility := s.geminiAdaptiveScheduler.state.circuitEligibility(account, requestedModel, hint.Action, now, settings)
+	return eligibility.Allowed
+}
+
+func (s *GatewayService) claimGeminiAdaptiveCircuitProbe(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, account *Account, requestedModel string) (bool, func()) {
+	noop := func() {}
+	if mode != GeminiAdaptiveSchedulerModeEnforce || s == nil || s.geminiAdaptiveScheduler == nil || account == nil || account.Platform != PlatformGemini {
+		return true, noop
+	}
+	hint := geminiAdaptiveHintFromContext(ctx)
+	owner := firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
+	now := s.geminiAdaptiveScheduler.now()
+	allowed, claimed := s.geminiAdaptiveScheduler.state.claimCircuitProbe(account, requestedModel, hint.Action, owner, now, settings)
+	if !allowed || !claimed {
+		return allowed, noop
+	}
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			s.geminiAdaptiveScheduler.state.releaseCircuitProbe(account, requestedModel, hint.Action, owner, s.geminiAdaptiveScheduler.now(), settings)
+		})
+	}
+	stop := context.AfterFunc(ctx, release)
+	return true, func() {
+		_ = stop()
+		release()
+	}
+}
+
+func (s *GatewayService) tryAcquireGeminiAdaptiveAccountSlot(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, account *Account, requestedModel string, maxConcurrency int) (*AcquireResult, func(), error) {
+	allowed, releaseProbe := s.claimGeminiAdaptiveCircuitProbe(ctx, mode, settings, account, requestedModel)
+	if !allowed {
+		return &AcquireResult{}, func() {}, nil
+	}
+	result, err := s.tryAcquireAccountSlot(ctx, account.ID, maxConcurrency)
+	if err != nil || result == nil || !result.Acquired {
+		releaseProbe()
+	}
+	if result == nil {
+		result = &AcquireResult{}
+	}
+	return result, releaseProbe, err
+}
+
 func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, requestedModel, scope string, groupID *int64, sessionHash string, candidates []accountWithLoad, quota map[int64]GeminiAdaptiveQuotaSnapshot) ([]accountWithLoad, map[int64]int, *GeminiAdaptiveDecision) {
 	if mode == "" || s == nil || s.geminiAdaptiveScheduler == nil || len(candidates) == 0 {
 		return candidates, nil, nil
@@ -119,12 +170,14 @@ func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, s
 	hint := geminiAdaptiveHintFromContext(ctx)
 	inputs := make([]GeminiAdaptiveCandidateInput, 0, len(candidates))
 	baseline := make([]int64, 0, len(candidates))
+	inputAccountIDs := make(map[int64]struct{}, len(candidates))
 	for _, item := range candidates {
 		if item.account == nil {
 			continue
 		}
 		inputs = append(inputs, GeminiAdaptiveCandidateInput{Account: item.account, Load: item.loadInfo, Quota: quota[item.account.ID]})
 		baseline = append(baseline, item.account.ID)
+		inputAccountIDs[item.account.ID] = struct{}{}
 	}
 	decision, err := s.geminiAdaptiveScheduler.BuildOrder(GeminiAdaptiveScheduleRequest{
 		RequestedModel: requestedModel,
@@ -135,6 +188,16 @@ func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, s
 		Settings:       &settings,
 		ctx:            ctx,
 	})
+	for accountID, snapshot := range quota {
+		if !snapshot.HardRejected {
+			continue
+		}
+		if _, included := inputAccountIDs[accountID]; included {
+			continue
+		}
+		decision.InputCandidateCount++
+		decision.HardRejectedCount++
+	}
 	decision.BuildLatencyMs = time.Since(startedAt).Milliseconds()
 	if err != nil || len(decision.Order) == 0 {
 		s.geminiAdaptiveScheduler.fallbackTotal.Add(1)
@@ -165,6 +228,9 @@ func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, s
 			Force:          true,
 			Err:            err,
 		})
+		if mode == GeminiAdaptiveSchedulerModeEnforce && decision.FallbackReason == "all_native_gemini_circuits_open" {
+			return nil, nil, &decision
+		}
 		return candidates, nil, &decision
 	}
 	capacities := make(map[int64]int, len(decision.Order))

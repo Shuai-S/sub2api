@@ -53,6 +53,9 @@ type GeminiAdaptiveCandidate struct {
 	LatencyScore      float64                     `json:"latency_score"`
 	CostScore         float64                     `json:"cost_score"`
 	ExplorationScore  float64                     `json:"exploration_score"`
+	CircuitStatus     string                      `json:"circuit_status"`
+	CircuitScope      string                      `json:"circuit_scope,omitempty"`
+	CircuitOpenUntil  time.Time                   `json:"circuit_open_until,omitempty"`
 	state             geminiAdaptiveAccountState
 }
 
@@ -67,15 +70,19 @@ type GeminiAdaptiveScheduleRequest struct {
 }
 
 type GeminiAdaptiveDecision struct {
-	Order               []GeminiAdaptiveCandidate
-	SelectedAccountID   int64
-	BaselineAccountID   int64
-	InputCandidateCount int
-	CandidateCount      int
-	HardRejectedCount   int
-	TopK                int
-	BuildLatencyMs      int64
-	FallbackReason      string
+	Order                       []GeminiAdaptiveCandidate
+	SelectedAccountID           int64
+	BaselineAccountID           int64
+	InputCandidateCount         int
+	CandidateCount              int
+	HardRejectedCount           int
+	CircuitRejectedCount        int
+	AccountCircuitRejectedCount int
+	ModelCircuitRejectedCount   int
+	HalfOpenCandidateCount      int
+	TopK                        int
+	BuildLatencyMs              int64
+	FallbackReason              string
 }
 
 func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) (GeminiAdaptiveDecision, error) {
@@ -112,6 +119,22 @@ func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) 
 		if input.Account.Platform == PlatformGemini {
 			candidate.state = s.state.observeLoad(req.ctx, input.Account, load, now, settings)
 			candidate.EffectiveCapacity = s.state.effectiveCapacity(input.Account, settings)
+			eligibility := s.state.circuitEligibility(input.Account, req.RequestedModel, req.Action, now, settings)
+			candidate.CircuitStatus = eligibility.Status
+			candidate.CircuitScope = eligibility.Scope
+			candidate.CircuitOpenUntil = eligibility.OpenUntil
+			if !eligibility.Allowed {
+				decision.CircuitRejectedCount++
+				if eligibility.Scope == geminiAdaptiveCircuitScopeAccount {
+					decision.AccountCircuitRejectedCount++
+				} else {
+					decision.ModelCircuitRejectedCount++
+				}
+				continue
+			}
+			if eligibility.HalfOpen {
+				decision.HalfOpenCandidateCount++
+			}
 			geminiCandidates = append(geminiCandidates, candidate)
 		}
 		allByID[input.Account.ID] = candidate
@@ -127,7 +150,12 @@ func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) 
 		decision.FallbackReason = "no_native_gemini_candidates"
 		decision.Order = candidatesInBaselineOrder(req, allByID)
 		if len(decision.Order) > 0 {
+			if decision.CircuitRejectedCount > 0 {
+				decision.FallbackReason = "native_gemini_circuits_open_using_baseline"
+			}
 			decision.SelectedAccountID = decision.Order[0].Account.ID
+		} else if decision.CircuitRejectedCount > 0 {
+			decision.FallbackReason = "all_native_gemini_circuits_open"
 		}
 		return decision, nil
 	}

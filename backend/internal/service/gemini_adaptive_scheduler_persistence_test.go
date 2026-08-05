@@ -25,6 +25,14 @@ func validGeminiAdaptivePersistenceState(accountID int64, updatedAt time.Time) g
 		Samples:    100,
 		Failures:   3,
 	}
+	state.AccountCircuit = geminiAdaptiveCircuitState{ConsecutiveFailure: 2, OpenUntil: updatedAt.Add(time.Minute)}
+	state.ModelCircuits["gemini-2.5-pro"] = geminiAdaptiveCircuitState{
+		ConsecutiveFailure: 3,
+		OpenUntil:          updatedAt.Add(2 * time.Minute),
+		ProbeInFlight:      true,
+		ProbeUntil:         updatedAt.Add(3 * time.Minute),
+		ProbeOwner:         "local-only",
+	}
 	state.ConsecutiveSuccess = 4
 	state.TotalSamples = 102
 	state.RecentHealthSamples = 12
@@ -141,6 +149,9 @@ func TestGeminiAdaptiveStatePersistenceRestoresFreshSnapshotsOnly(t *testing.T) 
 	require.Zero(t, state.RecentHealthSamples, "expired recent learning window must be reset")
 	require.Zero(t, state.RecentCapacitySamples)
 	require.Equal(t, 320.0, state.ByModelFamily["pro"].TTFTEMA)
+	require.Equal(t, 2, state.AccountCircuit.ConsecutiveFailure)
+	require.Equal(t, 3, state.ModelCircuits["gemini-2.5-pro"].ConsecutiveFailure)
+	require.False(t, state.ModelCircuits["gemini-2.5-pro"].ProbeInFlight, "probe ownership must remain instance-local")
 }
 
 func TestGeminiAdaptiveStatePersistenceDiscardsPartialScanOnFailure(t *testing.T) {

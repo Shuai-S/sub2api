@@ -9846,6 +9846,10 @@ type SettingsForm = Omit<
   gemini_adaptive_scheduler_hard_shrink_failure_multiplier: number;
   gemini_adaptive_scheduler_learning_window_seconds: number;
   gemini_adaptive_scheduler_cooldown_seconds: number;
+  gemini_adaptive_scheduler_cooldown_max_seconds: number;
+  gemini_adaptive_scheduler_account_failure_threshold: number;
+  gemini_adaptive_scheduler_model_failure_threshold: number;
+  gemini_adaptive_scheduler_half_open_probe_lease_seconds: number;
   gemini_adaptive_scheduler_diagnostic_log_enabled: boolean;
   gemini_adaptive_scheduler_diagnostic_log_sample_rate: number;
   openai_adaptive_scheduler_enabled: boolean;
@@ -10029,8 +10033,8 @@ function anthropicAdaptiveSchedulerNumber(
 }
 
 const geminiAdaptiveSchedulerRecommendedValues = {
-  gemini_adaptive_scheduler_top_k: 8,
-  gemini_adaptive_scheduler_softmax_temperature: 0.35,
+  gemini_adaptive_scheduler_top_k: 4,
+  gemini_adaptive_scheduler_softmax_temperature: 0.12,
   gemini_adaptive_scheduler_initial_reliability: 0.5,
   gemini_adaptive_scheduler_consecutive_failure_penalty: 0.25,
   gemini_adaptive_scheduler_neutral_latency_score: 0.5,
@@ -10038,12 +10042,12 @@ const geminiAdaptiveSchedulerRecommendedValues = {
   gemini_adaptive_scheduler_success_ema_alpha: 0.05,
   gemini_adaptive_scheduler_latency_ema_alpha: 0.05,
   gemini_adaptive_scheduler_min_cost_multiplier: 0.03,
-  gemini_adaptive_scheduler_weight_reliability: 0.3,
-  gemini_adaptive_scheduler_weight_quota: 0.25,
-  gemini_adaptive_scheduler_weight_capacity: 0.2,
-  gemini_adaptive_scheduler_weight_latency: 0.15,
-  gemini_adaptive_scheduler_weight_cost: 0.05,
-  gemini_adaptive_scheduler_weight_exploration: 0.05,
+  gemini_adaptive_scheduler_weight_reliability: 0.55,
+  gemini_adaptive_scheduler_weight_quota: 0.2,
+  gemini_adaptive_scheduler_weight_capacity: 0.1,
+  gemini_adaptive_scheduler_weight_latency: 0.1,
+  gemini_adaptive_scheduler_weight_cost: 0.03,
+  gemini_adaptive_scheduler_weight_exploration: 0.02,
   gemini_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
   gemini_adaptive_scheduler_capacity_success_threshold: 0.97,
   gemini_adaptive_scheduler_capacity_increase_step: 1,
@@ -10056,6 +10060,10 @@ const geminiAdaptiveSchedulerRecommendedValues = {
   gemini_adaptive_scheduler_hard_shrink_failure_multiplier: 2,
   gemini_adaptive_scheduler_learning_window_seconds: 1200,
   gemini_adaptive_scheduler_cooldown_seconds: 60,
+  gemini_adaptive_scheduler_cooldown_max_seconds: 600,
+  gemini_adaptive_scheduler_account_failure_threshold: 3,
+  gemini_adaptive_scheduler_model_failure_threshold: 3,
+  gemini_adaptive_scheduler_half_open_probe_lease_seconds: 600,
   gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
 } satisfies Partial<SettingsForm>;
 
@@ -10082,6 +10090,10 @@ type GeminiAdaptiveSchedulerParameterLabel =
   | "hardShrinkFailureMultiplier"
   | "learningWindowSeconds"
   | "cooldownSeconds"
+  | "cooldownMaxSeconds"
+  | "accountFailureThreshold"
+  | "modelFailureThreshold"
+  | "halfOpenProbeLeaseSeconds"
   | "successEmaAlpha"
   | "latencyEmaAlpha"
   | "weightReliability"
@@ -10112,6 +10124,8 @@ const geminiAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "gemini_adaptive_scheduler_neutral_latency_score", label: "neutralLatencyScore", min: 0, max: 1, step: 0.01 },
       { key: "gemini_adaptive_scheduler_neutral_quota_score", label: "neutralQuotaScore", min: 0, max: 1, step: 0.01 },
       { key: "gemini_adaptive_scheduler_min_cost_multiplier", label: "minCostMultiplier", min: 0.0001, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_account_failure_threshold", label: "accountFailureThreshold", min: 1, max: 100, step: 1 },
+      { key: "gemini_adaptive_scheduler_model_failure_threshold", label: "modelFailureThreshold", min: 1, max: 100, step: 1 },
     ],
   },
   {
@@ -10129,6 +10143,8 @@ const geminiAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "gemini_adaptive_scheduler_hard_shrink_failure_multiplier", label: "hardShrinkFailureMultiplier", min: 1, max: 100, step: 1 },
       { key: "gemini_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
       { key: "gemini_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
+      { key: "gemini_adaptive_scheduler_cooldown_max_seconds", label: "cooldownMaxSeconds", min: 0, step: 1 },
+      { key: "gemini_adaptive_scheduler_half_open_probe_lease_seconds", label: "halfOpenProbeLeaseSeconds", min: 1, step: 1 },
     ],
   },
   {
@@ -12367,6 +12383,14 @@ async function saveSettings() {
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_learning_window_seconds"),
       gemini_adaptive_scheduler_cooldown_seconds:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_seconds"),
+      gemini_adaptive_scheduler_cooldown_max_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_max_seconds"),
+      gemini_adaptive_scheduler_account_failure_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_account_failure_threshold"),
+      gemini_adaptive_scheduler_model_failure_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_model_failure_threshold"),
+      gemini_adaptive_scheduler_half_open_probe_lease_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_half_open_probe_lease_seconds"),
       gemini_adaptive_scheduler_diagnostic_log_enabled:
         form.gemini_adaptive_scheduler_diagnostic_log_enabled,
       gemini_adaptive_scheduler_diagnostic_log_sample_rate:

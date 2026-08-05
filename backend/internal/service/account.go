@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"net/http"
 	"reflect"
 	"sort"
 	"strconv"
@@ -1046,18 +1047,25 @@ const (
 // 未配置或配置非法时回退为默认值 3；小于 0 按 0 处理；过大则截断到 10。
 func (a *Account) GetPoolModeRetryCount() int {
 	if a == nil || !a.IsPoolMode() || a.Credentials == nil {
-		return defaultPoolModeRetryCount
+		return normalizePlatformPoolModeRetryCount(a, defaultPoolModeRetryCount)
 	}
 	raw, ok := a.Credentials["pool_mode_retry_count"]
 	if !ok || raw == nil {
-		return defaultPoolModeRetryCount
+		return normalizePlatformPoolModeRetryCount(a, defaultPoolModeRetryCount)
 	}
 	count := parsePoolModeRetryCount(raw)
 	if count < 0 {
 		return 0
 	}
 	if count > maxPoolModeRetryCount {
-		return maxPoolModeRetryCount
+		count = maxPoolModeRetryCount
+	}
+	return normalizePlatformPoolModeRetryCount(a, count)
+}
+
+func normalizePlatformPoolModeRetryCount(account *Account, count int) int {
+	if account != nil && account.Platform == PlatformGemini && count > 1 {
+		return 1
 	}
 	return count
 }
@@ -1156,6 +1164,9 @@ func (a *Account) GetPoolModeRetryStatusCodes() []int {
 // IsPoolModeRetryableStatus 在账号上下文中判断给定状态码是否应触发同账号重试。
 // 若账号未配置 pool_mode_retry_status_codes，则回退到默认列表。
 func (a *Account) IsPoolModeRetryableStatus(statusCode int) bool {
+	if a != nil && a.Platform == PlatformGemini && (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden) {
+		return false
+	}
 	codes := a.GetPoolModeRetryStatusCodes()
 	if codes == nil {
 		return isPoolModeRetryableStatus(statusCode)

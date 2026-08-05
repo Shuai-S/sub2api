@@ -31,3 +31,23 @@ func TestMergeAnthropicAdaptiveSchedulerSettingsUpdatesOnlyProvidedFields(t *tes
 	require.Equal(t, previous.AnthropicAdaptiveSchedulerSoftmaxTemperature, merged.AnthropicAdaptiveSchedulerSoftmaxTemperature)
 	require.Equal(t, previous.AnthropicAdaptiveSchedulerWeightReliability, merged.AnthropicAdaptiveSchedulerWeightReliability)
 }
+
+func TestMergeGeminiAdaptiveSchedulerSettingsIncludesCircuitBreakerFields(t *testing.T) {
+	previous := service.DefaultGeminiAdaptiveSchedulerSettings()
+	cooldownMaxSeconds := 480
+	accountFailureThreshold := 4
+	modelFailureThreshold := 5
+	halfOpenProbeLeaseSeconds := 90
+
+	merged := mergeGeminiAdaptiveSchedulerSettings(previous, GeminiAdaptiveSchedulerSettingsUpdateRequest{
+		GeminiAdaptiveSchedulerCooldownMaxSeconds:        &cooldownMaxSeconds,
+		GeminiAdaptiveSchedulerAccountFailureThreshold:   &accountFailureThreshold,
+		GeminiAdaptiveSchedulerModelFailureThreshold:     &modelFailureThreshold,
+		GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds: &halfOpenProbeLeaseSeconds,
+	})
+
+	require.Equal(t, cooldownMaxSeconds, merged.GeminiAdaptiveSchedulerCooldownMaxSeconds)
+	require.Equal(t, accountFailureThreshold, merged.GeminiAdaptiveSchedulerAccountFailureThreshold)
+	require.Equal(t, modelFailureThreshold, merged.GeminiAdaptiveSchedulerModelFailureThreshold)
+	require.Equal(t, halfOpenProbeLeaseSeconds, merged.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds)
+}
