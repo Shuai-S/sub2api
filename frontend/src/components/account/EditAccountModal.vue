@@ -275,6 +275,7 @@
             </div>
             <button
               type="button"
+              data-testid="edit-pool-mode-toggle"
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
                 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -4203,6 +4204,9 @@ const handleSubmit = async () => {
           newCredentials.pool_mode_retry_status_codes = parsedRetryStatusCodes
         } else {
           delete newCredentials.pool_mode_retry_status_codes
+        }
+        if (props.account.platform === 'gemini') {
+          delete newCredentials.tier_id
         }
       } else {
         delete newCredentials.pool_mode

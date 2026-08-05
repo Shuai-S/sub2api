@@ -946,6 +946,9 @@ export interface ProxyQualityCheckResult {
 export interface GeminiCredentials {
   // API Key authentication
   api_key?: string
+  pool_mode?: boolean
+  pool_mode_retry_count?: number
+  pool_mode_retry_status_codes?: number[]
 
   // OAuth authentication
   access_token?: string

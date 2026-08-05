@@ -216,6 +216,31 @@ function buildVertexAccount() {
   } as any
 }
 
+function buildGeminiAPIKeyAccount(poolMode: boolean) {
+  return {
+    id: 6,
+    name: poolMode ? 'Gemini pool' : 'Gemini native',
+    notes: '',
+    platform: 'gemini',
+    type: 'apikey',
+    credentials: {
+      api_key: 'AIza-test',
+      base_url: 'https://generativelanguage.googleapis.com',
+      tier_id: 'aistudio_free',
+      ...(poolMode ? { pool_mode: true } : {})
+    },
+    extra: {},
+    proxy_id: null,
+    concurrency: 1,
+    priority: 1,
+    rate_multiplier: 1,
+    status: 'active',
+    group_ids: [],
+    expires_at: null,
+    auto_pause_on_expired: false
+  } as any
+}
+
 function buildAntigravityAccount(projectId = 'configured-project') {
   return {
     id: 3,
@@ -1061,6 +1086,31 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     // 旧后端响应未脱敏，原 api_key 会随 currentCredentials 一起传回去（旧行为，等价于无操作）
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.api_key).toBe('sk-test')
+  })
+
+  it('clears stale native Gemini tier metadata when saving a pool account', async () => {
+    const account = buildGeminiAPIKeyAccount(true)
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.pool_mode).toBe(true)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty('tier_id')
+  })
+
+  it('keeps native Gemini tier metadata when pool mode is disabled', async () => {
+    const account = buildGeminiAPIKeyAccount(false)
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.tier_id).toBe('aistudio_free')
   })
 
   it('blocks apikey save when neither credentials_status nor legacy api_key indicates existence', async () => {

@@ -288,6 +288,9 @@ func (a *Account) GeminiOAuthType() string {
 }
 
 func (a *Account) GeminiTierID() string {
+	if a.IsPoolMode() {
+		return ""
+	}
 	tierID := strings.TrimSpace(a.GetCredential("tier_id"))
 	return tierID
 }

@@ -57,7 +57,8 @@ const isGoogleOne = computed(() => {
 
 // 是否应该显示配额信息
 const shouldShowQuota = computed(() => {
-  return props.account.platform === 'gemini'
+  const creds = props.account.credentials as GeminiCredentials | undefined
+  return props.account.platform === 'gemini' && creds?.pool_mode !== true
 })
 
 // Tier 标签文本

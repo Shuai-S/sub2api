@@ -338,4 +338,38 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
+
+  it('creates a native Gemini API key with its selected tier', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+
+    expect(wrapper.find('[data-testid="gemini-api-key-tier"]').exists()).toBe(true)
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Gemini native')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('AIza-native')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials?.tier_id).toBe('aistudio_free')
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('pool_mode')
+  })
+
+  it('creates a Gemini pool without native tier metadata', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Gemini')
+    await selectButtonByText(wrapper, 'admin.accounts.gemini.accountType.apiKeyTitle')
+
+    await wrapper.get('[data-testid="create-pool-mode-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="gemini-api-key-tier"]').exists()).toBe(false)
+
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Gemini pool')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('AIza-pool')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials?.pool_mode).toBe(true)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('tier_id')
+  })
 })

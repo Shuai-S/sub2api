@@ -448,6 +448,7 @@
         </span>
         <!-- Help icon -->
         <span
+          v-if="!isGeminiPoolMode"
           class="group relative cursor-help"
         >
           <svg
@@ -538,7 +539,7 @@
           </p>
         </div>
         <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
-        <div v-else class="text-xs text-gray-400">
+        <div v-else-if="!isGeminiPoolMode" class="text-xs text-gray-400">
           {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
         </div>
       </div>
@@ -687,9 +688,15 @@ let desktopViewportMediaQuery: MediaQueryList | null = null
 let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = null
 let visibilityObserver: IntersectionObserver | null = null
 
+const isGeminiPoolMode = computed(() => {
+  if (props.account.platform !== 'gemini' || props.account.type !== 'apikey') return false
+  const creds = props.account.credentials as GeminiCredentials | undefined
+  return creds?.pool_mode === true
+})
+
 // Show usage windows for OAuth and Setup Token accounts
 const showUsageWindows = computed(() => {
-  // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
+  // Gemini pool accounts still use this branch to show their explicit pool badge.
   if (props.account.platform === 'gemini') return true
   return props.account.type === 'oauth' || props.account.type === 'setup-token'
 })
@@ -699,7 +706,7 @@ const shouldFetchUsage = computed(() => {
     return props.account.type === 'oauth' || props.account.type === 'setup-token'
   }
   if (props.account.platform === 'gemini') {
-    return true
+    return !isGeminiPoolMode.value
   }
   if (props.account.platform === 'antigravity') {
     return props.account.type === 'oauth'
@@ -928,12 +935,16 @@ const geminiUserLevel = computed((): string | null => {
 // Gemini 认证类型（按要求：授权方式简称 + 用户等级）
 const geminiAuthTypeLabel = computed(() => {
   if (props.account.platform !== 'gemini') return null
+  if (isGeminiPoolMode.value) return t('admin.accounts.poolMode')
   if (!geminiChannelShort.value) return null
   return geminiUserLevel.value ? `${geminiChannelShort.value} ${geminiUserLevel.value}` : geminiChannelShort.value
 })
 
 // Gemini 账户类型徽章样式（统一样式）
 const geminiTierClass = computed(() => {
+  if (isGeminiPoolMode.value) {
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+  }
   // Use channel+level to choose a stable color without depending on raw tier_id variants.
   const channel = geminiChannelShort.value
   const level = geminiUserLevel.value

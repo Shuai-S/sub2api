@@ -1480,4 +1480,35 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('7d S')
     expect(wrapper.text()).not.toContain('7d F')
   })
+
+  it('Gemini pool mode shows a pool badge without simulated native quota', async () => {
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 4001,
+          platform: 'gemini',
+          type: 'apikey',
+          credentials: {
+            pool_mode: true,
+            tier_id: 'aistudio_paid'
+          }
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: true,
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.poolMode')
+    expect(wrapper.text()).not.toContain('ai studio paid')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.quotaPolicy.title')
+    expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
+    expect(getUsage).not.toHaveBeenCalled()
+  })
 })

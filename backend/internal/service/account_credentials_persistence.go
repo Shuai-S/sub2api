@@ -23,11 +23,32 @@ func persistAccountCredentials(ctx context.Context, repo AccountRepository, acco
 		return nil
 	}
 
+	credentials = normalizeGeminiPoolCredentials(account.Platform, account.Type, credentials)
 	account.Credentials = shallowCopyMap(credentials)
 	if updater, ok := any(repo).(accountCredentialsUpdater); ok {
 		return updater.UpdateCredentials(ctx, account.ID, account.Credentials)
 	}
 	return repo.Update(ctx, account)
+}
+
+// normalizeGeminiPoolCredentials removes native Gemini tier metadata from an
+// API key that represents an upstream-managed pool. Pool accounts are scored
+// from local health and capacity signals instead of simulated native quotas.
+func normalizeGeminiPoolCredentials(platform, accountType string, credentials map[string]any) map[string]any {
+	if platform != PlatformGemini {
+		return credentials
+	}
+	account := &Account{Platform: platform, Type: accountType, Credentials: credentials}
+	if !account.IsPoolMode() {
+		return credentials
+	}
+	if _, exists := credentials["tier_id"]; !exists {
+		return credentials
+	}
+
+	normalized := shallowCopyMap(credentials)
+	delete(normalized, "tier_id")
+	return normalized
 }
 
 // sparkShadowAllowedCredentialKeys 是 spark 影子账号唯一可写的凭据键集合(仅模型映射)。
