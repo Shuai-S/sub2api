@@ -805,7 +805,19 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
-	headers, _, buildHdrErr := s.buildOpenAIWSHeaders(ctx, c, account, token, wsDecision, isCodexCLI, turnState, turnMetadata, promptCacheKey)
+	headers, _, buildHdrErr := s.buildOpenAIWSHeaders(
+		ctx,
+		c,
+		account,
+		token,
+		wsDecision,
+		isCodexCLI,
+		turnState,
+		turnMetadata,
+		promptCacheKey,
+		gjson.GetBytes(firstClientMessage, "model").String(),
+		gjson.GetBytes(firstClientMessage, "service_tier").String(),
+	)
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
@@ -1114,16 +1126,18 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 						CacheReadInputTokens:     turn.Usage.CacheReadInputTokens,
 						ImageOutputTokens:        turn.Usage.ImageOutputTokens,
 					},
-					Model:                 turnRequestModel,
-					UpstreamModel:         openAIWSDifferentModel(turnRequestModel, turnUpstreamModel),
-					ServiceTier:           usageMeta.serviceTier.Load(),
-					ReasoningEffort:       usageMeta.reasoningEffort.Load(),
-					Stream:                true,
-					OpenAIWSMode:          true,
-					UpstreamTerminalEvent: normalizeOpenAIWSTerminalEvent(turn.TerminalEventType),
-					ResponseHeaders:       cloneHeader(handshakeHeaders),
-					Duration:              turn.Duration,
-					FirstTokenMs:          turn.FirstTokenMs,
+					Model:                         turnRequestModel,
+					UpstreamModel:                 openAIWSDifferentModel(turnRequestModel, turnUpstreamModel),
+					UpstreamResponseModel:         turn.ResponseModel,
+					UpstreamResponseModelConflict: turn.ResponseModelConflict,
+					ServiceTier:                   usageMeta.serviceTier.Load(),
+					ReasoningEffort:               usageMeta.reasoningEffort.Load(),
+					Stream:                        true,
+					OpenAIWSMode:                  true,
+					UpstreamTerminalEvent:         normalizeOpenAIWSTerminalEvent(turn.TerminalEventType),
+					ResponseHeaders:               cloneHeader(handshakeHeaders),
+					Duration:                      turn.Duration,
+					FirstTokenMs:                  turn.FirstTokenMs,
 				}
 				var turnErr error
 				if turn.TerminalEventType == "response.failed" {
@@ -1270,16 +1284,18 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			CacheReadInputTokens:     relayResult.Usage.CacheReadInputTokens,
 			ImageOutputTokens:        relayResult.Usage.ImageOutputTokens,
 		},
-		Model:                 resultRequestModel,
-		UpstreamModel:         openAIWSDifferentModel(resultRequestModel, resultUpstreamModel),
-		ServiceTier:           usageMeta.serviceTier.Load(),
-		ReasoningEffort:       usageMeta.reasoningEffort.Load(),
-		Stream:                true,
-		OpenAIWSMode:          true,
-		UpstreamTerminalEvent: normalizeOpenAIWSTerminalEvent(relayResult.TerminalEventType),
-		ResponseHeaders:       cloneHeader(handshakeHeaders),
-		Duration:              relayResult.Duration,
-		FirstTokenMs:          relayResult.FirstTokenMs,
+		Model:                         resultRequestModel,
+		UpstreamModel:                 openAIWSDifferentModel(resultRequestModel, resultUpstreamModel),
+		UpstreamResponseModel:         relayResult.ResponseModel,
+		UpstreamResponseModelConflict: relayResult.ResponseModelConflict,
+		ServiceTier:                   usageMeta.serviceTier.Load(),
+		ReasoningEffort:               usageMeta.reasoningEffort.Load(),
+		Stream:                        true,
+		OpenAIWSMode:                  true,
+		UpstreamTerminalEvent:         normalizeOpenAIWSTerminalEvent(relayResult.TerminalEventType),
+		ResponseHeaders:               cloneHeader(handshakeHeaders),
+		Duration:                      relayResult.Duration,
+		FirstTokenMs:                  relayResult.FirstTokenMs,
 	}
 
 	turnCount := int(completedTurns.Load())
