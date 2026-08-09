@@ -39,6 +39,22 @@ func (c *geminiStickyMigrationCacheStub) DeleteSessionAccountID(_ context.Contex
 	return nil
 }
 
+func (c *geminiStickyMigrationCacheStub) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
+	return nil
+}
+
+func (c *geminiStickyMigrationCacheStub) GetGrokVideoPendingBilling(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+
+func (c *geminiStickyMigrationCacheStub) ClaimGrokVideoBilled(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (c *geminiStickyMigrationCacheStub) ReleaseGrokVideoBilled(_ context.Context, _ string) error {
+	return nil
+}
+
 func (c *geminiStickyMigrationCacheStub) TryAcquireSessionMigrationLease(_ context.Context, _ int64, sessionHash, token string, _ time.Duration) (bool, error) {
 	acquired := true
 	if len(c.acquireResults) > 0 {

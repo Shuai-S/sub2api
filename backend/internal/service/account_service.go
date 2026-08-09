@@ -233,7 +233,7 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		Notes:       normalizeAccountNotes(req.Notes),
 		Platform:    req.Platform,
 		Type:        req.Type,
-		Credentials: normalizeGeminiPoolCredentials(req.Platform, req.Type, req.Credentials),
+		Credentials: normalizeGeminiPoolCredentials(req.Platform, req.Type, SanitizeStoredCredentials(req.Platform, req.Credentials)),
 		Extra:       req.Extra,
 		ProxyID:     req.ProxyID,
 		Concurrency: req.Concurrency,
@@ -326,7 +326,7 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	}
 
 	if req.Credentials != nil {
-		account.Credentials = normalizeGeminiPoolCredentials(account.Platform, account.Type, *req.Credentials)
+		account.Credentials = normalizeGeminiPoolCredentials(account.Platform, account.Type, SanitizeStoredCredentials(account.Platform, *req.Credentials))
 	}
 
 	if req.Extra != nil {
