@@ -79,6 +79,7 @@ type SystemSettings struct {
 	CaptchaLaEnabled                       bool     `json:"captchala_enabled"`
 	CaptchaLaAppKey                        string   `json:"captchala_app_key"`
 	CaptchaLaAppSecretConfigured           bool     `json:"captchala_app_secret_configured"`
+	CaptchaLaBindIP                        bool     `json:"captchala_bind_ip"`
 	APIKeyACLTrustForwardedIP              bool     `json:"api_key_acl_trust_forwarded_ip"`
 	ForwardedClientIPHeaders               []string `json:"forwarded_client_ip_headers"`
 

@@ -63,6 +63,7 @@ type SystemSettings struct {
 	CaptchaLaAppKey                        string
 	CaptchaLaAppSecret                     string
 	CaptchaLaAppSecretConfigured           bool
+	CaptchaLaBindIP                        bool
 	APIKeyACLTrustForwardedIP              bool
 	ForwardedClientIPHeaders               []string
 

@@ -410,6 +410,7 @@ const baseSettingsResponse = {
   captchala_enabled: false,
   captchala_app_key: "",
   captchala_app_secret_configured: false,
+  captchala_bind_ip: false,
   api_key_acl_trust_forwarded_ip: true,
   forwarded_client_ip_headers: [],
   linuxdo_connect_enabled: false,
@@ -980,6 +981,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.get('[data-testid="captcha-enabled-toggle"]').setValue(true);
     await wrapper.get('[data-testid="captcha-provider-captchala"]').trigger("click");
     await flushPromises();
+    await wrapper.get('[data-testid="captchala-bind-ip-toggle"]').setValue(true);
 
     const card = wrapper
       .findAll(".card")
@@ -1003,6 +1005,7 @@ describe("admin SettingsView payment visible method controls", () => {
         captchala_enabled: true,
         captchala_app_key: "pk_app-key",
         captchala_app_secret: "app-secret-value",
+        captchala_bind_ip: true,
       }),
     );
   });

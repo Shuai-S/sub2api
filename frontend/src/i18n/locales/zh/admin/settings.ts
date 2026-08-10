@@ -255,7 +255,9 @@ export default {
         keepExisting: '留空以保留当前值',
         configured: '已配置，留空不会覆盖。',
         required: '启用前必须填写此项。',
-        serverTokenHint: '登录、注册等认证场景会由服务端签发一次性短时 server token；App Secret 仅保存在服务端。',
+        serverTokenHint: '登录、注册等认证场景会由服务端签发短时、限次数的 server token；App Secret 仅保存在服务端。',
+        bindIp: '绑定客户端 IP',
+        bindIpHint: '开启后 server token 仅能由签发时的客户端 IP 使用。多 CDN、IPv4/IPv6 或代理场景建议关闭。',
         openDashboard: '打开 CaptchaLa 控制台',
         openDocs: '查看接入文档'
       },

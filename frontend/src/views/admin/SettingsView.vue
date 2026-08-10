@@ -2444,6 +2444,22 @@
                   <p class="text-xs text-gray-500 dark:text-gray-400">
                     {{ t("admin.settings.captchala.serverTokenHint") }}
                   </p>
+                  <div
+                    class="flex items-center justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700"
+                  >
+                    <div>
+                      <label class="font-medium text-gray-900 dark:text-white">
+                        {{ t("admin.settings.captchala.bindIp") }}
+                      </label>
+                      <p class="text-sm text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.captchala.bindIpHint") }}
+                      </p>
+                    </div>
+                    <Toggle
+                      v-model="form.captchala_bind_ip"
+                      data-testid="captchala-bind-ip-toggle"
+                    />
+                  </div>
                   <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
                     <a
                       href="https://dash.captcha.la"
@@ -10705,6 +10721,7 @@ const form = reactive<SettingsForm>({
   captchala_app_key: "",
   captchala_app_secret: "",
   captchala_app_secret_configured: false,
+  captchala_bind_ip: false,
   api_key_acl_trust_forwarded_ip: true,
   forwarded_client_ip_headers: [],
   // LinuxDo Connect OAuth 登录
@@ -12447,6 +12464,7 @@ async function saveSettings() {
       captchala_enabled: form.captchala_enabled,
       captchala_app_key: form.captchala_app_key,
       captchala_app_secret: form.captchala_app_secret || undefined,
+      captchala_bind_ip: form.captchala_bind_ip,
       api_key_acl_trust_forwarded_ip: form.api_key_acl_trust_forwarded_ip,
       forwarded_client_ip_headers: form.forwarded_client_ip_headers,
       linuxdo_connect_enabled: form.linuxdo_connect_enabled,

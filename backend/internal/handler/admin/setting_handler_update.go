@@ -77,6 +77,7 @@ type UpdateSettingsRequest struct {
 	CaptchaLaEnabled   bool   `json:"captchala_enabled"`
 	CaptchaLaAppKey    string `json:"captchala_app_key"`
 	CaptchaLaAppSecret string `json:"captchala_app_secret"`
+	CaptchaLaBindIP    bool   `json:"captchala_bind_ip"`
 
 	// API Key IP 访问控制设置
 	APIKeyACLTrustForwardedIP *bool     `json:"api_key_acl_trust_forwarded_ip"`
@@ -674,6 +675,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	captchaLaEnabled := req.CaptchaLaEnabled
 	if _, sent := sentFields["captchala_enabled"]; !sent {
 		captchaLaEnabled = previousSettings.CaptchaLaEnabled
+	}
+	captchaLaBindIP := req.CaptchaLaBindIP
+	if _, sent := sentFields["captchala_bind_ip"]; !sent {
+		captchaLaBindIP = previousSettings.CaptchaLaBindIP
 	}
 	enabledCaptchaProviders := 0
 	for _, enabled := range []bool{turnstileEnabled, tencentCaptchaEnabled, aliyunCaptchaEnabled, captchaLaEnabled} {
@@ -1640,6 +1645,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CaptchaLaEnabled:                    captchaLaEnabled,
 		CaptchaLaAppKey:                     req.CaptchaLaAppKey,
 		CaptchaLaAppSecret:                  req.CaptchaLaAppSecret,
+		CaptchaLaBindIP:                     captchaLaBindIP,
 		APIKeyACLTrustForwardedIP: func() bool {
 			if req.APIKeyACLTrustForwardedIP != nil {
 				return *req.APIKeyACLTrustForwardedIP
@@ -2263,6 +2269,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CaptchaLaEnabled:                                       updatedSettings.CaptchaLaEnabled,
 		CaptchaLaAppKey:                                        updatedSettings.CaptchaLaAppKey,
 		CaptchaLaAppSecretConfigured:                           updatedSettings.CaptchaLaAppSecretConfigured,
+		CaptchaLaBindIP:                                        updatedSettings.CaptchaLaBindIP,
 		APIKeyACLTrustForwardedIP:                              updatedSettings.APIKeyACLTrustForwardedIP,
 		ForwardedClientIPHeaders:                               updatedSettings.ForwardedClientIPHeaders,
 		LinuxDoConnectEnabled:                                  updatedSettings.LinuxDoConnectEnabled,

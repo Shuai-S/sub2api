@@ -234,6 +234,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAliyunCaptchaRegion] = normalizeAliyunCaptchaRegion(settings.AliyunCaptchaRegion)
 	updates[SettingKeyCaptchaLaEnabled] = strconv.FormatBool(settings.CaptchaLaEnabled)
 	updates[SettingKeyCaptchaLaAppKey] = settings.CaptchaLaAppKey
+	updates[SettingKeyCaptchaLaBindIP] = strconv.FormatBool(settings.CaptchaLaBindIP)
 	if settings.CaptchaLaAppSecret != "" {
 		updates[SettingKeyCaptchaLaAppSecret] = settings.CaptchaLaAppSecret
 	}

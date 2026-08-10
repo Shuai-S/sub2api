@@ -598,7 +598,7 @@ gateway:
 
 CaptchaLa 可作为独立的人机验证服务商使用，**不依赖阿里云 ESA**。管理员可在「系统设置 -> 安全与认证 -> 人机验证」中选择 CaptchaLa，并配置应用的 App Key 与 App Secret。CaptchaLa 与 Cloudflare Turnstile、腾讯天御、阿里云验证码 2.0 互斥，同一时间只能启用一个服务商。
 
-生产链路采用服务端签发模式：浏览器先向 Sub2API 申请短时、单次使用且绑定业务 action/IP 的 `server_token`，完成验证后把 `pt_` 开头的 `captcha_token` 提交给业务接口，Sub2API 再调用 CaptchaLa 校验。App Secret 不会出现在公开设置或前端代码中；Token 校验、action 校验或 CaptchaLa 网络请求失败时均拒绝业务请求。
+生产链路采用服务端签发模式：浏览器先向 Sub2API 申请短时、最多允许 SDK 重试 5 次且绑定业务 action 的 `server_token`，完成验证后把 `pt_` 开头的 `captcha_token` 提交给业务接口，Sub2API 再调用 CaptchaLa 校验。管理员可按部署情况选择是否额外绑定签发时的客户端 IP；多 CDN、IPv4/IPv6 或代理场景默认关闭该绑定。App Secret 不会出现在公开设置或前端代码中；Token 校验、action 校验或 CaptchaLa 网络请求失败时均拒绝业务请求。
 
 部署时需允许后端出站访问 `https://apiv1.captcha.la`，并允许浏览器访问 CaptchaLa 的 CDN/API 域名。默认 CSP 已包含这些域名；使用自定义 CSP 的旧部署也会由安全中间件自动补齐运行时所需域名。
 

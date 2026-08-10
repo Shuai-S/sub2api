@@ -209,6 +209,7 @@ const (
 	SettingKeyCaptchaLaEnabled   = "captchala_enabled"
 	SettingKeyCaptchaLaAppKey    = "captchala_app_key"
 	SettingKeyCaptchaLaAppSecret = "captchala_app_secret"
+	SettingKeyCaptchaLaBindIP    = "captchala_bind_ip"
 
 	// API Key IP 访问控制设置
 	SettingKeyAPIKeyACLTrustForwardedIP = "api_key_acl_trust_forwarded_ip" // API Key IP 白/黑名单是否信任转发 IP

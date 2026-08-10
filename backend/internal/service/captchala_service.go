@@ -25,7 +25,7 @@ const (
 	CaptchaLaActionOAuthCreateAccount = "oauth_create_account"
 
 	captchaLaServerTokenTTL     = 300
-	captchaLaServerTokenMaxUses = 1
+	captchaLaServerTokenMaxUses = 5
 )
 
 // CaptchaLaCredentials are kept server-side and never exposed through public settings.
@@ -84,7 +84,11 @@ func (s *CaptchaLaService) IssueServerTokenWithConfig(ctx context.Context, confi
 	if !isCaptchaLaAction(action) {
 		return nil, fmt.Errorf("%w: %s", ErrCaptchaLaActionMismatch, action)
 	}
-	result, err := s.verifier.IssueServerToken(ctx, credentials, action, captchaLaServerTokenTTL, captchaLaServerTokenMaxUses, strings.TrimSpace(remoteIP))
+	bindIP := ""
+	if config.BindIP {
+		bindIP = strings.TrimSpace(remoteIP)
+	}
+	result, err := s.verifier.IssueServerToken(ctx, credentials, action, captchaLaServerTokenTTL, captchaLaServerTokenMaxUses, bindIP)
 	if err != nil || result == nil || strings.TrimSpace(result.Token) == "" {
 		if err != nil {
 			logger.LegacyPrintf("service.captchala", "issue server token failed: %v", err)

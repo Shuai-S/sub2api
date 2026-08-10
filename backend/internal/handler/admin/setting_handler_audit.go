@@ -155,6 +155,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if req.CaptchaLaAppSecret != "" {
 		changed = append(changed, "captchala_app_secret")
 	}
+	if before.CaptchaLaBindIP != after.CaptchaLaBindIP {
+		changed = append(changed, "captchala_bind_ip")
+	}
 	if before.APIKeyACLTrustForwardedIP != after.APIKeyACLTrustForwardedIP {
 		changed = append(changed, "api_key_acl_trust_forwarded_ip")
 	}

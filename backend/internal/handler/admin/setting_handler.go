@@ -179,6 +179,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CaptchaLaEnabled:                                       settings.CaptchaLaEnabled,
 		CaptchaLaAppKey:                                        settings.CaptchaLaAppKey,
 		CaptchaLaAppSecretConfigured:                           settings.CaptchaLaAppSecretConfigured,
+		CaptchaLaBindIP:                                        settings.CaptchaLaBindIP,
 		APIKeyACLTrustForwardedIP:                              settings.APIKeyACLTrustForwardedIP,
 		ForwardedClientIPHeaders:                               settings.ForwardedClientIPHeaders,
 		LinuxDoConnectEnabled:                                  settings.LinuxDoConnectEnabled,

@@ -513,6 +513,7 @@ type CaptchaLaConfig struct {
 	Enabled   bool
 	AppKey    string
 	AppSecret string
+	BindIP    bool
 }
 
 type CaptchaProviderConfig struct {
@@ -541,6 +542,7 @@ func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaP
 		SettingKeyCaptchaLaEnabled,
 		SettingKeyCaptchaLaAppKey,
 		SettingKeyCaptchaLaAppSecret,
+		SettingKeyCaptchaLaBindIP,
 	})
 	if err != nil {
 		return CaptchaProviderConfig{}, fmt.Errorf("read captcha provider settings: %w", err)
@@ -567,6 +569,7 @@ func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaP
 			Enabled:   values[SettingKeyCaptchaLaEnabled] == "true",
 			AppKey:    values[SettingKeyCaptchaLaAppKey],
 			AppSecret: values[SettingKeyCaptchaLaAppSecret],
+			BindIP:    values[SettingKeyCaptchaLaBindIP] == "true",
 		},
 	}, nil
 }

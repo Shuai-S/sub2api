@@ -509,6 +509,7 @@ export interface SystemSettings {
   captchala_enabled: boolean;
   captchala_app_key: string;
   captchala_app_secret_configured: boolean;
+  captchala_bind_ip: boolean;
   api_key_acl_trust_forwarded_ip: boolean;
   forwarded_client_ip_headers: string[];
 
@@ -951,6 +952,7 @@ export interface UpdateSettingsRequest {
   captchala_enabled?: boolean;
   captchala_app_key?: string;
   captchala_app_secret?: string;
+  captchala_bind_ip?: boolean;
   api_key_acl_trust_forwarded_ip?: boolean;
   forwarded_client_ip_headers?: string[];
   linuxdo_connect_enabled?: boolean;

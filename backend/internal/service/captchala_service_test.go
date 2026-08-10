@@ -51,10 +51,12 @@ func TestCaptchaLaServiceIssuesBoundSingleUseServerToken(t *testing.T) {
 		issueResult: &CaptchaLaIssueResult{Token: "sct_test", ExpiresIn: 300},
 	}
 	svc := NewCaptchaLaService(nil, verifier)
+	config := enabledCaptchaLaConfig()
+	config.BindIP = true
 
 	result, err := svc.IssueServerTokenWithConfig(
 		context.Background(),
-		enabledCaptchaLaConfig(),
+		config,
 		CaptchaLaActionLogin,
 		"203.0.113.10",
 	)
@@ -67,6 +69,24 @@ func TestCaptchaLaServiceIssuesBoundSingleUseServerToken(t *testing.T) {
 	require.Equal(t, captchaLaServerTokenTTL, verifier.ttl)
 	require.Equal(t, captchaLaServerTokenMaxUses, verifier.maxUses)
 	require.Equal(t, "203.0.113.10", verifier.clientIP)
+}
+
+func TestCaptchaLaServiceOmitsIPBindingByDefault(t *testing.T) {
+	verifier := &captchaLaVerifierStub{
+		issueResult: &CaptchaLaIssueResult{Token: "sct_test", ExpiresIn: 300},
+	}
+	svc := NewCaptchaLaService(nil, verifier)
+
+	_, err := svc.IssueServerTokenWithConfig(
+		context.Background(),
+		enabledCaptchaLaConfig(),
+		CaptchaLaActionLogin,
+		"203.0.113.10",
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, captchaLaServerTokenMaxUses, verifier.maxUses)
+	require.Empty(t, verifier.clientIP)
 }
 
 func TestCaptchaLaServiceRejectsUnknownActionBeforeIssue(t *testing.T) {

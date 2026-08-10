@@ -255,7 +255,9 @@ export default {
         keepExisting: 'Leave empty to keep current value',
         configured: 'Configured. Leave empty to keep it.',
         required: 'Required before enabling.',
-        serverTokenHint: 'Authentication flows use short-lived, one-time server tokens issued by this backend. The App Secret remains server-side only.',
+        serverTokenHint: 'Authentication flows use short-lived, limited-use server tokens issued by this backend. The App Secret remains server-side only.',
+        bindIp: 'Bind to client IP',
+        bindIpHint: 'When enabled, a server token can only be used from the IP that received it. Disable this for multi-CDN, IPv4/IPv6, or proxy deployments.',
         openDashboard: 'Open CaptchaLa dashboard',
         openDocs: 'View integration guide'
       },
