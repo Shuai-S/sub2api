@@ -84,7 +84,12 @@ function settle(value: string | null, error?: unknown): void {
 
 function handleSuccess(result: CaptchalaResult): void {
   const token = result.token?.trim() || ''
-  if (!token.startsWith('pt_') || result.action !== activeAction.value) {
+  // Some deployed CaptchaLa CDN SDK versions omit `action` from the
+  // success payload and only return `{ token, challengeId }`. The backend
+  // validates the server-owned action, so treat an omitted action as valid
+  // while still rejecting an explicitly mismatched action.
+  const resultAction = typeof result.action === 'string' ? result.action.trim() : ''
+  if (!token.startsWith('pt_') || (resultAction && resultAction !== activeAction.value)) {
     handleError(new Error('CaptchaLa returned an invalid proof'))
     return
   }

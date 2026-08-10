@@ -41,6 +41,14 @@ vi.mock('@captcha-la/vue', () => ({
           ),
           h(
             'button',
+            {
+              'data-testid': 'success-without-action',
+              onClick: () => emit('success', { token: 'pt_test', challengeId: 'ch_test' })
+            },
+            'success without action'
+          ),
+          h(
+            'button',
             { 'data-testid': 'close', onClick: () => emit('close') },
             'close'
           )
@@ -86,6 +94,20 @@ describe('CaptchaLaWidget', () => {
     expect(issueChallenge).toHaveBeenCalledOnce()
     await wrapper.get('[data-testid="success"]').trigger('click')
     await expect(Promise.all([first, second])).resolves.toEqual(['pt_test', 'pt_test'])
+  })
+
+  it('accepts SDK success payloads that omit action', async () => {
+    const wrapper = mount(CaptchaLaWidget, {
+      props: { appKey: 'pk_test', action: 'login' }
+    })
+    const vm = wrapper.vm as unknown as { verify: () => Promise<string | null> }
+
+    const proof = vm.verify()
+    await flushPromises()
+    await wrapper.get('[data-testid="success-without-action"]').trigger('click')
+
+    await expect(proof).resolves.toBe('pt_test')
+    expect(wrapper.emitted('verify')).toEqual([['pt_test']])
   })
 
   it('resolves null when the user closes the challenge', async () => {
