@@ -507,11 +507,20 @@ type AliyunCaptchaConfig struct {
 	Region          string
 }
 
+// CaptchaLaConfig contains the server-side credentials for CaptchaLa.
+// AppSecret must never be returned by a public settings handler.
+type CaptchaLaConfig struct {
+	Enabled   bool
+	AppKey    string
+	AppSecret string
+}
+
 type CaptchaProviderConfig struct {
 	TurnstileEnabled   bool
 	TurnstileSecretKey string
 	Tencent            TencentCaptchaConfig
 	Aliyun             AliyunCaptchaConfig
+	CaptchaLa          CaptchaLaConfig
 }
 
 func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaProviderConfig, error) {
@@ -529,6 +538,9 @@ func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaP
 		SettingKeyAliyunCaptchaAccessKeySecret,
 		SettingKeyAliyunCaptchaSceneID,
 		SettingKeyAliyunCaptchaRegion,
+		SettingKeyCaptchaLaEnabled,
+		SettingKeyCaptchaLaAppKey,
+		SettingKeyCaptchaLaAppSecret,
 	})
 	if err != nil {
 		return CaptchaProviderConfig{}, fmt.Errorf("read captcha provider settings: %w", err)
@@ -550,6 +562,11 @@ func (s *SettingService) GetCaptchaProviderConfig(ctx context.Context) (CaptchaP
 			AccessKeySecret: values[SettingKeyAliyunCaptchaAccessKeySecret],
 			SceneID:         values[SettingKeyAliyunCaptchaSceneID],
 			Region:          normalizeAliyunCaptchaRegion(values[SettingKeyAliyunCaptchaRegion]),
+		},
+		CaptchaLa: CaptchaLaConfig{
+			Enabled:   values[SettingKeyCaptchaLaEnabled] == "true",
+			AppKey:    values[SettingKeyCaptchaLaAppKey],
+			AppSecret: values[SettingKeyCaptchaLaAppSecret],
 		},
 	}, nil
 }

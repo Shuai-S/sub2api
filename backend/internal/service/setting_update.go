@@ -232,6 +232,11 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyAliyunCaptchaSceneID] = settings.AliyunCaptchaSceneID
 	updates[SettingKeyAliyunCaptchaPrefix] = settings.AliyunCaptchaPrefix
 	updates[SettingKeyAliyunCaptchaRegion] = normalizeAliyunCaptchaRegion(settings.AliyunCaptchaRegion)
+	updates[SettingKeyCaptchaLaEnabled] = strconv.FormatBool(settings.CaptchaLaEnabled)
+	updates[SettingKeyCaptchaLaAppKey] = settings.CaptchaLaAppKey
+	if settings.CaptchaLaAppSecret != "" {
+		updates[SettingKeyCaptchaLaAppSecret] = settings.CaptchaLaAppSecret
+	}
 	updates[SettingKeyAPIKeyACLTrustForwardedIP] = strconv.FormatBool(settings.APIKeyACLTrustForwardedIP)
 	forwardedClientIPHeadersJSON, err := json.Marshal(settings.ForwardedClientIPHeaders)
 	if err != nil {

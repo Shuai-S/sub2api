@@ -179,6 +179,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyAliyunCaptchaSceneID,
 		SettingKeyAliyunCaptchaPrefix,
 		SettingKeyAliyunCaptchaRegion,
+		SettingKeyCaptchaLaEnabled,
+		SettingKeyCaptchaLaAppKey,
 		SettingKeyAPIKeyACLTrustForwardedIP,
 		SettingKeySiteName,
 		SettingKeySiteLogo,
@@ -319,6 +321,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		AliyunCaptchaSceneID:                settings[SettingKeyAliyunCaptchaSceneID],
 		AliyunCaptchaPrefix:                 settings[SettingKeyAliyunCaptchaPrefix],
 		AliyunCaptchaRegion:                 normalizeAliyunCaptchaRegion(settings[SettingKeyAliyunCaptchaRegion]),
+		CaptchaLaEnabled:                    settings[SettingKeyCaptchaLaEnabled] == "true",
+		CaptchaLaAppKey:                     settings[SettingKeyCaptchaLaAppKey],
 		SiteName:                            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                            settings[SettingKeySiteLogo],
 		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
@@ -561,6 +565,8 @@ type PublicSettingsInjectionPayload struct {
 	AliyunCaptchaSceneID                string                   `json:"aliyun_captcha_scene_id"`
 	AliyunCaptchaPrefix                 string                   `json:"aliyun_captcha_prefix"`
 	AliyunCaptchaRegion                 string                   `json:"aliyun_captcha_region"`
+	CaptchaLaEnabled                    bool                     `json:"captchala_enabled"`
+	CaptchaLaAppKey                     string                   `json:"captchala_app_key"`
 	SiteName                            string                   `json:"site_name"`
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`
@@ -646,6 +652,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		AliyunCaptchaSceneID:                settings.AliyunCaptchaSceneID,
 		AliyunCaptchaPrefix:                 settings.AliyunCaptchaPrefix,
 		AliyunCaptchaRegion:                 settings.AliyunCaptchaRegion,
+		CaptchaLaEnabled:                    settings.CaptchaLaEnabled,
+		CaptchaLaAppKey:                     settings.CaptchaLaAppKey,
 		SiteName:                            settings.SiteName,
 		SiteLogo:                            settings.SiteLogo,
 		SiteSubtitle:                        settings.SiteSubtitle,

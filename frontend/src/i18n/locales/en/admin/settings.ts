@@ -203,7 +203,8 @@ export default {
         provider: 'Provider',
         providerTurnstile: 'Cloudflare Turnstile',
         providerTencent: 'Tencent Captcha',
-        providerAliyun: 'Aliyun Captcha 2.0'
+        providerAliyun: 'Aliyun Captcha 2.0',
+        providerCaptchaLa: 'CaptchaLa'
       },
       tencentCaptcha: {
         title: 'Tencent Captcha',
@@ -246,6 +247,17 @@ export default {
         regionCn: 'Mainland China',
         regionSgp: 'Singapore',
         regionHint: 'Determines the frontend script region and the server endpoint; must match your captcha instance region'
+      },
+      captchala: {
+        appKey: 'App Key',
+        appKeyHint: 'Public browser identifier from the application settings in the CaptchaLa dashboard.',
+        appSecret: 'App Secret',
+        keepExisting: 'Leave empty to keep current value',
+        configured: 'Configured. Leave empty to keep it.',
+        required: 'Required before enabling.',
+        serverTokenHint: 'Authentication flows use short-lived, one-time server tokens issued by this backend. The App Secret remains server-side only.',
+        openDashboard: 'Open CaptchaLa dashboard',
+        openDocs: 'View integration guide'
       },
       apiKeyAcl: {
         title: 'API Key IP Access Control',

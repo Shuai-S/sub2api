@@ -91,6 +91,9 @@
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
+            :captchala-enabled="captchalaEnabled"
+            :captchala-app-key="captchalaAppKey"
+            captchala-action="login"
             @verify="onTurnstileVerify"
             @expire="onTurnstileExpire"
             @error="onTurnstileError"
@@ -279,6 +282,8 @@ const aliyunCaptchaEnabled = ref<boolean>(false)
 const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
 const aliyunCaptchaRegion = ref<string>('cn')
+const captchalaEnabled = ref<boolean>(false)
+const captchalaAppKey = ref<string>('')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const dingtalkOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
@@ -307,11 +312,12 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
-// 动作触发式验证码（腾讯/阿里云）：提交、OAuth 启动、passkey 时弹窗验证
+// 动作触发式验证码（腾讯/阿里云/CaptchaLa）：提交、OAuth 启动、passkey 时弹窗验证
 const actionCaptchaEnabled = computed(
   () =>
     (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+    aliyunCaptchaReady.value ||
+    (captchalaEnabled.value && Boolean(captchalaAppKey.value))
 )
 const captchaEnabled = computed(
   () =>
@@ -390,6 +396,8 @@ onMounted(async () => {
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
     aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
+    captchalaEnabled.value = settings.captchala_enabled === true
+    captchalaAppKey.value = settings.captchala_app_key || ''
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     dingtalkOAuthEnabled.value = settings.dingtalk_oauth_enabled ?? false
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
@@ -503,7 +511,7 @@ function resetCaptchaProof(): void {
 async function acquireActionProof(): Promise<boolean> {
   if (!actionCaptchaEnabled.value) return true
 
-  const proof = await turnstileRef.value?.verifyAction()
+  const proof = await turnstileRef.value?.verifyAction('login')
   if (!proof) return false
 
   turnstileToken.value = proof.token
@@ -583,7 +591,8 @@ async function handleLogin(): Promise<void> {
       tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
       tencent_captcha_randstr: tencentCaptchaEnabled.value
         ? tencentCaptchaRandstr.value
-        : undefined
+        : undefined,
+      captcha_token: captchalaEnabled.value ? turnstileToken.value : undefined
     })
 
     // Check if 2FA is required
@@ -629,14 +638,16 @@ async function handlePasskeyLogin(): Promise<void> {
   try {
     let proof: ActionCaptchaRequestProof | undefined
     if (actionCaptchaEnabled.value) {
-      const result = await turnstileRef.value?.verifyAction()
+      const result = await turnstileRef.value?.verifyAction('passkey_login')
       if (!result) return
       proof = tencentCaptchaEnabled.value
         ? {
             tencent_captcha_ticket: result.token,
             tencent_captcha_randstr: result.randstr
           }
-        : { turnstile_token: result.token }
+        : captchalaEnabled.value
+          ? { captcha_token: result.token }
+          : { turnstile_token: result.token }
     }
 
     await authStore.loginWithPasskey(proof)
@@ -668,7 +679,7 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
 
   isLoading.value = true
   try {
-    const proof = await turnstileRef.value?.verifyAction()
+    const proof = await turnstileRef.value?.verifyAction('oauth_login')
     if (!proof) return
 
     const result = await startOAuthLogin(
@@ -678,7 +689,9 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
             tencent_captcha_ticket: proof.token,
             tencent_captcha_randstr: proof.randstr
           }
-        : { turnstile_token: proof.token }
+        : captchalaEnabled.value
+          ? { captcha_token: proof.token }
+          : { turnstile_token: proof.token }
     )
     window.location.href = result.authorize_url
   } catch (error: unknown) {

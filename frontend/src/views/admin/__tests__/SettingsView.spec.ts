@@ -407,6 +407,9 @@ const baseSettingsResponse = {
   tencent_captcha_app_secret_key_configured: false,
   tencent_captcha_cloud_secret_id_configured: false,
   tencent_captcha_cloud_secret_key_configured: false,
+  captchala_enabled: false,
+  captchala_app_key: "",
+  captchala_app_secret_configured: false,
   api_key_acl_trust_forwarded_ip: true,
   forwarded_client_ip_headers: [],
   linuxdo_connect_enabled: false,
@@ -965,6 +968,41 @@ describe("admin SettingsView payment visible method controls", () => {
         aliyun_captcha_access_key_id: "ak-id",
         aliyun_captcha_access_key_secret: "ak-secret-value",
         aliyun_captcha_region: "cn",
+      }),
+    );
+  });
+
+  it("人机验证切换到 CaptchaLa 并保存服务端密钥", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openSecurityTab(wrapper);
+
+    await wrapper.get('[data-testid="captcha-enabled-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="captcha-provider-captchala"]').trigger("click");
+    await flushPromises();
+
+    const card = wrapper
+      .findAll(".card")
+      .find((node) => node.text().includes("admin.settings.captcha.title"));
+    expect(card).toBeDefined();
+    expect(card!.text()).toContain("admin.settings.captchala.appKey");
+    const inputs = card!
+      .findAll("input")
+      .filter((input) => input.attributes("type") !== "checkbox");
+    await inputs[0]!.setValue("pk_app-key");
+    await inputs[1]!.setValue("app-secret-value");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnstile_enabled: false,
+        tencent_captcha_enabled: false,
+        aliyun_captcha_enabled: false,
+        captchala_enabled: true,
+        captchala_app_key: "pk_app-key",
+        captchala_app_secret: "app-secret-value",
       }),
     );
   });

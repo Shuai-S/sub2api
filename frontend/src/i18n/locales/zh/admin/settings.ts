@@ -203,7 +203,8 @@ export default {
         provider: '验证服务商',
         providerTurnstile: 'Cloudflare Turnstile',
         providerTencent: '腾讯天御验证码',
-        providerAliyun: '阿里云验证码 2.0'
+        providerAliyun: '阿里云验证码 2.0',
+        providerCaptchaLa: 'CaptchaLa'
       },
       tencentCaptcha: {
         title: '腾讯天御验证码',
@@ -246,6 +247,17 @@ export default {
         regionCn: '中国内地',
         regionSgp: '新加坡',
         regionHint: '决定前端脚本接入区域与服务端接入点，需与阿里云验证码实例所属地域一致'
+      },
+      captchala: {
+        appKey: 'App Key',
+        appKeyHint: '前端公开标识，从 CaptchaLa 控制台的应用配置中获取。',
+        appSecret: 'App Secret',
+        keepExisting: '留空以保留当前值',
+        configured: '已配置，留空不会覆盖。',
+        required: '启用前必须填写此项。',
+        serverTokenHint: '登录、注册等认证场景会由服务端签发一次性短时 server token；App Secret 仅保存在服务端。',
+        openDashboard: '打开 CaptchaLa 控制台',
+        openDocs: '查看接入文档'
       },
       apiKeyAcl: {
         title: 'API Key IP 访问控制',

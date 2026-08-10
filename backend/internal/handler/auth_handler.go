@@ -54,6 +54,7 @@ type RegisterRequest struct {
 	TurnstileToken        string `json:"turnstile_token"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr"`
+	CaptchaToken          string `json:"captcha_token"`
 	PromoCode             string `json:"promo_code"`      // 注册优惠码
 	InvitationCode        string `json:"invitation_code"` // 邀请码
 	AffCode               string `json:"aff_code"`        // 邀请返利码
@@ -65,12 +66,38 @@ type SendVerifyCodeRequest struct {
 	TurnstileToken        string `json:"turnstile_token"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr"`
+	CaptchaToken          string `json:"captcha_token"`
 }
 
 // SendVerifyCodeResponse 发送验证码响应
 type SendVerifyCodeResponse struct {
 	Message   string `json:"message"`
 	Countdown int    `json:"countdown"` // 倒计时秒数
+}
+
+type captchaChallengeRequest struct {
+	Action string `json:"action" binding:"required"`
+}
+
+type captchaChallengeResponse struct {
+	ServerToken string `json:"server_token"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+// IssueCaptchaChallenge returns a short-lived CaptchaLa server token. The
+// service owns the action allowlist and binds the token to the resolved client IP.
+func (h *AuthHandler) IssueCaptchaChallenge(c *gin.Context) {
+	var req captchaChallengeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.authService.IssueCaptchaLaServerToken(c.Request.Context(), strings.TrimSpace(req.Action), ip.GetClientIP(c))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, captchaChallengeResponse{ServerToken: result.Token, ExpiresIn: result.ExpiresIn})
 }
 
 // LoginRequest represents the login request payload
@@ -80,13 +107,15 @@ type LoginRequest struct {
 	TurnstileToken        string `json:"turnstile_token"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr"`
+	CaptchaToken          string `json:"captcha_token"`
 }
 
-func captchaProof(turnstileToken, tencentTicket, tencentRandstr string) service.CaptchaProof {
+func captchaProof(turnstileToken, tencentTicket, tencentRandstr, captchaToken string) service.CaptchaProof {
 	return service.CaptchaProof{
 		TurnstileToken: turnstileToken,
 		TencentTicket:  tencentTicket,
 		TencentRandstr: tencentRandstr,
+		CaptchaLaToken: captchaToken,
 	}
 }
 
@@ -184,7 +213,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// 验证当前启用的验证码（邮箱验证码注册场景避免重复校验一次性票据）
-	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 	if err := h.authService.VerifyCaptchaForRegister(c.Request.Context(), proof, ip.GetClientIP(c), req.VerifyCode); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -216,8 +245,8 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 		return
 	}
 
-	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
-	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
+	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
+	if err := h.authService.VerifyCaptchaForAction(c.Request.Context(), proof, ip.GetClientIP(c), service.CaptchaLaActionSendVerifyCode); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -243,8 +272,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
-	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
+	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
+	if err := h.authService.VerifyCaptchaForAction(c.Request.Context(), proof, ip.GetClientIP(c), service.CaptchaLaActionLogin); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -592,6 +621,7 @@ type ForgotPasswordRequest struct {
 	TurnstileToken        string `json:"turnstile_token"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr"`
+	CaptchaToken          string `json:"captcha_token"`
 }
 
 // ForgotPasswordResponse 忘记密码响应
@@ -608,8 +638,8 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
-	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
+	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
+	if err := h.authService.VerifyCaptchaForAction(c.Request.Context(), proof, ip.GetClientIP(c), service.CaptchaLaActionForgotPassword); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}

@@ -117,6 +117,7 @@ export interface LoginRequest {
   turnstile_token?: string
   tencent_captcha_ticket?: string
   tencent_captcha_randstr?: string
+	captcha_token?: string
 }
 
 export interface TencentCaptchaRequestProof {
@@ -128,6 +129,7 @@ export interface TencentCaptchaRequestProof {
 // 腾讯填 tencent_captcha_*，阿里云的 captchaVerifyParam 复用 turnstile_token 字段
 export interface ActionCaptchaRequestProof extends Partial<TencentCaptchaRequestProof> {
   turnstile_token?: string
+	captcha_token?: string
 }
 
 export interface RegisterRequest {
@@ -137,6 +139,7 @@ export interface RegisterRequest {
   turnstile_token?: string
   tencent_captcha_ticket?: string
   tencent_captcha_randstr?: string
+	captcha_token?: string
   promo_code?: string
   invitation_code?: string
   aff_code?: string
@@ -173,6 +176,7 @@ export interface SendVerifyCodeRequest {
   turnstile_token?: string
   tencent_captcha_ticket?: string
   tencent_captcha_randstr?: string
+	captcha_token?: string
   pending_auth_token?: string
   pending_oauth_token?: string
 }
@@ -241,6 +245,8 @@ export interface PublicSettings {
   aliyun_captcha_scene_id?: string
   aliyun_captcha_prefix?: string
   aliyun_captcha_region?: string
+	captchala_enabled?: boolean
+	captchala_app_key?: string
   site_name: string
   site_logo: string
   site_subtitle: string

@@ -41,6 +41,29 @@ export interface OAuthLoginStartResponse {
   authorize_url: string
 }
 
+export type CaptchaLaAction =
+  | 'login'
+  | 'register'
+  | 'send_verify_code'
+  | 'forgot_password'
+  | 'oauth_login'
+  | 'passkey_login'
+  | 'oauth_create_account'
+
+export interface CaptchaLaChallengeResponse {
+  server_token: string
+  expires_in: number
+}
+
+export async function issueCaptchaLaChallenge(
+  action: CaptchaLaAction
+): Promise<CaptchaLaChallengeResponse> {
+  const { data } = await apiClient.post<CaptchaLaChallengeResponse>('/auth/captcha/challenge', {
+    action
+  })
+  return data
+}
+
 export function buildOAuthLoginStartURL(request: OAuthLoginStart): string {
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1'
   const normalized = apiBase.replace(/\/$/, '')
@@ -533,6 +556,7 @@ export interface ForgotPasswordRequest {
   turnstile_token?: string
   tencent_captcha_ticket?: string
   tencent_captcha_randstr?: string
+	captcha_token?: string
 }
 
 /**

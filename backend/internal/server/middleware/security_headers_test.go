@@ -130,6 +130,10 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Contains(t, csp, "'nonce-")
 		assert.Contains(t, csp, CloudflareInsightsDomain)
 		assert.Equal(t, 1, countDirectiveValue(csp, "worker-src", TencentCaptchaWorkerSource))
+		assert.Equal(t, 1, countDirectiveValue(csp, "script-src", CaptchaLaCDNDomain))
+		assert.Equal(t, 1, countDirectiveValue(csp, "style-src", CaptchaLaFallbackCDNDomain))
+		assert.Equal(t, 1, countDirectiveValue(csp, "connect-src", CaptchaLaAPIDomain))
+		assert.Equal(t, 1, countDirectiveValue(csp, "connect-src", CaptchaLaFallbackBypass))
 	})
 
 	t.Run("api_route_skips_csp_nonce_generation", func(t *testing.T) {

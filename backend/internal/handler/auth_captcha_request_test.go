@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
-	const payload = `{"email":"user@example.com","password":"secret-123","tencent_captcha_ticket":"ticket-value","tencent_captcha_randstr":"@rand-value"}`
+func TestAuthRequestsBindCaptchaProof(t *testing.T) {
+	const payload = `{"email":"user@example.com","password":"secret-123","tencent_captcha_ticket":"ticket-value","tencent_captcha_randstr":"@rand-value","captcha_token":"pt_captchala-value"}`
 
 	tests := []struct {
 		name   string
@@ -22,7 +22,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req LoginRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -30,7 +30,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req RegisterRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -38,7 +38,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req SendVerifyCodeRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -46,7 +46,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req ForgotPasswordRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -54,7 +54,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req oauthStartCaptchaRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -62,7 +62,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req passkeyBeginLoginRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req sendPendingOAuthVerifyCodeRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			decode: func(raw []byte) service.CaptchaProof {
 				var req createPendingOAuthAccountRequest
 				require.NoError(t, json.Unmarshal(raw, &req))
-				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
+				return captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
 			},
 		},
 	}
@@ -88,6 +88,7 @@ func TestAuthRequestsBindTencentCaptchaProof(t *testing.T) {
 			proof := test.decode([]byte(payload))
 			require.Equal(t, "ticket-value", proof.TencentTicket)
 			require.Equal(t, "@rand-value", proof.TencentRandstr)
+			require.Equal(t, "pt_captchala-value", proof.CaptchaLaToken)
 		})
 	}
 }

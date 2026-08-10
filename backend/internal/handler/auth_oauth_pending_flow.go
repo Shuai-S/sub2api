@@ -72,6 +72,7 @@ type createPendingOAuthAccountRequest struct {
 	TurnstileToken        string `json:"turnstile_token,omitempty"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket,omitempty"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr,omitempty"`
+	CaptchaToken          string `json:"captcha_token,omitempty"`
 	InvitationCode        string `json:"invitation_code,omitempty"`
 	AffCode               string `json:"aff_code,omitempty"`
 	AdoptDisplayName      *bool  `json:"adopt_display_name,omitempty"`
@@ -83,6 +84,7 @@ type sendPendingOAuthVerifyCodeRequest struct {
 	TurnstileToken        string `json:"turnstile_token,omitempty"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket,omitempty"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr,omitempty"`
+	CaptchaToken          string `json:"captcha_token,omitempty"`
 	PendingAuthToken      string `json:"pending_auth_token,omitempty"`
 	PendingOAuthToken     string `json:"pending_oauth_token,omitempty"`
 }
@@ -569,8 +571,8 @@ func (h *AuthHandler) SendPendingOAuthVerifyCode(c *gin.Context) {
 		return
 	}
 
-	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
-	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
+	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
+	if err := h.authService.VerifyCaptchaForAction(c.Request.Context(), proof, ip.GetClientIP(c), service.CaptchaLaActionSendVerifyCode); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -1760,8 +1762,8 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		response.ErrorFrom(c, err)
 		return
 	}
-	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
-	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
+	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr, req.CaptchaToken)
+	if err := h.authService.VerifyCaptchaForAction(c.Request.Context(), proof, ip.GetClientIP(c), service.CaptchaLaActionOAuthCreateAccount); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}

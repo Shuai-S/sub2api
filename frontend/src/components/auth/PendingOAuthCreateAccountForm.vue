@@ -29,6 +29,9 @@
         :aliyun-scene-id="aliyunCaptchaSceneId"
         :aliyun-prefix="aliyunCaptchaPrefix"
         :aliyun-region="aliyunCaptchaRegion"
+        :captchala-enabled="captchalaEnabled"
+        :captchala-app-key="captchalaAppKey"
+        captchala-action="send_verify_code"
         @verify="onTurnstileVerify"
         @expire="onTurnstileExpire"
         @error="onTurnstileError"
@@ -100,7 +103,11 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
-import { getPublicSettings, sendPendingOAuthVerifyCode } from '@/api/auth'
+import {
+  getPublicSettings,
+  sendPendingOAuthVerifyCode,
+  type CaptchaLaAction
+} from '@/api/auth'
 import { useAppStore } from '@/stores'
 
 export type PendingOAuthCreateAccountPayload = {
@@ -110,6 +117,7 @@ export type PendingOAuthCreateAccountPayload = {
   turnstileToken?: string
   tencentCaptchaTicket?: string
   tencentCaptchaRandstr?: string
+  captchaToken?: string
   invitationCode?: string
 }
 
@@ -147,6 +155,8 @@ const aliyunCaptchaEnabled = ref(false)
 const aliyunCaptchaSceneId = ref('')
 const aliyunCaptchaPrefix = ref('')
 const aliyunCaptchaRegion = ref('cn')
+const captchalaEnabled = ref(false)
+const captchalaAppKey = ref('')
 const turnstileToken = ref('')
 const tencentCaptchaRandstr = ref('')
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
@@ -156,11 +166,12 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
-// 动作触发式验证码（腾讯/阿里云）：发送验证码、提交时弹窗验证
+// 动作触发式验证码：发送验证码、提交时弹窗验证
 const actionCaptchaEnabled = computed(
   () =>
     (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+    aliyunCaptchaReady.value ||
+    (captchalaEnabled.value && Boolean(captchalaAppKey.value))
 )
 const captchaEnabled = computed(
   () =>
@@ -250,10 +261,10 @@ function onTurnstileError() {
   sendCodeError.value = t('auth.turnstileFailed')
 }
 
-async function acquireActionProof(): Promise<boolean> {
+async function acquireActionProof(action: CaptchaLaAction): Promise<boolean> {
   if (!actionCaptchaEnabled.value) return true
 
-  const proof = await turnstileRef.value?.verifyAction()
+  const proof = await turnstileRef.value?.verifyAction(action)
   if (!proof) return false
 
   turnstileToken.value = proof.token
@@ -272,7 +283,7 @@ async function handleSendCode() {
     return
   }
 
-  if (!(await acquireActionProof())) {
+  if (!(await acquireActionProof('send_verify_code'))) {
     return
   }
 
@@ -286,7 +297,8 @@ async function handleSendCode() {
       turnstile_token:
         turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
       tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value ? tencentCaptchaRandstr.value : undefined
+      tencent_captcha_randstr: tencentCaptchaEnabled.value ? tencentCaptchaRandstr.value : undefined,
+      captcha_token: captchalaEnabled.value ? turnstileToken.value : undefined
     })
     sendCodeSuccess.value = true
     startCountdown(response.countdown)
@@ -314,7 +326,7 @@ async function handleSubmit() {
     return
   }
 
-  if (!(await acquireActionProof())) {
+  if (!(await acquireActionProof('oauth_create_account'))) {
     return
   }
 
@@ -330,6 +342,9 @@ async function handleSubmit() {
           tencentCaptchaTicket: turnstileToken.value,
           tencentCaptchaRandstr: tencentCaptchaRandstr.value
         }
+      : {}),
+    ...(captchalaEnabled.value && turnstileToken.value
+      ? { captchaToken: turnstileToken.value }
       : {}),
     invitationCode: invitationCode.value.trim() || undefined
   })
@@ -357,6 +372,8 @@ onMounted(async () => {
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
     aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
+    captchalaEnabled.value = settings.captchala_enabled === true
+    captchalaAppKey.value = settings.captchala_app_key || ''
   } catch {
     invitationCodeEnabled.value = false
     emailVerifyEnabled.value = true
@@ -369,6 +386,8 @@ onMounted(async () => {
     aliyunCaptchaSceneId.value = ''
     aliyunCaptchaPrefix.value = ''
     aliyunCaptchaRegion.value = 'cn'
+    captchalaEnabled.value = false
+    captchalaAppKey.value = ''
   }
 })
 

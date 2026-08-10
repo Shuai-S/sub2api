@@ -81,6 +81,7 @@ type AuthService struct {
 	turnstileService      *TurnstileService
 	tencentCaptchaService *TencentCaptchaService
 	aliyunCaptchaService  *AliyunCaptchaService
+	captchaLaService      *CaptchaLaService
 	emailQueueService     *EmailQueueService
 	promoService          *PromoService
 	affiliateService      *AffiliateService
@@ -93,6 +94,7 @@ type CaptchaProof struct {
 	TurnstileToken string
 	TencentTicket  string
 	TencentRandstr string
+	CaptchaLaToken string
 }
 
 type DefaultSubscriptionAssigner interface {
@@ -152,6 +154,17 @@ func (s *AuthService) SetTencentCaptchaService(tencentCaptchaService *TencentCap
 
 func (s *AuthService) SetAliyunCaptchaService(aliyunCaptchaService *AliyunCaptchaService) {
 	s.aliyunCaptchaService = aliyunCaptchaService
+}
+
+func (s *AuthService) SetCaptchaLaService(captchaLaService *CaptchaLaService) {
+	s.captchaLaService = captchaLaService
+}
+
+func (s *AuthService) IssueCaptchaLaServerToken(ctx context.Context, action, remoteIP string) (*CaptchaLaIssueResult, error) {
+	if s == nil || s.captchaLaService == nil {
+		return nil, ErrCaptchaLaNotConfigured
+	}
+	return s.captchaLaService.IssueServerToken(ctx, action, remoteIP)
 }
 
 // Register 用户注册，返回token和用户
@@ -406,10 +419,16 @@ func (s *AuthService) VerifyCaptchaForRegister(ctx context.Context, proof Captch
 		logger.LegacyPrintf("service.auth", "%s", "[Auth] Email verify flow detected, skip duplicate captcha check on register")
 		return nil
 	}
-	return s.VerifyCaptcha(ctx, proof, remoteIP)
+	return s.VerifyCaptchaForAction(ctx, proof, remoteIP, CaptchaLaActionRegister)
 }
 
 func (s *AuthService) VerifyCaptcha(ctx context.Context, proof CaptchaProof, remoteIP string) error {
+	return s.VerifyCaptchaForAction(ctx, proof, remoteIP, "")
+}
+
+// VerifyCaptchaForAction verifies the currently selected provider and, for
+// CaptchaLa, binds the one-time pass token to the server-owned action.
+func (s *AuthService) VerifyCaptchaForAction(ctx context.Context, proof CaptchaProof, remoteIP, expectedAction string) error {
 	required := s.cfg != nil && s.cfg.Server.Mode == "release" && s.cfg.Turnstile.Required
 	if s.settingService == nil {
 		if required {
@@ -426,8 +445,18 @@ func (s *AuthService) VerifyCaptcha(ctx context.Context, proof CaptchaProof, rem
 	turnstileEnabled := providerConfig.TurnstileEnabled
 	tencentEnabled := providerConfig.Tencent.Enabled
 	aliyunEnabled := providerConfig.Aliyun.Enabled
-	if captchaProvidersConflict(turnstileEnabled, tencentEnabled, aliyunEnabled) {
+	captchaLaEnabled := providerConfig.CaptchaLa.Enabled
+	if captchaProvidersConflict(turnstileEnabled, tencentEnabled, aliyunEnabled, captchaLaEnabled) {
 		return ErrCaptchaProviderConflict
+	}
+	if captchaLaEnabled {
+		if s.captchaLaService == nil {
+			return ErrCaptchaLaNotConfigured
+		}
+		if strings.TrimSpace(expectedAction) == "" {
+			return ErrCaptchaLaActionMismatch
+		}
+		return s.captchaLaService.VerifyTokenWithConfig(ctx, providerConfig.CaptchaLa, proof.CaptchaLaToken, expectedAction, remoteIP)
 	}
 	if tencentEnabled {
 		if s.tencentCaptchaService == nil {
@@ -467,6 +496,10 @@ func captchaProvidersConflict(enabled ...bool) bool {
 // VerifyActionCaptchaIfEnabled 仅保护动作触发的扩展入口（OAuth 登录启动、passkey 登录），
 // 腾讯天御与阿里云验证码启用时拦截；不扩大 Cloudflare Turnstile 的既有覆盖范围。
 func (s *AuthService) VerifyActionCaptchaIfEnabled(ctx context.Context, proof CaptchaProof, remoteIP string) error {
+	return s.VerifyActionCaptchaForAction(ctx, proof, remoteIP, CaptchaLaActionOAuthLogin)
+}
+
+func (s *AuthService) VerifyActionCaptchaForAction(ctx context.Context, proof CaptchaProof, remoteIP, expectedAction string) error {
 	if s == nil || s.settingService == nil {
 		return ErrServiceUnavailable
 	}
@@ -478,11 +511,18 @@ func (s *AuthService) VerifyActionCaptchaIfEnabled(ctx context.Context, proof Ca
 	}
 	tencentEnabled := providerConfig.Tencent.Enabled
 	aliyunEnabled := providerConfig.Aliyun.Enabled
-	if !tencentEnabled && !aliyunEnabled {
+	captchaLaEnabled := providerConfig.CaptchaLa.Enabled
+	if !tencentEnabled && !aliyunEnabled && !captchaLaEnabled {
 		return nil
 	}
-	if captchaProvidersConflict(providerConfig.TurnstileEnabled, tencentEnabled, aliyunEnabled) {
+	if captchaProvidersConflict(providerConfig.TurnstileEnabled, tencentEnabled, aliyunEnabled, captchaLaEnabled) {
 		return ErrCaptchaProviderConflict
+	}
+	if captchaLaEnabled {
+		if s.captchaLaService == nil {
+			return ErrCaptchaLaNotConfigured
+		}
+		return s.captchaLaService.VerifyTokenWithConfig(ctx, providerConfig.CaptchaLa, proof.CaptchaLaToken, expectedAction, remoteIP)
 	}
 	if aliyunEnabled {
 		if s.aliyunCaptchaService == nil {

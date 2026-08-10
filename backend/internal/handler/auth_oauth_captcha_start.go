@@ -15,6 +15,7 @@ type oauthStartCaptchaRequest struct {
 	TurnstileToken        string `json:"turnstile_token"`
 	TencentCaptchaTicket  string `json:"tencent_captcha_ticket"`
 	TencentCaptchaRandstr string `json:"tencent_captcha_randstr"`
+	CaptchaToken          string `json:"captcha_token"`
 }
 
 type oauthStartResponse struct {
@@ -34,6 +35,7 @@ func (h *AuthHandler) requireActionCaptchaForOAuthLoginStart(c *gin.Context) boo
 		TurnstileToken: req.TurnstileToken,
 		TencentTicket:  req.TencentCaptchaTicket,
 		TencentRandstr: req.TencentCaptchaRandstr,
+		CaptchaLaToken: req.CaptchaToken,
 	}, ip.GetClientIP(c)); err != nil {
 		response.ErrorFrom(c, err)
 		return false

@@ -146,6 +146,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.AliyunCaptchaRegion != after.AliyunCaptchaRegion {
 		changed = append(changed, "aliyun_captcha_region")
 	}
+	if before.CaptchaLaEnabled != after.CaptchaLaEnabled {
+		changed = append(changed, "captchala_enabled")
+	}
+	if before.CaptchaLaAppKey != after.CaptchaLaAppKey {
+		changed = append(changed, "captchala_app_key")
+	}
+	if req.CaptchaLaAppSecret != "" {
+		changed = append(changed, "captchala_app_secret")
+	}
 	if before.APIKeyACLTrustForwardedIP != after.APIKeyACLTrustForwardedIP {
 		changed = append(changed, "api_key_acl_trust_forwarded_ip")
 	}

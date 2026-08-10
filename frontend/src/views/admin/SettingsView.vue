@@ -2026,7 +2026,7 @@
                     {{ t("admin.settings.captcha.provider") }}
                   </label>
                   <div
-                    class="grid grid-cols-3 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
+                    class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 lg:grid-cols-4 dark:bg-dark-700"
                   >
                     <button
                       type="button"
@@ -2066,6 +2066,19 @@
                       @click="selectCaptchaProvider('aliyun')"
                     >
                       {{ t("admin.settings.captcha.providerAliyun") }}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="captcha-provider-captchala"
+                      class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
+                      :class="
+                        captchaProviderSelection === 'captchala'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
+                          : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
+                      "
+                      @click="selectCaptchaProvider('captchala')"
+                    >
+                      {{ t("admin.settings.captcha.providerCaptchaLa") }}
                     </button>
                   </div>
                 </div>
@@ -2271,7 +2284,10 @@
                 </div>
 
                 <!-- Aliyun Captcha 2.0 fields -->
-                <div v-else class="grid grid-cols-1 gap-6">
+                <div
+                  v-else-if="captchaProviderSelection === 'aliyun'"
+                  class="grid grid-cols-1 gap-6"
+                >
                   <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <div>
                       <label
@@ -2382,6 +2398,69 @@
                           : t("admin.settings.aliyunCaptcha.accessKeySecretHint")
                       }}
                     </p>
+                  </div>
+                </div>
+
+                <!-- CaptchaLa fields -->
+                <div v-else class="grid grid-cols-1 gap-6">
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.captchala.appKey") }}
+                    </label>
+                    <input
+                      v-model="form.captchala_app_key"
+                      type="text"
+                      autocomplete="off"
+                      class="input font-mono text-sm"
+                      placeholder="pk_..."
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.captchala.appKeyHint") }}
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.captchala.appSecret") }}
+                    </label>
+                    <input
+                      v-model="form.captchala_app_secret"
+                      type="password"
+                      autocomplete="new-password"
+                      class="input font-mono text-sm"
+                      :placeholder="t('admin.settings.captchala.keepExisting')"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        form.captchala_app_secret_configured
+                          ? t("admin.settings.captchala.configured")
+                          : t("admin.settings.captchala.required")
+                      }}
+                    </p>
+                  </div>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.captchala.serverTokenHint") }}
+                  </p>
+                  <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                    <a
+                      href="https://dash.captcha.la"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary-600 hover:text-primary-500"
+                    >
+                      {{ t("admin.settings.captchala.openDashboard") }}
+                    </a>
+                    <a
+                      href="https://docs.captcha.la/zh-CN/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-primary-600 hover:text-primary-500"
+                    >
+                      {{ t("admin.settings.captchala.openDocs") }}
+                    </a>
                   </div>
                 </div>
               </div>
@@ -10011,6 +10090,7 @@ type SettingsForm = Omit<
   tencent_captcha_cloud_secret_id: string;
   tencent_captcha_cloud_secret_key: string;
   aliyun_captcha_access_key_secret: string;
+  captchala_app_secret: string;
   linuxdo_connect_client_secret: string;
   dingtalk_connect_client_secret: string;
   wechat_connect_app_secret: string;
@@ -10621,6 +10701,10 @@ const form = reactive<SettingsForm>({
   aliyun_captcha_scene_id: "",
   aliyun_captcha_prefix: "",
   aliyun_captcha_region: "cn",
+  captchala_enabled: false,
+  captchala_app_key: "",
+  captchala_app_secret: "",
+  captchala_app_secret_configured: false,
   api_key_acl_trust_forwarded_ip: true,
   forwarded_client_ip_headers: [],
   // LinuxDo Connect OAuth 登录
@@ -10888,9 +10972,9 @@ function applyGeminiAdaptiveSchedulerRecommendedValues(): void {
   }
 }
 
-// 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是三个独立
+// 人机验证 UI 状态：单卡片「总开关 + 服务商单选」，落库仍是四个独立
 // enabled 键（与上游一致），由下面的映射保证同一时间至多一家启用。
-type CaptchaProviderSelection = "turnstile" | "tencent" | "aliyun";
+type CaptchaProviderSelection = "turnstile" | "tencent" | "aliyun" | "captchala";
 
 const captchaProviderSelection = ref<CaptchaProviderSelection>("turnstile");
 
@@ -10898,13 +10982,15 @@ function applyCaptchaSelection(provider: CaptchaProviderSelection | null): void 
   form.turnstile_enabled = provider === "turnstile";
   form.tencent_captcha_enabled = provider === "tencent";
   form.aliyun_captcha_enabled = provider === "aliyun";
+  form.captchala_enabled = provider === "captchala";
 }
 
 const captchaMasterEnabled = computed({
   get: () =>
     form.turnstile_enabled ||
     form.tencent_captcha_enabled ||
-    form.aliyun_captcha_enabled,
+    form.aliyun_captcha_enabled ||
+    form.captchala_enabled,
   set: (enabled: boolean) =>
     applyCaptchaSelection(enabled ? captchaProviderSelection.value : null),
 });
@@ -10935,6 +11021,8 @@ function syncCaptchaProviderSelection(): void {
     captchaProviderSelection.value = "tencent";
   } else if (form.aliyun_captcha_enabled) {
     captchaProviderSelection.value = "aliyun";
+  } else if (form.captchala_enabled) {
+    captchaProviderSelection.value = "captchala";
   } else if (form.turnstile_enabled) {
     captchaProviderSelection.value = "turnstile";
   }
@@ -11966,6 +12054,7 @@ async function loadSettings() {
     form.tencent_captcha_cloud_secret_id = "";
     form.tencent_captcha_cloud_secret_key = "";
     form.aliyun_captcha_access_key_secret = "";
+    form.captchala_app_secret = "";
     form.linuxdo_connect_client_secret = "";
     form.dingtalk_connect_client_secret = "";
     form.github_oauth_client_secret = "";
@@ -12355,6 +12444,9 @@ async function saveSettings() {
       aliyun_captcha_scene_id: form.aliyun_captcha_scene_id,
       aliyun_captcha_prefix: form.aliyun_captcha_prefix,
       aliyun_captcha_region: form.aliyun_captcha_region,
+      captchala_enabled: form.captchala_enabled,
+      captchala_app_key: form.captchala_app_key,
+      captchala_app_secret: form.captchala_app_secret || undefined,
       api_key_acl_trust_forwarded_ip: form.api_key_acl_trust_forwarded_ip,
       forwarded_client_ip_headers: form.forwarded_client_ip_headers,
       linuxdo_connect_enabled: form.linuxdo_connect_enabled,
@@ -12865,6 +12957,7 @@ async function saveSettings() {
     smtpPasswordManuallyEdited.value = false;
     form.turnstile_secret_key = "";
     form.aliyun_captcha_access_key_secret = "";
+    form.captchala_app_secret = "";
     form.linuxdo_connect_client_secret = "";
     form.dingtalk_connect_client_secret = "";
     form.github_oauth_client_secret = "";

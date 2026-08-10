@@ -560,6 +560,14 @@ Additional security-related options are available in `config.yaml`:
 - `security.forwarded_client_ip_headers` configures up to 16 third-party CDN client-IP header names; they are checked in order before the built-in headers only while legacy takeover is enabled
 - `turnstile.required` to require Turnstile in release mode
 
+### CaptchaLa Human Verification
+
+CaptchaLa is available as a standalone human-verification provider and **does not depend on Alibaba Cloud ESA**. Select it under System Settings -> Security & Authentication -> CAPTCHA, then configure the application's App Key and App Secret. CaptchaLa is mutually exclusive with Cloudflare Turnstile, Tencent Captcha, and Aliyun Captcha 2.0.
+
+Production authentication flows use server-issued challenges. The browser first requests a short-lived, single-use `server_token` bound to the business action and client IP, then submits the resulting `pt_` `captcha_token` to the protected endpoint. Sub2API validates that token with CaptchaLa and strictly matches its action. The App Secret is never exposed through public settings or frontend code, and validation fails closed on invalid tokens, action mismatches, or provider/network errors.
+
+Allow backend egress to `https://apiv1.captcha.la` and browser access to the CaptchaLa CDN/API hosts. The default CSP includes these hosts, while the security middleware augments older custom policies with the required runtime entries.
+
 Custom client-IP headers can be set in YAML or as a comma-separated environment variable:
 
 ```bash

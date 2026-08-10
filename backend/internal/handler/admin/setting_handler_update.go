@@ -73,6 +73,11 @@ type UpdateSettingsRequest struct {
 	AliyunCaptchaPrefix          string `json:"aliyun_captcha_prefix"`
 	AliyunCaptchaRegion          string `json:"aliyun_captcha_region"`
 
+	// CaptchaLa 验证码设置
+	CaptchaLaEnabled   bool   `json:"captchala_enabled"`
+	CaptchaLaAppKey    string `json:"captchala_app_key"`
+	CaptchaLaAppSecret string `json:"captchala_app_secret"`
+
 	// API Key IP 访问控制设置
 	APIKeyACLTrustForwardedIP *bool     `json:"api_key_acl_trust_forwarded_ip"`
 	ForwardedClientIPHeaders  *[]string `json:"forwarded_client_ip_headers"`
@@ -477,6 +482,8 @@ func settingsAuditRequest(req UpdateSettingsRequest) UpdateSettingsRequest {
 	req.TencentCaptchaAppSecretKey = strings.TrimSpace(req.TencentCaptchaAppSecretKey)
 	req.TencentCaptchaCloudSecretID = strings.TrimSpace(req.TencentCaptchaCloudSecretID)
 	req.TencentCaptchaCloudSecretKey = strings.TrimSpace(req.TencentCaptchaCloudSecretKey)
+	req.CaptchaLaAppKey = strings.TrimSpace(req.CaptchaLaAppKey)
+	req.CaptchaLaAppSecret = strings.TrimSpace(req.CaptchaLaAppSecret)
 	req.AliyunCaptchaAccessKeySecret = strings.TrimSpace(req.AliyunCaptchaAccessKeySecret)
 	return req
 }
@@ -664,14 +671,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if _, sent := sentFields["aliyun_captcha_enabled"]; !sent {
 		aliyunCaptchaEnabled = previousSettings.AliyunCaptchaEnabled
 	}
+	captchaLaEnabled := req.CaptchaLaEnabled
+	if _, sent := sentFields["captchala_enabled"]; !sent {
+		captchaLaEnabled = previousSettings.CaptchaLaEnabled
+	}
 	enabledCaptchaProviders := 0
-	for _, enabled := range []bool{turnstileEnabled, tencentCaptchaEnabled, aliyunCaptchaEnabled} {
+	for _, enabled := range []bool{turnstileEnabled, tencentCaptchaEnabled, aliyunCaptchaEnabled, captchaLaEnabled} {
 		if enabled {
 			enabledCaptchaProviders++
 		}
 	}
 	if enabledCaptchaProviders > 1 {
-		response.BadRequest(c, "Multiple captcha providers (Cloudflare Turnstile / Tencent Captcha / Aliyun Captcha) cannot be enabled at the same time")
+		response.BadRequest(c, "Multiple captcha providers (Cloudflare Turnstile / Tencent Captcha / Aliyun Captcha / CaptchaLa) cannot be enabled at the same time")
 		return
 	}
 	// 阿里云地域 normalize：未发送保留已存值，非法值一律按中国内地落库
@@ -790,6 +801,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.ErrorFrom(c, err)
 				return
 			}
+		}
+	}
+
+	// CaptchaLa server-token mode requires both public and private application keys.
+	// Do not live-test credentials here: issuing a challenge consumes provider quota.
+	if captchaLaEnabled {
+		if _, sent := sentFields["captchala_app_key"]; !sent {
+			req.CaptchaLaAppKey = previousSettings.CaptchaLaAppKey
+		}
+		if _, sent := sentFields["captchala_app_secret"]; !sent {
+			req.CaptchaLaAppSecret = previousSettings.CaptchaLaAppSecret
+		}
+		if strings.TrimSpace(req.CaptchaLaAppKey) == "" {
+			response.BadRequest(c, "CaptchaLa App Key is required when enabled")
+			return
+		}
+		if strings.TrimSpace(req.CaptchaLaAppSecret) == "" {
+			response.BadRequest(c, "CaptchaLa App Secret is required when enabled")
+			return
 		}
 	}
 
@@ -1607,6 +1637,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AliyunCaptchaSceneID:                req.AliyunCaptchaSceneID,
 		AliyunCaptchaPrefix:                 req.AliyunCaptchaPrefix,
 		AliyunCaptchaRegion:                 req.AliyunCaptchaRegion,
+		CaptchaLaEnabled:                    captchaLaEnabled,
+		CaptchaLaAppKey:                     req.CaptchaLaAppKey,
+		CaptchaLaAppSecret:                  req.CaptchaLaAppSecret,
 		APIKeyACLTrustForwardedIP: func() bool {
 			if req.APIKeyACLTrustForwardedIP != nil {
 				return *req.APIKeyACLTrustForwardedIP
@@ -2227,6 +2260,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AliyunCaptchaSceneID:                                   updatedSettings.AliyunCaptchaSceneID,
 		AliyunCaptchaPrefix:                                    updatedSettings.AliyunCaptchaPrefix,
 		AliyunCaptchaRegion:                                    updatedSettings.AliyunCaptchaRegion,
+		CaptchaLaEnabled:                                       updatedSettings.CaptchaLaEnabled,
+		CaptchaLaAppKey:                                        updatedSettings.CaptchaLaAppKey,
+		CaptchaLaAppSecretConfigured:                           updatedSettings.CaptchaLaAppSecretConfigured,
 		APIKeyACLTrustForwardedIP:                              updatedSettings.APIKeyACLTrustForwardedIP,
 		ForwardedClientIPHeaders:                               updatedSettings.ForwardedClientIPHeaders,
 		LinuxDoConnectEnabled:                                  updatedSettings.LinuxDoConnectEnabled,

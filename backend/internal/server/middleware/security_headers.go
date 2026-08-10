@@ -37,6 +37,17 @@ const (
 	TencentCaptchaRceDomain = "https://rce.tencentrio.com"
 	// TencentCaptchaWorkerSource 是天御国际站创建验证码 Web Worker 时使用的来源。
 	TencentCaptchaWorkerSource = "blob:"
+	// CaptchaLaCDNDomain and CaptchaLaFallbackCDNDomain host the Web SDK,
+	// stylesheet, and optional Web Worker assets.
+	CaptchaLaCDNDomain         = "https://cdn.captcha-cdn.net"
+	CaptchaLaFallbackCDNDomain = "https://cdn.captchala.com"
+	// CaptchaLa API and bypass hosts are selected dynamically by the Web SDK.
+	CaptchaLaAPIDomain         = "https://apiv1.captcha.la"
+	CaptchaLaEdgeAPIDomain     = "https://apiv1-n1.captcha.la"
+	CaptchaLaCDNAPIDomain      = "https://apiv1.captcha-cdn.net"
+	CaptchaLaFallbackAPIDomain = "https://apiv1.captchala.com"
+	CaptchaLaBypassDomain      = "https://bypass.captcha-cdn.net"
+	CaptchaLaFallbackBypass    = "https://bypass.captchala.com"
 	// StripeDomain is the domain for Stripe.js SDK
 	StripeDomain = "https://*.stripe.com"
 	// AirwallexStaticDomain 是 Airwallex 生产环境 SDK 脚本域名。
@@ -68,6 +79,20 @@ var requiredCSPDirectiveValues = []struct {
 	{"frame-src", TencentCaptchaGlobalDomain},
 	{"frame-src", TencentCaptchaPrehandleDomain},
 	{"worker-src", TencentCaptchaWorkerSource},
+	{"script-src", CaptchaLaCDNDomain},
+	{"script-src", CaptchaLaFallbackCDNDomain},
+	{"style-src", CaptchaLaCDNDomain},
+	{"style-src", CaptchaLaFallbackCDNDomain},
+	{"img-src", CaptchaLaCDNDomain},
+	{"img-src", CaptchaLaFallbackCDNDomain},
+	{"worker-src", CaptchaLaCDNDomain},
+	{"worker-src", CaptchaLaFallbackCDNDomain},
+	{"connect-src", CaptchaLaAPIDomain},
+	{"connect-src", CaptchaLaEdgeAPIDomain},
+	{"connect-src", CaptchaLaCDNAPIDomain},
+	{"connect-src", CaptchaLaFallbackAPIDomain},
+	{"connect-src", CaptchaLaBypassDomain},
+	{"connect-src", CaptchaLaFallbackBypass},
 	{"script-src", StripeDomain},
 	{"frame-src", StripeDomain},
 	{"script-src", AirwallexStaticDomain},

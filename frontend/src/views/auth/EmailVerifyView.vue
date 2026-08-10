@@ -80,6 +80,9 @@
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
+            :captchala-enabled="captchalaEnabled"
+            :captchala-app-key="captchalaAppKey"
+            captchala-action="send_verify_code"
             @verify="onTurnstileVerify"
             @expire="onTurnstileExpire"
             @error="onTurnstileError"
@@ -99,6 +102,9 @@
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
+            :captchala-enabled="captchalaEnabled"
+            :captchala-app-key="captchalaAppKey"
+            captchala-action="oauth_create_account"
             @verify="onCreateAccountTurnstileVerify"
             @expire="onCreateAccountTurnstileExpire"
             @error="onCreateAccountTurnstileError"
@@ -247,6 +253,7 @@ const email = ref<string>('')
 const password = ref<string>('')
 const initialTurnstileToken = ref<string>('')
 const initialTencentCaptchaRandstr = ref<string>('')
+const initialCaptchaLaToken = ref<string>('')
 const promoCode = ref<string>('')
 const invitationCode = ref<string>('')
 const affCode = ref<string>('')
@@ -270,6 +277,8 @@ const aliyunCaptchaEnabled = ref<boolean>(false)
 const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
 const aliyunCaptchaRegion = ref<string>('cn')
+const captchalaEnabled = ref<boolean>(false)
+const captchalaAppKey = ref<string>('')
 const siteName = ref<string>('Sub2API')
 const registrationEmailSuffixWhitelist = ref<string[]>([])
 // 域名限量注册开关：开启时非白名单域名可注册 1 个账户（由后端判定），前端不做白名单预检。
@@ -289,11 +298,12 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
-// 动作触发式验证码（腾讯/阿里云）：重发验证码、创建账号时弹窗验证
+// 动作触发式验证码：重发验证码、创建账号时弹窗验证
 const actionCaptchaEnabled = computed(
   () =>
     (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+    aliyunCaptchaReady.value ||
+    (captchalaEnabled.value && Boolean(captchalaAppKey.value))
 )
 const captchaEnabled = computed(
   () =>
@@ -336,6 +346,7 @@ onMounted(async () => {
       initialTurnstileToken.value =
         registerData.tencent_captcha_ticket || registerData.turnstile_token || ''
       initialTencentCaptchaRandstr.value = registerData.tencent_captcha_randstr || ''
+      initialCaptchaLaToken.value = registerData.captcha_token || ''
       promoCode.value = registerData.promo_code || ''
       invitationCode.value = registerData.invitation_code || ''
       affCode.value = registerData.aff_code || loadAffiliateReferralCode()
@@ -372,6 +383,8 @@ onMounted(async () => {
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
     aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
+    captchalaEnabled.value = settings.captchala_enabled === true
+    captchalaAppKey.value = settings.captchala_app_key || ''
     siteName.value = settings.site_name || 'Sub2API'
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
@@ -462,7 +475,7 @@ function resetCreateAccountTurnstile(): void {
 async function acquireResendActionProof(): Promise<boolean> {
   if (!actionCaptchaEnabled.value) return true
 
-  const proof = await turnstileRef.value?.verifyAction()
+  const proof = await turnstileRef.value?.verifyAction('send_verify_code')
   if (!proof) return false
 
   resendTurnstileToken.value = proof.token
@@ -473,7 +486,7 @@ async function acquireResendActionProof(): Promise<boolean> {
 async function acquireCreateAccountActionProof(): Promise<boolean> {
   if (!isPendingOAuthFlow() || !actionCaptchaEnabled.value) return true
 
-  const proof = await createAccountTurnstileRef.value?.verifyAction()
+  const proof = await createAccountTurnstileRef.value?.verifyAction('oauth_create_account')
   if (!proof) return false
 
   createAccountTurnstileToken.value = proof.token
@@ -552,10 +565,15 @@ async function sendCode(): Promise<void> {
         : undefined,
       tencent_captcha_randstr: tencentCaptchaEnabled.value
         ? resendTencentCaptchaRandstr.value || initialTencentCaptchaRandstr.value || undefined
+        : undefined,
+      captcha_token: captchalaEnabled.value
+        ? resendTurnstileToken.value || initialCaptchaLaToken.value || undefined
         : undefined
     } as Parameters<typeof sendVerifyCode>[0]
     captchaProofUsed = Boolean(
-      requestPayload.turnstile_token || requestPayload.tencent_captcha_ticket
+      requestPayload.turnstile_token ||
+        requestPayload.tencent_captcha_ticket ||
+        requestPayload.captcha_token
     )
     const response = isPendingOAuthFlow()
       ? await sendPendingOAuthVerifyCode(requestPayload)
@@ -590,6 +608,7 @@ async function sendCode(): Promise<void> {
       clearStoredCaptchaProof()
       initialTurnstileToken.value = ''
       initialTencentCaptchaRandstr.value = ''
+      initialCaptchaLaToken.value = ''
       resendTurnstileToken.value = ''
       resendTencentCaptchaRandstr.value = ''
       turnstileRef.value?.reset()
@@ -610,6 +629,7 @@ function clearStoredCaptchaProof(): void {
     delete registerData.turnstile_token
     delete registerData.tencent_captcha_ticket
     delete registerData.tencent_captcha_randstr
+    delete registerData.captcha_token
     sessionStorage.setItem('register_data', JSON.stringify(registerData))
   } catch {
     // Invalid registration state is handled by the existing onMounted parser.
@@ -688,6 +708,9 @@ async function handleVerify(): Promise<void> {
               tencent_captcha_randstr: createAccountTencentCaptchaRandstr.value
           }
           : {}),
+        ...(captchalaEnabled.value && createAccountTurnstileToken.value
+          ? { captcha_token: createAccountTurnstileToken.value }
+          : {}),
         ...oauthAffiliatePayload(affCode.value || loadAffiliateReferralCode()),
       }
       if (invitationCode.value) {
@@ -751,6 +774,7 @@ async function handleVerify(): Promise<void> {
   } finally {
     initialTurnstileToken.value = ''
     initialTencentCaptchaRandstr.value = ''
+    initialCaptchaLaToken.value = ''
     if (pendingOAuthCreateCaptchaEnabled.value) {
       resetCreateAccountTurnstile()
     }

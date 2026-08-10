@@ -79,6 +79,9 @@
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
+            :captchala-enabled="captchalaEnabled"
+            :captchala-app-key="captchalaAppKey"
+            captchala-action="forgot_password"
             @verify="onTurnstileVerify"
             @expire="onTurnstileExpire"
             @error="onTurnstileError"
@@ -163,6 +166,8 @@ const aliyunCaptchaEnabled = ref<boolean>(false)
 const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
 const aliyunCaptchaRegion = ref<string>('cn')
+const captchalaEnabled = ref<boolean>(false)
+const captchalaAppKey = ref<string>('')
 
 // Turnstile
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
@@ -174,11 +179,12 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
-// 动作触发式验证码（腾讯/阿里云）：提交时弹窗验证
+// 动作触发式验证码：提交时弹窗验证
 const actionCaptchaEnabled = computed(
   () =>
     (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+    aliyunCaptchaReady.value ||
+    (captchalaEnabled.value && Boolean(captchalaAppKey.value))
 )
 const captchaEnabled = computed(
   () =>
@@ -216,6 +222,8 @@ onMounted(async () => {
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
     aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
+    captchalaEnabled.value = settings.captchala_enabled === true
+    captchalaAppKey.value = settings.captchala_app_key || ''
   } catch (error) {
     console.error('Failed to load public settings:', error)
   }
@@ -251,7 +259,7 @@ function resetCaptchaProof(): void {
 async function acquireActionProof(): Promise<boolean> {
   if (!actionCaptchaEnabled.value) return true
 
-  const proof = await turnstileRef.value?.verifyAction()
+  const proof = await turnstileRef.value?.verifyAction('forgot_password')
   if (!proof) return false
 
   turnstileToken.value = proof.token
@@ -306,7 +314,8 @@ async function handleSubmit(): Promise<void> {
       turnstile_token:
         turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
       tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value ? tencentCaptchaRandstr.value : undefined
+      tencent_captcha_randstr: tencentCaptchaEnabled.value ? tencentCaptchaRandstr.value : undefined,
+      captcha_token: captchalaEnabled.value ? turnstileToken.value : undefined
     })
 
     isSubmitted.value = true
