@@ -112,6 +112,37 @@ func TestOpenAIAdaptiveCapabilityMismatchCanFailOverWithoutHealthSample(t *testi
 	require.False(t, openAIAdaptiveFailureHealthSample(err))
 }
 
+func TestOpenAIModelNotFoundCanFailOverWithoutHealthSample(t *testing.T) {
+	body := []byte(`{"error":{"type":"model_not_found","message":"Model gpt-5.6-luna not found"}}`)
+	svc := &OpenAIGatewayService{}
+
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusNotFound, "Model gpt-5.6-luna not found", body))
+	require.True(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeAPIKey}, http.StatusNotFound, body))
+
+	err := newOpenAIUpstreamFailoverError(http.StatusNotFound, nil, body, "Model gpt-5.6-luna not found", true)
+	require.True(t, IsUpstreamCapabilityMismatch(err))
+	require.Equal(t, GatewayFailureScopeAccount, err.Scope)
+	require.Equal(t, NextAccountRetry, err.NextAccountAction)
+	require.False(t, err.RetryableOnSameAccount)
+	require.NotNil(t, err.HealthSample)
+	require.False(t, *err.HealthSample)
+	require.True(t, err.ShouldRetryNextAccount())
+	require.False(t, shouldIgnoreOpenAIAdaptiveFailoverError(err))
+	require.False(t, openAIAdaptiveFailureHealthSample(err))
+
+	legacyErr := &UpstreamFailoverError{StatusCode: http.StatusNotFound, ResponseBody: body}
+	require.False(t, shouldIgnoreOpenAIAdaptiveFailoverError(legacyErr))
+	require.False(t, openAIAdaptiveFailureHealthSample(legacyErr))
+}
+
+func TestOpenAIOrdinaryNotFoundDoesNotFailOver(t *testing.T) {
+	body := []byte(`{"error":{"message":"endpoint not found"}}`)
+	svc := &OpenAIGatewayService{}
+
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusNotFound, "endpoint not found", body))
+	require.False(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeAPIKey}, http.StatusNotFound, body))
+}
+
 func TestOpenAIAdaptiveFailureSkipsRequestPolicyRejections(t *testing.T) {
 	for _, message := range []string{
 		"upstream response failed: cyber_policy",

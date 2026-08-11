@@ -1830,8 +1830,10 @@ func (s *openAIWSUsageHandlerAccountRepoStub) GetByID(ctx context.Context, id in
 
 type openAIWSFailoverHandlerAccountRepoStub struct {
 	service.AccountRepository
-	accounts       []service.Account
-	rateLimitedIDs []int64
+	accounts               []service.Account
+	rateLimitedIDs         []int64
+	modelRateLimitedIDs    []int64
+	modelRateLimitedScopes []string
 }
 
 type openAIHTTPPassthroughFailoverUpstream struct {
@@ -1852,6 +1854,37 @@ func (u *openAIHTTPPassthroughFailoverUpstream) Do(_ *http.Request, _ string, ac
 }
 
 func (u *openAIHTTPPassthroughFailoverUpstream) calls() []int64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]int64(nil), u.accountIDs...)
+}
+
+type openAIHTTPModelNotFoundFailoverUpstream struct {
+	service.HTTPUpstream
+	mu             sync.Mutex
+	accountIDs     []int64
+	missingModelID int64
+}
+
+func (u *openAIHTTPModelNotFoundFailoverUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
+	u.mu.Lock()
+	u.accountIDs = append(u.accountIDs, accountID)
+	u.mu.Unlock()
+	if accountID == u.missingModelID {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"model_not_found","message":"Model gpt-5.6-luna not found"}}`)),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","message":"terminal test error"}}`)),
+	}, nil
+}
+
+func (u *openAIHTTPModelNotFoundFailoverUpstream) calls() []int64 {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return append([]int64(nil), u.accountIDs...)
@@ -1928,6 +1961,12 @@ func (s *openAIWSFailoverHandlerAccountRepoStub) SetRateLimited(ctx context.Cont
 			break
 		}
 	}
+	return nil
+}
+
+func (s *openAIWSFailoverHandlerAccountRepoStub) SetModelRateLimit(_ context.Context, id int64, scope string, _ time.Time, _ ...string) error {
+	s.modelRateLimitedIDs = append(s.modelRateLimitedIDs, id)
+	s.modelRateLimitedScopes = append(s.modelRateLimitedScopes, scope)
 	return nil
 }
 
@@ -2089,6 +2128,88 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+}
+
+func TestOpenAIResponses_ModelNotFoundSwitchesAccountWithoutAdaptiveFailureSample(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	groupID := int64(4205)
+	accounts := []service.Account{
+		{
+			ID: 9914, Name: "model-missing", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, Priority: 1,
+			Credentials: map[string]any{"api_key": "sk-missing", "base_url": "https://api.example.test"},
+			Extra:       map[string]any{"openai_responses_supported": true},
+		},
+		{
+			ID: 9915, Name: "fallback", Platform: service.PlatformOpenAI,
+			Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, Priority: 2,
+			Credentials: map[string]any{"api_key": "sk-fallback", "base_url": "https://api.example.test"},
+			Extra:       map[string]any{"openai_responses_supported": true},
+		},
+	}
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.MaxAccountSwitches = 1
+
+	accountRepo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
+	upstream := &openAIHTTPModelNotFoundFailoverUpstream{missingModelID: 9914}
+	rateLimitSvc := service.NewRateLimitService(accountRepo, nil, cfg, nil, nil)
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billingCacheSvc.Stop)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		rateLimitSvc,
+		billingCacheSvc,
+		upstream,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	h := NewOpenAIGatewayHandler(
+		gatewaySvc,
+		service.NewConcurrencyService(nil),
+		billingCacheSvc,
+		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", strings.NewReader(`{"model":"gpt-5.6-luna","input":"hello","stream":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+		ID: 1805, GroupID: &groupID,
+		User:  &service.User{ID: 1705, Status: service.StatusActive},
+		Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	})
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1705, Concurrency: 0})
+
+	h.Responses(c)
+
+	require.Equal(t, []int64{9914, 9915}, upstream.calls())
+	require.Equal(t, []int64{9914}, accountRepo.modelRateLimitedIDs)
+	require.Equal(t, []string{"gpt-5.6-luna"}, accountRepo.modelRateLimitedScopes)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
 }
 
 func TestOpenAIResponses_APIKeyPassthroughSSERateLimitUsesConfiguredPoolRetry(t *testing.T) {

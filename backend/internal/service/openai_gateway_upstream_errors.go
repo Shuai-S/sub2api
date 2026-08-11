@@ -225,6 +225,9 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	if isUpstreamModelNotFoundError(statusCode, upstreamBody) {
+		return true
+	}
 	if isOpenAIAdaptiveInsufficientBalanceResponse(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
@@ -259,6 +262,15 @@ func newOpenAIUpstreamFailoverError(
 		ResponseBody:           responseBody,
 		ResponseHeaders:        responseHeaders.Clone(),
 		RetryableOnSameAccount: retryableOnSameAccount,
+	}
+	if isUpstreamModelNotFoundError(statusCode, responseBody) {
+		healthSample := false
+		failoverErr.RetryableOnSameAccount = false
+		failoverErr.Scope = GatewayFailureScopeAccount
+		failoverErr.Reason = GatewayFailureReason(upstreamModelNotFoundReason)
+		failoverErr.NextAccountAction = NextAccountRetry
+		failoverErr.FailureKind = UpstreamFailureKindCapabilityMismatch
+		failoverErr.HealthSample = &healthSample
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, responseBody) {
 		failoverErr.RetryableOnSameAccount = false
@@ -485,11 +497,13 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		Detail:             upstreamDetail,
 	})
 	if shouldDisable {
-		return nil, &UpstreamFailoverError{
-			StatusCode:             resp.StatusCode,
-			ResponseBody:           body,
-			RetryableOnSameAccount: false,
-		}
+		return nil, newOpenAIUpstreamFailoverError(
+			resp.StatusCode,
+			resp.Header,
+			body,
+			upstreamMsg,
+			false,
+		)
 	}
 
 	MarkResponseCommitted(c)

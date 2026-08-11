@@ -500,6 +500,9 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	if isUpstreamModelNotFoundError(statusCode, responseBody) {
+		return true
+	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
 		return true
 	}

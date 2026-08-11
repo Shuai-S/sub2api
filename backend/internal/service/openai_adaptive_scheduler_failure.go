@@ -43,6 +43,9 @@ func openAIAdaptiveFailureHealthSample(err error) bool {
 		if failoverErr.HealthSample != nil {
 			return *failoverErr.HealthSample
 		}
+		if isUpstreamModelNotFoundError(failoverErr.StatusCode, failoverErr.ResponseBody) {
+			return false
+		}
 		if shouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
 			healthSample = false
 		}
@@ -325,6 +328,9 @@ func shouldIgnoreOpenAIAdaptiveFailoverError(err *UpstreamFailoverError) bool {
 		return true
 	}
 	if IsUpstreamCapabilityMismatch(err) {
+		return false
+	}
+	if isUpstreamModelNotFoundError(err.StatusCode, err.ResponseBody) {
 		return false
 	}
 	msg := extractUpstreamErrorMessage(err.ResponseBody)
