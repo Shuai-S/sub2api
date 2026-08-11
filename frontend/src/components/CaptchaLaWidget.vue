@@ -8,6 +8,7 @@
     :action="activeAction"
     :lang="language"
     product="popup"
+    :on-server-token-expired="refreshExpiredServerToken"
     @ready="handleReady"
     @success="handleSuccess"
     @error="handleError"
@@ -16,8 +17,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { Captchala, type CaptchalaResult } from '@captcha-la/vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Captchala, loadCaptchalaSDK, type CaptchalaResult } from '@captcha-la/vue'
 import { useI18n } from 'vue-i18n'
 import { issueCaptchaLaChallenge, type CaptchaLaAction } from '@/api/auth'
 
@@ -36,8 +37,11 @@ const { locale } = useI18n()
 const language = computed(() => (locale.value.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'))
 const captchaRef = ref<InstanceType<typeof Captchala> | null>(null)
 const serverToken = ref('')
+const serverTokenExpiresAt = ref(0)
 const renderKey = ref(0)
 const activeAction = ref<CaptchaLaAction>(props.action)
+let loadedAction: CaptchaLaAction | null = null
+let sdkReady = false
 
 let pending: {
   resolve: (token: string | null) => void
@@ -47,6 +51,9 @@ let pendingPromise: Promise<string | null> | null = null
 let readyResolve: (() => void) | null = null
 let readyReject: ((error: unknown) => void) | null = null
 let readyTimer: ReturnType<typeof setTimeout> | null = null
+let preloadPromise: Promise<void> | null = null
+let preloadEpoch = 0
+const serverTokenRefreshSkewMs = 10_000
 
 function clearReadyWait(): void {
   if (readyTimer) clearTimeout(readyTimer)
@@ -56,6 +63,7 @@ function clearReadyWait(): void {
 }
 
 function waitUntilReady(): Promise<void> {
+  if (sdkReady) return Promise.resolve()
   clearReadyWait()
   return new Promise((resolve, reject) => {
     readyResolve = resolve
@@ -69,6 +77,7 @@ function waitUntilReady(): Promise<void> {
 }
 
 function handleReady(): void {
+  sdkReady = true
   const resolve = readyResolve
   clearReadyWait()
   resolve?.()
@@ -98,8 +107,12 @@ function handleSuccess(result: CaptchalaResult): void {
 }
 
 function handleError(error: unknown): void {
+  const normalizedError = error instanceof Error ? error : new Error('CaptchaLa verification failed')
+  const rejectReady = readyReject
+  clearReadyWait()
+  rejectReady?.(normalizedError)
   emit('error')
-  settle(null, error instanceof Error ? error : new Error('CaptchaLa verification failed'))
+  settle(null, normalizedError)
 }
 
 function handleClose(): void {
@@ -107,19 +120,74 @@ function handleClose(): void {
   settle(null)
 }
 
+// Fetch the server-owned token and mount the SDK before the user submits the
+// form. CaptchaLa only creates a challenge when verify() is explicitly called.
+function hasUsableServerToken(action: CaptchaLaAction): boolean {
+  return (
+    Boolean(serverToken.value) &&
+    loadedAction === action &&
+    Date.now() < serverTokenExpiresAt.value - serverTokenRefreshSkewMs
+  )
+}
+
+async function preload(actionOverride?: CaptchaLaAction, force = false): Promise<void> {
+  const action = actionOverride || props.action
+  if (!force && hasUsableServerToken(action)) return
+
+  if (preloadPromise) {
+    await preloadPromise
+    if (!force && hasUsableServerToken(action)) return
+    return preload(action, force)
+  }
+
+  const epoch = preloadEpoch
+  const currentPromise = (async () => {
+    activeAction.value = action
+    const challenge = await issueCaptchaLaChallenge(action)
+    if (epoch !== preloadEpoch) return
+
+    const shouldRemount = !serverToken.value || loadedAction !== action
+    sdkReady = false
+    loadedAction = action
+    serverToken.value = challenge.server_token
+    serverTokenExpiresAt.value = Date.now() + Math.max(0, challenge.expires_in) * 1000
+    if (shouldRemount) renderKey.value += 1
+    await nextTick()
+  })()
+  preloadPromise = currentPromise
+
+  try {
+    await currentPromise
+  } finally {
+    if (preloadPromise === currentPromise) preloadPromise = null
+  }
+}
+
+async function refreshExpiredServerToken(): Promise<string | null> {
+  try {
+    const challenge = await issueCaptchaLaChallenge(activeAction.value)
+    serverTokenExpiresAt.value = Date.now() + Math.max(0, challenge.expires_in) * 1000
+    return challenge.server_token || null
+  } catch {
+    return null
+  }
+}
+
 async function startVerification(actionOverride?: CaptchaLaAction): Promise<string | null> {
-  activeAction.value = actionOverride || props.action
-  const challenge = await issueCaptchaLaChallenge(activeAction.value)
-  serverToken.value = challenge.server_token
-  renderKey.value += 1
-  const ready = waitUntilReady()
-  await nextTick()
+  await preload(actionOverride)
+  await waitUntilReady()
 
   return new Promise<string | null>((resolve, reject) => {
     pending = { resolve, reject }
-    void ready
-      .then(() => captchaRef.value?.verify())
-      .catch((error) => handleError(error))
+    try {
+      if (!captchaRef.value) {
+        handleError(new Error('CaptchaLa SDK is not ready'))
+        return
+      }
+      captchaRef.value.verify()
+    } catch (error) {
+      handleError(error)
+    }
   })
 }
 
@@ -134,13 +202,29 @@ function verify(actionOverride?: CaptchaLaAction): Promise<string | null> {
   return currentPromise
 }
 
-function reset(): void {
+function reset(warm = true): void {
+  preloadEpoch += 1
   clearReadyWait()
   captchaRef.value?.destroy()
   settle(null)
+  sdkReady = false
+  loadedAction = null
   serverToken.value = ''
+  serverTokenExpiresAt.value = 0
+  // A failed login consumes the pass token. Keep the next attempt warm without
+  // reopening the popup; a fresh server token is ready in the background.
+  if (warm && typeof window !== 'undefined') {
+    void preload().catch(() => undefined)
+  }
 }
 
-onBeforeUnmount(reset)
-defineExpose({ verify, reset })
+onMounted(() => {
+  // Download the small loader in the background and issue the login token as
+  // soon as the component is present. Neither action opens a challenge.
+  void loadCaptchalaSDK().catch(() => undefined)
+  void preload().catch(() => undefined)
+})
+
+onBeforeUnmount(() => reset(false))
+defineExpose({ verify, preload, reset })
 </script>

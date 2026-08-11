@@ -510,6 +510,9 @@ function resetCaptchaProof(): void {
 
 async function acquireActionProof(): Promise<boolean> {
   if (!actionCaptchaEnabled.value) return true
+  // CaptchaLa's preloaded popup can be completed before pressing Login. Reuse
+  // that single-use proof instead of opening a second verification dialog.
+  if (captchalaEnabled.value && turnstileToken.value) return true
 
   const proof = await turnstileRef.value?.verifyAction('login')
   if (!proof) return false

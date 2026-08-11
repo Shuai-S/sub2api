@@ -7,6 +7,7 @@ import CaptchaLaWidget from '../CaptchaLaWidget.vue'
 const issueChallenge = vi.fn()
 const sdkVerify = vi.fn()
 const sdkDestroy = vi.fn()
+const loadSdk = vi.fn()
 
 vi.mock('@/api/auth', () => ({
   issueCaptchaLaChallenge: (...args: unknown[]) => issueChallenge(...args)
@@ -17,13 +18,15 @@ vi.mock('vue-i18n', () => ({
 }))
 
 vi.mock('@captcha-la/vue', () => ({
+  loadCaptchalaSDK: (...args: unknown[]) => loadSdk(...args),
   Captchala: defineComponent({
     props: {
       appKey: String,
       serverToken: String,
       action: String,
       lang: String,
-      product: String
+      product: String,
+      onServerTokenExpired: Function
     },
     emits: ['ready', 'success', 'error', 'close'],
     setup(_, { emit, expose }) {
@@ -62,19 +65,25 @@ describe('CaptchaLaWidget', () => {
     issueChallenge.mockReset()
     sdkVerify.mockReset()
     sdkDestroy.mockReset()
+    loadSdk.mockReset()
+    loadSdk.mockResolvedValue(undefined)
     issueChallenge.mockResolvedValue({ server_token: 'sct_test', expires_in: 300 })
   })
 
-  it('issues a server token before opening the SDK and resolves a pt_ proof', async () => {
+  it('preloads the SDK and server token before resolving a pt_ proof', async () => {
     const wrapper = mount(CaptchaLaWidget, {
       props: { appKey: 'pk_test', action: 'login' }
     })
     const vm = wrapper.vm as unknown as { verify: () => Promise<string | null> }
 
+    await flushPromises()
+    expect(loadSdk).toHaveBeenCalledOnce()
+    expect(issueChallenge).toHaveBeenCalledWith('login')
+
     const proof = vm.verify()
     await flushPromises()
 
-    expect(issueChallenge).toHaveBeenCalledWith('login')
+    expect(issueChallenge).toHaveBeenCalledOnce()
     expect(sdkVerify).toHaveBeenCalledOnce()
     await wrapper.get('[data-testid="success"]').trigger('click')
     await expect(proof).resolves.toBe('pt_test')
