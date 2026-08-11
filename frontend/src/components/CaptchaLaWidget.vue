@@ -130,14 +130,14 @@ function hasUsableServerToken(action: CaptchaLaAction): boolean {
   )
 }
 
-async function preload(actionOverride?: CaptchaLaAction, force = false): Promise<void> {
+async function preload(actionOverride?: CaptchaLaAction): Promise<void> {
   const action = actionOverride || props.action
-  if (!force && hasUsableServerToken(action)) return
+  if (hasUsableServerToken(action)) return
 
   if (preloadPromise) {
     await preloadPromise
-    if (!force && hasUsableServerToken(action)) return
-    return preload(action, force)
+    if (hasUsableServerToken(action)) return
+    return preload(action)
   }
 
   const epoch = preloadEpoch
