@@ -970,6 +970,28 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('codex_image_generation_explicit_tool_policy')
   })
 
+  it('loads and disables Claude Code upstream mimicry for an Anthropic API key account', async () => {
+    const account = buildAccount()
+    account.name = 'Anthropic relay'
+    account.platform = 'anthropic'
+    account.credentials = {
+      api_key: 'sk-upstream',
+      base_url: 'https://relay.example.com',
+      claude_code_upstream_mimicry_enabled: true
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="claude-code-upstream-mimicry-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(
+      'claude_code_upstream_mimicry_enabled'
+    )
+  })
+
   it('submits Codex image tool no-injection mode without strip policy', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

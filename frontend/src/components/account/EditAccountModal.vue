@@ -531,6 +531,28 @@
         </div>
       </div>
 
+      <!-- Anthropic API Key: rewrite non-Claude-Code traffic for a restricted upstream -->
+      <div
+        v-if="account.platform === 'anthropic' && account.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">
+              {{ t('admin.accounts.claudeCodeUpstreamMimicry.title') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.claudeCodeUpstreamMimicry.hint') }}
+            </p>
+          </div>
+          <Toggle
+            v-model="claudeCodeUpstreamMimicryEnabled"
+            data-testid="claude-code-upstream-mimicry-toggle"
+            :aria-label="t('admin.accounts.claudeCodeUpstreamMimicry.title')"
+          />
+        </div>
+      </div>
+
       <!-- OpenAI/Grok OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
       <div
         v-if="(account.platform === 'openai' || account.platform === 'grok') && account.type === 'oauth'"
@@ -2724,6 +2746,7 @@ import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
   applyAntigravityProjectID,
+  applyClaudeCodeUpstreamMimicry,
   applyHeaderOverride,
   applyInterceptWarmup,
   applyPlanType,
@@ -2735,6 +2758,7 @@ import {
   validateHeaderOverrideRows,
   HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
   HEADER_OVERRIDES_CREDENTIAL_KEY,
+  CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY,
   type HeaderOverrideRow
 } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
@@ -2874,6 +2898,7 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
+const claudeCodeUpstreamMimicryEnabled = ref(false)
 
 const headerOverrideCapable = computed(
   () => !!props.account && isHeaderOverrideCapable(props.account.platform, props.account.type)
@@ -3565,6 +3590,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       overrideCreds[HEADER_OVERRIDES_CREDENTIAL_KEY]
     )
   }
+
+  claudeCodeUpstreamMimicryEnabled.value =
+    newAccount.platform === 'anthropic' &&
+    newAccount.type === 'apikey' &&
+    newAccount.credentials?.[CLAUDE_CODE_UPSTREAM_MIMICRY_ENABLED_CREDENTIAL_KEY] === true
 
   // Load Grok OAuth custom upstream URL state（存储的官方地址视同未定制）
   grokOAuthCustomBaseUrlEnabled.value = false
@@ -4337,6 +4367,9 @@ const handleSubmit = async () => {
           }
         }
         applyHeaderOverride(newCredentials, headerOverrideEnabled.value, headerOverrideRows.value, 'edit')
+      }
+      if (props.account.platform === 'anthropic') {
+        applyClaudeCodeUpstreamMimicry(newCredentials, claudeCodeUpstreamMimicryEnabled.value, 'edit')
       }
 
       // Add intercept warmup requests setting

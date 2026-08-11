@@ -264,6 +264,21 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(false)
   })
 
+  it('submits Claude Code upstream mimicry for an Anthropic API key account', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'admin.accounts.claudeConsole')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Anthropic relay')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-upstream')
+    await wrapper.get('[data-testid="claude-code-upstream-mimicry-toggle"]').trigger('click')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(
+      createAccountMock.mock.calls[0]?.[0]?.credentials?.claude_code_upstream_mimicry_enabled
+    ).toBe(true)
+  })
+
   it('antigravity upstream 创建默认携带上游倍率探测开关', async () => {
     // antigravity upstream 走独立创建 helper，
     // 也必须与其余 API-key 平台一样默认开启探测并传递开关。
