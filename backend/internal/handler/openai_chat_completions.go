@@ -302,16 +302,18 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					}
 					// Pool mode: retry on the same account
 					if retryLimit, retryCount, ok := claimOpenAISameAccountRetry(account, failoverErr, sameAccountRetryCount); ok {
+						retryDelay := sameAccountRetryDelayFor(failoverErr, retryCount)
 						reqLog.Warn("openai_chat_completions.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
 							zap.Int("retry_limit", retryLimit),
 							zap.Int("retry_count", retryCount),
+							zap.Duration("retry_delay", retryDelay),
 						)
 						select {
 						case <-c.Request.Context().Done():
 							return
-						case <-time.After(sameAccountRetryDelay):
+						case <-time.After(retryDelay):
 						}
 						continue
 					}
