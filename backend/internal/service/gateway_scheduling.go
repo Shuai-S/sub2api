@@ -153,6 +153,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			stickySource = "cache"
 		}
 	}
+	adaptiveNewSession := stickyAccountID <= 0
 
 	// [DEBUG-STICKY] 调度器入口日志
 	slog.Info("sticky.scheduler_entry",
@@ -539,11 +540,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 
 						if rpmPass { // 粘性会话窗口费用+RPM 检查
 							stickyCapacity := s.anthropicAdaptiveCapacity(anthropicAdaptiveMode, anthropicAdaptiveSettings, stickyAccount)
-							result, err := s.tryAcquireAccountSlot(ctx, stickyAccountID, stickyCapacity)
+							result, releaseAdaptiveProbes, err := s.tryAcquireGatewayAdaptiveAccountSlot(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, stickyAccount, requestedModel, stickyCapacity)
 							if err == nil && result.Acquired {
 								// 会话数量限制检查
 								if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
 									result.ReleaseFunc() // 释放槽位
+									releaseAdaptiveProbes()
 									stickyCacheMissReason = "session_limit"
 									// 继续到负载感知选择
 								} else {
@@ -563,6 +565,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 									}
 									if selectionErr != nil {
 										result.ReleaseFunc()
+										releaseAdaptiveProbes()
 									}
 									logAnthropicSelection("model_route_sticky", "slot_acquired", nil, selected, true, false, selectionErr != nil, selectionErr)
 									return selection, selectionErr
@@ -672,7 +675,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			if len(routingAvailable) > 0 {
-				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(routingAdaptiveMode, anthropicAdaptiveSettings, requestedModel, routingAvailable)
+				adaptiveRoutingOrder, adaptiveRoutingCapacities, adaptiveRoutingDecision := s.anthropicAdaptiveOrder(routingAdaptiveMode, anthropicAdaptiveSettings, requestedModel, adaptiveNewSession, routingAvailable)
 				adaptiveRoutingBlocked := routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && adaptiveRoutingDecision != nil && adaptiveRoutingDecision.FallbackReason == "all_circuits_open"
 				if adaptiveRoutingBlocked {
 					routingAvailable = nil
@@ -708,11 +711,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					if routingAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce {
 						maxConcurrency = adaptiveRoutingCapacities[item.account.ID]
 					}
-					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, maxConcurrency)
+					result, releaseAdaptiveProbes, err := s.tryAcquireGatewayAdaptiveAccountSlot(ctx, routingAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, item.account, requestedModel, maxConcurrency)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
 						if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
 							result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
+							releaseAdaptiveProbes()
 							continue
 						}
 						if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
@@ -730,6 +734,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 						if selectionErr != nil {
 							logErr = selectionErr
 							result.ReleaseFunc()
+							releaseAdaptiveProbes()
 						}
 						logAnthropicSelection("model_route", "slot_acquired", adaptiveRoutingDecision, selected, false, anthropicStickyWouldBypass, logErr != nil, logErr)
 						return selection, selectionErr
@@ -739,7 +744,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				// 5. 所有路由账号槽位满，尝试返回等待计划（选择负载最低的）
 				// 遍历找到第一个满足会话限制的账号
 				for _, item := range routingAvailable {
+					probeAllowed, releaseAdaptiveProbes := s.claimGatewayAdaptiveProbes(ctx, routingAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, item.account, requestedModel)
+					if !probeAllowed {
+						continue
+					}
 					if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
+						releaseAdaptiveProbes()
 						continue // 会话限制已满，尝试下一个
 					}
 					if s.debugModelRoutingEnabled() {
@@ -761,6 +771,9 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					})
 					if selection != nil {
 						selection.PreserveStickyBinding = preserveStickyBinding
+						s.registerGatewayAdaptiveAdmission(ctx, routingAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, item.account)
+					} else {
+						releaseAdaptiveProbes()
 					}
 					var selected *Account
 					if selection != nil {
@@ -842,12 +855,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 					if geminiAdaptiveMode != "" {
 						stickyCapacity = s.geminiAdaptiveCapacity(geminiAdaptiveMode, geminiAdaptiveSettings, account)
 					}
-					result, releaseGeminiProbe, err := s.tryAcquireGeminiAdaptiveAccountSlot(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, account, requestedModel, stickyCapacity)
+					result, releaseAdaptiveProbes, err := s.tryAcquireGatewayAdaptiveAccountSlot(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, account, requestedModel, stickyCapacity)
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
 						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
 							result.ReleaseFunc() // 释放槽位，继续到 Layer 2
-							releaseGeminiProbe()
+							releaseAdaptiveProbes()
 							slog.Debug("sticky.layer1_5_no_routing_miss",
 								"account_id", accountID,
 								"reason", "session_limit",
@@ -883,7 +896,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 							}
 							if selectionErr != nil {
 								result.ReleaseFunc()
-								releaseGeminiProbe()
+								releaseAdaptiveProbes()
 							}
 							logAnthropicSelection("sticky", "slot_acquired", nil, selected, true, false, selectionErr != nil, selectionErr)
 							return selection, selectionErr
@@ -894,35 +907,6 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 							preserveStickyBinding = true
 						}
 						if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce {
-							if !geminiAdaptiveSettings.GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull {
-								probeAllowed, releaseWaitProbe := s.claimGeminiAdaptiveCircuitProbe(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, account, requestedModel)
-								if probeAllowed {
-									if !s.checkAndRegisterSession(ctx, account, sessionHash) {
-										releaseWaitProbe()
-										return nil, ErrNoAvailableAccounts
-									}
-									s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
-										Mode:            geminiAdaptiveMode,
-										Scope:           "sticky",
-										Outcome:         "wait_plan",
-										RequestedModel:  requestedModel,
-										GroupID:         groupID,
-										SessionHash:     sessionHash,
-										SelectedAccount: account,
-										Sticky:          true,
-									})
-									selection, selectionErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-										AccountID:      accountID,
-										MaxConcurrency: stickyCapacity,
-										Timeout:        cfg.StickySessionWaitTimeout,
-										MaxWaiting:     cfg.StickySessionMaxWaiting,
-									})
-									if selectionErr != nil {
-										releaseWaitProbe()
-									}
-									return selection, selectionErr
-								}
-							}
 							preserveStickyBinding = true
 						}
 						slog.Debug("sticky.layer1_5_no_routing_slot_busy",
@@ -1133,13 +1117,14 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			return account.Concurrency
 		}
 		probeGate := func(account *Account) (bool, func()) {
-			return s.claimGeminiAdaptiveCircuitProbe(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, account, requestedModel)
+			return s.claimGatewayAdaptiveProbes(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, account, requestedModel)
 		}
 		result, ok, releaseLegacyProbe, legacyErr := s.tryAcquireByLegacyOrderWithGate(ctx, legacyCandidates, groupID, sessionHash, preferOAuth, bindLegacySticky, capacityFor, probeGate)
 		if legacyErr != nil {
 			logAnthropicSelection("load_balance", "legacy_fallback_failed", nil, nil, false, anthropicStickyWouldBypass, true, legacyErr)
 			return nil, legacyErr
 		} else if ok {
+			s.registerGatewayAdaptiveAdmission(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, result.Account)
 			logAnthropicSelection("load_balance", "legacy_fallback_slot_acquired", nil, result.Account, result.Account != nil && result.Account.ID == stickyAccountID, anthropicStickyWouldBypass, true, err)
 			if geminiAdaptiveMode != "" {
 				s.logGeminiAdaptiveDiagnosticDecision(ctx, geminiAdaptiveSettings, geminiAdaptiveDecisionLog{
@@ -1178,12 +1163,12 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 		}
 
-		adaptiveOrder, adaptiveCapacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, available)
+		adaptiveOrder, adaptiveCapacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, adaptiveNewSession, available)
 		adaptiveNormalDecision = decision
 		adaptiveBlocked := anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && decision != nil && decision.FallbackReason == "all_circuits_open"
 		geminiBaseline := append([]accountWithLoad(nil), available...)
 		sortGeminiAdaptiveBaseline(geminiBaseline, preferOAuth)
-		geminiOrder, geminiCapacities, geminiDecision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "load_balance", groupID, sessionHash, geminiBaseline, geminiQuotaSnapshots)
+		geminiOrder, geminiCapacities, geminiDecision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "load_balance", groupID, sessionHash, adaptiveNewSession, geminiBaseline, geminiQuotaSnapshots)
 		geminiAdaptiveNormalDecision = geminiDecision
 		geminiBlocked := geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && geminiDecision != nil && geminiDecision.FallbackReason == "all_native_gemini_circuits_open"
 		if geminiBlocked {
@@ -1197,13 +1182,13 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		if !adaptiveBlocked && adaptiveEnforced && len(adaptiveOrder) > 0 {
 			for _, selected := range adaptiveOrder {
 				maxConcurrency := adaptiveCapacities[selected.account.ID]
-				result, releaseGeminiProbe, acquireErr := s.tryAcquireGeminiAdaptiveAccountSlot(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, selected.account, requestedModel, maxConcurrency)
+				result, releaseAdaptiveProbes, acquireErr := s.tryAcquireGatewayAdaptiveAccountSlot(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, selected.account, requestedModel, maxConcurrency)
 				if acquireErr != nil || !result.Acquired {
 					continue
 				}
 				if !s.checkAndRegisterSession(ctx, selected.account, sessionHash) {
 					result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
-					releaseGeminiProbe()
+					releaseAdaptiveProbes()
 					continue
 				}
 				if sessionHash != "" && s.cache != nil && !preserveStickyBinding && geminiAdaptiveMode != GeminiAdaptiveSchedulerModeEnforce {
@@ -1212,7 +1197,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				selection, selectionErr := s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
 				if selectionErr != nil {
 					result.ReleaseFunc()
-					releaseGeminiProbe()
+					releaseAdaptiveProbes()
 					logAnthropicSelection("load_balance", "hydrate_failed", adaptiveNormalDecision, nil, false, anthropicStickyWouldBypass, true, selectionErr)
 					return nil, selectionErr
 				}
@@ -1232,7 +1217,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 				if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && sessionHash != "" {
 					prepared, prepareErr := s.prepareGeminiStickyMigration(ctx, selection, groupID, sessionHash, stickyAccountID, stickyAccountID > 0 && !preserveStickyBinding)
 					if prepareErr != nil {
-						releaseGeminiProbe()
+						releaseAdaptiveProbes()
 					}
 					return prepared, prepareErr
 				}
@@ -1307,7 +1292,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 			fallbackWithLoad = append(fallbackWithLoad, accountWithLoad{account: acc, loadInfo: loadInfo})
 		}
-		ordered, capacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, fallbackWithLoad)
+		ordered, capacities, decision := s.anthropicAdaptiveOrder(anthropicAdaptiveMode, anthropicAdaptiveSettings, requestedModel, adaptiveNewSession, fallbackWithLoad)
 		adaptiveFallbackDecision = decision
 		fallbackCapacities = capacities
 		adaptiveFallbackBlocked := anthropicAdaptiveMode == AnthropicAdaptiveSchedulerModeEnforce && decision != nil && decision.FallbackReason == "all_circuits_open"
@@ -1331,7 +1316,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 			fallbackWithLoad = append(fallbackWithLoad, accountWithLoad{account: acc, loadInfo: loadInfo})
 		}
-		ordered, capacities, decision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "fallback", groupID, sessionHash, fallbackWithLoad, geminiQuotaSnapshots)
+		ordered, capacities, decision := s.geminiAdaptiveOrder(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, requestedModel, "fallback", groupID, sessionHash, adaptiveNewSession, fallbackWithLoad, geminiQuotaSnapshots)
 		geminiAdaptiveFallbackDecision = decision
 		fallbackCapacities = capacities
 		if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && len(ordered) > 0 {
@@ -1344,13 +1329,13 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		s.sortCandidatesForFallback(fallbackCandidates, preferOAuth, cfg.FallbackSelectionMode)
 	}
 	for _, acc := range fallbackCandidates {
-		probeAllowed, releaseGeminiProbe := s.claimGeminiAdaptiveCircuitProbe(ctx, geminiAdaptiveMode, geminiAdaptiveSettings, acc, requestedModel)
+		probeAllowed, releaseAdaptiveProbes := s.claimGatewayAdaptiveProbes(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, acc, requestedModel)
 		if !probeAllowed {
 			continue
 		}
 		// 会话数量限制检查（等待计划也需要占用会话配额）
 		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
-			releaseGeminiProbe()
+			releaseAdaptiveProbes()
 			continue // 会话限制已满，尝试下一个账号
 		}
 		if geminiAdaptiveMode == GeminiAdaptiveSchedulerModeShadow {
@@ -1380,7 +1365,9 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 			selection.PreserveStickyBinding = preserveStickyBinding
 		}
 		if selectionErr != nil || selection == nil {
-			releaseGeminiProbe()
+			releaseAdaptiveProbes()
+		} else {
+			s.registerGatewayAdaptiveAdmission(ctx, anthropicAdaptiveMode, anthropicAdaptiveSettings, geminiAdaptiveMode, geminiAdaptiveSettings, acc)
 		}
 		decision := adaptiveNormalDecision
 		if decision == nil {
@@ -1410,7 +1397,7 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 		if selectionErr == nil && selection != nil && geminiAdaptiveMode == GeminiAdaptiveSchedulerModeEnforce && sessionHash != "" {
 			prepared, prepareErr := s.prepareGeminiStickyMigration(ctx, selection, groupID, sessionHash, stickyAccountID, stickyAccountID > 0 && !preserveStickyBinding)
 			if prepareErr != nil {
-				releaseGeminiProbe()
+				releaseAdaptiveProbes()
 			}
 			return prepared, prepareErr
 		}
@@ -1804,6 +1791,77 @@ func (s *GatewayService) tryAcquireAccountSlot(ctx context.Context, accountID in
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
 	return s.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+}
+
+func (s *GatewayService) claimGatewayAdaptiveProbes(
+	ctx context.Context,
+	anthropicMode string,
+	anthropicSettings AnthropicAdaptiveSchedulerSettings,
+	geminiMode string,
+	geminiSettings GeminiAdaptiveSchedulerSettings,
+	account *Account,
+	requestedModel string,
+) (bool, func()) {
+	noop := func() {}
+	anthropicAllowed, releaseAnthropic := s.claimAnthropicAdaptiveProbes(ctx, anthropicMode, anthropicSettings, account)
+	if !anthropicAllowed {
+		return false, noop
+	}
+	geminiAllowed, releaseGemini := s.claimGeminiAdaptiveCircuitProbe(ctx, geminiMode, geminiSettings, account, requestedModel)
+	if !geminiAllowed {
+		releaseAnthropic()
+		return false, noop
+	}
+	return true, func() {
+		releaseAnthropic()
+		releaseGemini()
+	}
+}
+
+func (s *GatewayService) registerGatewayAdaptiveAdmission(
+	ctx context.Context,
+	anthropicMode string,
+	anthropicSettings AnthropicAdaptiveSchedulerSettings,
+	geminiMode string,
+	geminiSettings GeminiAdaptiveSchedulerSettings,
+	account *Account,
+) {
+	if s == nil || account == nil {
+		return
+	}
+	requestID := firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
+	if anthropicMode == AnthropicAdaptiveSchedulerModeEnforce && account.Platform == PlatformAnthropic && s.anthropicAdaptiveScheduler != nil {
+		s.anthropicAdaptiveScheduler.core.registerAdmission(account.ID, requestID, account.Concurrency, s.anthropicAdaptiveScheduler.now(), anthropicAdaptiveCoreSettings(anthropicSettings))
+	}
+	if geminiMode == GeminiAdaptiveSchedulerModeEnforce && account.Platform == PlatformGemini && s.geminiAdaptiveScheduler != nil {
+		s.geminiAdaptiveScheduler.core.registerAdmission(account.ID, requestID, account.Concurrency, s.geminiAdaptiveScheduler.now(), geminiAdaptiveCoreSettings(geminiSettings))
+	}
+}
+
+func (s *GatewayService) tryAcquireGatewayAdaptiveAccountSlot(
+	ctx context.Context,
+	anthropicMode string,
+	anthropicSettings AnthropicAdaptiveSchedulerSettings,
+	geminiMode string,
+	geminiSettings GeminiAdaptiveSchedulerSettings,
+	account *Account,
+	requestedModel string,
+	maxConcurrency int,
+) (*AcquireResult, func(), error) {
+	allowed, releaseProbes := s.claimGatewayAdaptiveProbes(ctx, anthropicMode, anthropicSettings, geminiMode, geminiSettings, account, requestedModel)
+	if !allowed {
+		return &AcquireResult{}, func() {}, nil
+	}
+	result, err := s.tryAcquireAccountSlot(ctx, account.ID, maxConcurrency)
+	if result == nil {
+		result = &AcquireResult{}
+	}
+	if err != nil || !result.Acquired {
+		releaseProbes()
+		return result, func() {}, err
+	}
+	s.registerGatewayAdaptiveAdmission(ctx, anthropicMode, anthropicSettings, geminiMode, geminiSettings, account)
+	return result, releaseProbes, nil
 }
 
 type usageLogWindowStatsBatchProvider interface {

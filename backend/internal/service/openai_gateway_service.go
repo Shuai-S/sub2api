@@ -442,8 +442,8 @@ type OpenAIGatewayService struct {
 	openaiWSPool                   *openAIWSConnPool
 	openaiWSStateStore             OpenAIWSStateStore
 	openaiScheduler                OpenAIAccountScheduler
-	openaiAdaptiveState            *openAIAdaptiveSchedulerStateStore
-	openaiAdaptivePersistence      *openAIAdaptiveStatePersistence
+	openaiAdaptiveCore             *adaptiveStateStore
+	openaiAdaptivePersistence      *adaptiveCoreStatePersistence
 	openaiAdaptivePersistenceOnce  sync.Once
 	openaiWSPassthroughDialer      openAIWSClientDialer
 	openaiAccountStats             *openAIAccountRuntimeStats
@@ -493,7 +493,7 @@ func NewOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
-	adaptiveState := newOpenAIAdaptiveSchedulerStateStore()
+	adaptiveCore := newAdaptiveStateStore()
 	// enforceCodexIdentityHeaders 是 HTTP / 透传 / WS / 探针 等出站路径共用的纯函数收口点，
 	// 拿不到配置，故在此发布进程级开关快照。配置取反义，零值即「强制统一出口开启」。
 	if cfg != nil {
@@ -531,7 +531,7 @@ func NewOpenAIGatewayService(
 		balanceNotifyService:  balanceNotifyService,
 		settingService:        settingService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
-		openaiAdaptiveState:   adaptiveState,
+		openaiAdaptiveCore:    adaptiveCore,
 		liveAttestation:       liveattestation.NewProvider(),
 		liveAttestationCipher: newLiveAttestationCipher(cfg),
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),

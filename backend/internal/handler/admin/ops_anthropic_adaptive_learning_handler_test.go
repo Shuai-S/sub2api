@@ -5,7 +5,6 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +17,7 @@ func TestParseOpsAnthropicAdaptiveLearningFilter(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(
 		http.MethodGet,
-		"/?time_range=1h&group_id=12&model=claude-sonnet-4&status=healthy&top_n=50&sort_by=score&sort_order=asc",
+		"/?time_range=1h&group_id=12&learning_status=learned&runtime_status=healthy&top_n=50&sort_by=score&sort_order=asc",
 		nil,
 	)
 
@@ -27,8 +26,8 @@ func TestParseOpsAnthropicAdaptiveLearningFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1h", filter.TimeRange)
 	require.Equal(t, int64(12), *filter.GroupID)
-	require.Equal(t, "claude-sonnet-4", filter.RequestedModel)
-	require.Equal(t, "healthy", filter.Status)
+	require.Equal(t, "learned", filter.LearningStatus)
+	require.Equal(t, "healthy", filter.RuntimeStatus)
 	require.Equal(t, 50, filter.TopN)
 	require.Equal(t, "score", filter.SortBy)
 	require.Equal(t, "asc", filter.SortOrder)
@@ -46,7 +45,6 @@ func TestParseOpsAnthropicAdaptiveLearningFilterInvalidParams(t *testing.T) {
 		"/?page=0",
 		"/?page_size=101",
 		"/?limit=501",
-		"/?model=" + strings.Repeat("a", 257),
 	}
 
 	gin.SetMode(gin.TestMode)

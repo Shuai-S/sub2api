@@ -19,9 +19,9 @@ func TestOpenAIAdaptiveStateCacheSaveScanAndCleanup(t *testing.T) {
 	require.True(t, ok)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 
-	hashKey, expiryKey, err := adaptiveSchedulerStateKeys("openai")
+	hashKey, expiryKey, err := adaptiveSchedulerStateKeys("openai_v2")
 	require.NoError(t, err)
-	err = cache.SaveAdaptiveSchedulerStates(t.Context(), "openai", []service.AdaptiveSchedulerStateCacheEntry{
+	err = cache.SaveAdaptiveSchedulerStates(t.Context(), "openai_v2", []service.AdaptiveSchedulerStateCacheEntry{
 		{AccountID: 101, Payload: []byte(`{"account_id":101}`), ExpiresAt: now.Add(-time.Minute)},
 		{AccountID: 102, Payload: []byte(`{"account_id":102}`), ExpiresAt: now.Add(12 * time.Hour)},
 	}, 24*time.Hour)
@@ -32,12 +32,18 @@ func TestOpenAIAdaptiveStateCacheSaveScanAndCleanup(t *testing.T) {
 	require.Equal(t, 24*time.Hour, mr.TTL(hashKey))
 	require.Equal(t, 24*time.Hour, mr.TTL(expiryKey))
 
-	records, cursor, err := cache.ScanAdaptiveSchedulerStates(t.Context(), "openai", 0, 256)
+	records, cursor, err := cache.ScanAdaptiveSchedulerStates(t.Context(), "openai_v2", 0, 256)
 	require.NoError(t, err)
 	require.Zero(t, cursor)
 	require.Len(t, records, 2)
+	recordsByID := make(map[int64]string, len(records))
+	for _, record := range records {
+		recordsByID[record.AccountID] = string(record.Payload)
+	}
+	require.JSONEq(t, `{"account_id":101}`, recordsByID[101])
+	require.JSONEq(t, `{"account_id":102}`, recordsByID[102])
 
-	removed, err := cache.DeleteExpiredAdaptiveSchedulerStates(t.Context(), "openai", now, 256)
+	removed, err := cache.DeleteExpiredAdaptiveSchedulerStates(t.Context(), "openai_v2", now, 256)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), removed)
 	exists, err := rdb.HExists(t.Context(), hashKey, "101").Result()
@@ -52,6 +58,26 @@ func TestOpenAIAdaptiveStateCacheSaveScanAndCleanup(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAdaptiveSchedulerStateCacheScanSkipsInvalidAccountFields(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { require.NoError(t, rdb.Close()) })
+	cache, ok := NewGatewayCache(rdb).(service.AdaptiveSchedulerStateCache)
+	require.True(t, ok)
+	hashKey, _, err := adaptiveSchedulerStateKeys("gemini_v2")
+	require.NoError(t, err)
+	require.NoError(t, rdb.HSet(t.Context(), hashKey,
+		"not-an-account", "invalid",
+		"-1", "invalid",
+		"401", "valid",
+	).Err())
+
+	records, cursor, err := cache.ScanAdaptiveSchedulerStates(t.Context(), "gemini_v2", 0, 0)
+	require.NoError(t, err)
+	require.Zero(t, cursor)
+	require.Equal(t, []service.AdaptiveSchedulerStateCacheRecord{{AccountID: 401, Payload: []byte("valid")}}, records)
+}
+
 func TestOpenAIAdaptiveStateCacheRefreshesAccountExpiry(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -59,17 +85,17 @@ func TestOpenAIAdaptiveStateCacheRefreshesAccountExpiry(t *testing.T) {
 	cache, ok := NewGatewayCache(rdb).(service.AdaptiveSchedulerStateCache)
 	require.True(t, ok)
 	now := time.Now()
-	hashKey, _, err := adaptiveSchedulerStateKeys("openai")
+	hashKey, _, err := adaptiveSchedulerStateKeys("openai_v2")
 	require.NoError(t, err)
 
-	require.NoError(t, cache.SaveAdaptiveSchedulerStates(t.Context(), "openai", []service.AdaptiveSchedulerStateCacheEntry{
+	require.NoError(t, cache.SaveAdaptiveSchedulerStates(t.Context(), "openai_v2", []service.AdaptiveSchedulerStateCacheEntry{
 		{AccountID: 201, Payload: []byte("old"), ExpiresAt: now.Add(-time.Minute)},
 	}, 24*time.Hour))
-	require.NoError(t, cache.SaveAdaptiveSchedulerStates(t.Context(), "openai", []service.AdaptiveSchedulerStateCacheEntry{
+	require.NoError(t, cache.SaveAdaptiveSchedulerStates(t.Context(), "openai_v2", []service.AdaptiveSchedulerStateCacheEntry{
 		{AccountID: 201, Payload: []byte("new"), ExpiresAt: now.Add(12 * time.Hour)},
 	}, 24*time.Hour))
 
-	removed, err := cache.DeleteExpiredAdaptiveSchedulerStates(context.Background(), "openai", now, 256)
+	removed, err := cache.DeleteExpiredAdaptiveSchedulerStates(context.Background(), "openai_v2", now, 256)
 	require.NoError(t, err)
 	require.Zero(t, removed)
 	require.Equal(t, "new", mr.HGet(hashKey, "201"))
@@ -83,22 +109,22 @@ func TestAdaptiveSchedulerStateCacheKeepsNamespacesIsolated(t *testing.T) {
 	require.True(t, ok)
 	now := time.Now()
 
-	for _, namespace := range []string{"openai", "anthropic", "gemini"} {
+	for _, namespace := range []string{"openai_v2", "anthropic_v2", "gemini_v2"} {
 		require.NoError(t, cache.SaveAdaptiveSchedulerStates(t.Context(), namespace, []service.AdaptiveSchedulerStateCacheEntry{
 			{AccountID: 301, Payload: []byte(namespace), ExpiresAt: now.Add(-time.Minute)},
 		}, 24*time.Hour))
 	}
 
-	removed, err := cache.DeleteExpiredAdaptiveSchedulerStates(t.Context(), "anthropic", now, 256)
+	removed, err := cache.DeleteExpiredAdaptiveSchedulerStates(t.Context(), "anthropic_v2", now, 256)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), removed)
-	openAIHashKey, _, err := adaptiveSchedulerStateKeys("openai")
+	openAIHashKey, _, err := adaptiveSchedulerStateKeys("openai_v2")
 	require.NoError(t, err)
-	anthropicHashKey, _, err := adaptiveSchedulerStateKeys("anthropic")
+	anthropicHashKey, _, err := adaptiveSchedulerStateKeys("anthropic_v2")
 	require.NoError(t, err)
-	geminiHashKey, _, err := adaptiveSchedulerStateKeys("gemini")
+	geminiHashKey, _, err := adaptiveSchedulerStateKeys("gemini_v2")
 	require.NoError(t, err)
-	require.Equal(t, "openai", mr.HGet(openAIHashKey, "301"))
+	require.Equal(t, "openai_v2", mr.HGet(openAIHashKey, "301"))
 	require.False(t, mr.Exists(anthropicHashKey))
-	require.Equal(t, "gemini", mr.HGet(geminiHashKey, "301"))
+	require.Equal(t, "gemini_v2", mr.HGet(geminiHashKey, "301"))
 }

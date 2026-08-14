@@ -3,7 +3,6 @@ package service
 import (
 	"math"
 	"math/rand/v2"
-	"sort"
 	"time"
 )
 
@@ -15,8 +14,9 @@ type AnthropicAdaptiveCandidate struct {
 	ReliabilityScore  float64
 	CapacityScore     float64
 	LatencyScore      float64
+	CostScore         float64
 	ExplorationScore  float64
-	state             anthropicAdaptiveAccountState
+	coreState         adaptiveAccountState
 }
 
 type AnthropicAdaptiveDecision struct {
@@ -32,6 +32,7 @@ type AnthropicAdaptiveScheduleRequest struct {
 	RequestedModel string
 	Candidates     []accountWithLoad
 	Settings       *AnthropicAdaptiveSchedulerSettings
+	NewSession     bool
 }
 
 func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleRequest) (decision AnthropicAdaptiveDecision) {
@@ -40,7 +41,7 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 	defer func() {
 		decision.BuildLatencyMs = time.Since(startedAt).Milliseconds()
 	}()
-	if s == nil || s.state == nil || len(req.Candidates) == 0 {
+	if s == nil || s.core == nil || len(req.Candidates) == 0 {
 		decision.FallbackReason = "no_candidates"
 		return decision
 	}
@@ -49,6 +50,7 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 		settings = NormalizeAnthropicAdaptiveSchedulerSettings(*req.Settings)
 	}
 	now := s.now()
+	coreSettings := anthropicAdaptiveCoreSettings(settings)
 	candidates := make([]AnthropicAdaptiveCandidate, 0, len(req.Candidates))
 	for _, item := range req.Candidates {
 		if item.account == nil {
@@ -58,30 +60,26 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 		if load == nil {
 			load = &AccountLoadInfo{AccountID: item.account.ID}
 		}
-		state := s.state.observeLoad(item.account, load, now, settings)
-		if settings.AnthropicAdaptiveSchedulerMode == AnthropicAdaptiveSchedulerModeEnforce &&
-			!s.state.claimCircuitProbe(item.account, now, settings) {
+		state := s.core.observeLoad(item.account.ID, item.account.Concurrency, load.CurrentConcurrency, now, coreSettings)
+		if !s.core.allowedForSelection(item.account.ID, item.account.Concurrency, now, coreSettings) {
 			continue
 		}
-		if settings.AnthropicAdaptiveSchedulerMode == AnthropicAdaptiveSchedulerModeEnforce {
-			// claimCircuitProbe may transition an expired circuit into half-open;
-			// refresh the copy used by scoring/diagnostics so it reflects that
-			// lease rather than the pre-claim snapshot.
-			state = s.state.snapshot(item.account, settings)
+		if state.EffectiveCapacity > 0 && load.CurrentConcurrency >= state.EffectiveCapacity {
+			continue
 		}
 		candidates = append(candidates, AnthropicAdaptiveCandidate{
 			Account:           item.account,
 			LoadInfo:          load,
-			EffectiveCapacity: s.state.effectiveCapacity(item.account, settings),
-			state:             state,
+			EffectiveCapacity: state.EffectiveCapacity,
+			coreState:         state,
 		})
 	}
 	if len(candidates) == 0 {
 		decision.FallbackReason = "all_circuits_open"
 		return decision
 	}
-	applyAnthropicAdaptiveScores(candidates, req.RequestedModel, settings)
-	decision.Order = buildAnthropicAdaptiveOrder(candidates, settings)
+	applyAnthropicAdaptiveScores(candidates, req.RequestedModel, now, settings)
+	decision.Order = buildAnthropicAdaptiveOrder(candidates, settings, req.NewSession)
 	decision.CandidateCount = len(candidates)
 	decision.TopK = min(settings.AnthropicAdaptiveSchedulerTopK, len(candidates))
 	if len(decision.Order) > 0 {
@@ -90,84 +88,53 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 	return decision
 }
 
-func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, requestedModel string, settings AnthropicAdaptiveSchedulerSettings) {
-	family := anthropicAdaptiveModelFamily(requestedModel)
-	minLatency, maxLatency := math.Inf(1), math.Inf(-1)
-	hasLatency := false
-	latencies := make([]float64, len(candidates))
-	for i := range candidates {
-		latency := candidates[i].state.LatencyByModelFamily[family]
-		value := latency.TTFTEMA
-		if value <= 0 {
-			value = latency.LatencyEMA
-		}
-		latencies[i] = value
-		if value > 0 {
-			hasLatency = true
-			minLatency = math.Min(minLatency, value)
-			maxLatency = math.Max(maxLatency, value)
-		}
+func applyAnthropicAdaptiveScores(candidates []AnthropicAdaptiveCandidate, requestedModel string, now time.Time, settings AnthropicAdaptiveSchedulerSettings) {
+	_ = requestedModel
+	inputs := make([]adaptiveScoreCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		inputs = append(inputs, adaptiveScoreCandidate{
+			AccountID:          candidate.Account.ID,
+			OAuth:              candidate.Account.IsOAuth(),
+			Cost:               candidate.Account.BillingRateMultiplier(),
+			CurrentConcurrency: candidate.LoadInfo.CurrentConcurrency,
+			State:              candidate.coreState,
+		})
 	}
-
+	scored := scoreAdaptiveCandidates(inputs, now, anthropicAdaptiveCoreSettings(settings))
+	byID := make(map[int64]adaptiveScoreCandidate, len(scored))
+	for _, candidate := range scored {
+		byID[candidate.AccountID] = candidate
+	}
 	for i := range candidates {
-		candidate := &candidates[i]
-		health := candidate.state.HealthByModelFamily[family]
-		reliability := candidate.state.SuccessEMA
-		consecutiveFailure := candidate.state.ConsecutiveFailure
-		if health.TotalSamples > 0 {
-			reliability = health.SuccessEMA
-			consecutiveFailure = health.ConsecutiveFailure
+		score := byID[candidates[i].Account.ID]
+		candidates[i].Score = score.Score
+		candidates[i].ReliabilityScore = score.ReliabilityScore
+		candidates[i].CapacityScore = score.CapacityScore
+		candidates[i].LatencyScore = score.TTFTScore
+		candidates[i].CostScore = score.CostScore
+		if score.HealthSamples < anthropicAdaptiveCoreSettings(settings).LearningMinHealthSamples {
+			candidates[i].ExplorationScore = float64(anthropicAdaptiveCoreSettings(settings).LearningMinHealthSamples - score.HealthSamples)
 		}
-		candidate.ReliabilityScore = clamp01(reliability)
-		if consecutiveFailure > 0 {
-			candidate.ReliabilityScore /= 1 + settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty*float64(consecutiveFailure)
-		}
-		if candidate.EffectiveCapacity <= 0 {
-			candidate.CapacityScore = 1
-		} else {
-			remaining := candidate.EffectiveCapacity - candidate.LoadInfo.CurrentConcurrency
-			candidate.CapacityScore = clamp01(float64(remaining) / float64(candidate.EffectiveCapacity))
-		}
-		candidate.LatencyScore = settings.AnthropicAdaptiveSchedulerNeutralLatencyScore
-		if hasLatency && latencies[i] > 0 {
-			candidate.LatencyScore = 1 - normalizeAdaptiveValue(latencies[i], minLatency, maxLatency, 1-settings.AnthropicAdaptiveSchedulerNeutralLatencyScore)
-		}
-		candidate.ExplorationScore = 1 / math.Sqrt(float64(candidate.state.TotalSamples+1))
-		candidate.Score = settings.AnthropicAdaptiveSchedulerWeightReliability*candidate.ReliabilityScore +
-			settings.AnthropicAdaptiveSchedulerWeightCapacity*candidate.CapacityScore +
-			settings.AnthropicAdaptiveSchedulerWeightLatency*candidate.LatencyScore +
-			settings.AnthropicAdaptiveSchedulerWeightExploration*candidate.ExplorationScore
 	}
 }
 
-func buildAnthropicAdaptiveOrder(candidates []AnthropicAdaptiveCandidate, settings AnthropicAdaptiveSchedulerSettings) []AnthropicAdaptiveCandidate {
-	priorities := make([]int, 0)
-	byPriority := make(map[int][]AnthropicAdaptiveCandidate)
+func buildAnthropicAdaptiveOrder(candidates []AnthropicAdaptiveCandidate, settings AnthropicAdaptiveSchedulerSettings, newSessionValue ...bool) []AnthropicAdaptiveCandidate {
+	newSession := false
+	if len(newSessionValue) > 0 {
+		newSession = newSessionValue[0]
+	}
+	inputs := make([]adaptiveScoreCandidate, 0, len(candidates))
+	byID := make(map[int64]AnthropicAdaptiveCandidate, len(candidates))
 	for _, candidate := range candidates {
-		priority := candidate.Account.Priority
-		if _, ok := byPriority[priority]; !ok {
-			priorities = append(priorities, priority)
-		}
-		byPriority[priority] = append(byPriority[priority], candidate)
+		inputs = append(inputs, adaptiveScoreCandidate{AccountID: candidate.Account.ID, OAuth: candidate.Account.IsOAuth(), Score: candidate.Score, HealthSamples: len(candidate.coreState.HealthObservations)})
+		byID[candidate.Account.ID] = candidate
 	}
-	sort.Ints(priorities)
-	order := make([]AnthropicAdaptiveCandidate, 0, len(candidates))
-	for _, priority := range priorities {
-		ranked := byPriority[priority]
-		sort.SliceStable(ranked, func(i, j int) bool {
-			if ranked[i].Score != ranked[j].Score {
-				return ranked[i].Score > ranked[j].Score
-			}
-			if ranked[i].LoadInfo.LoadRate != ranked[j].LoadInfo.LoadRate {
-				return ranked[i].LoadInfo.LoadRate < ranked[j].LoadInfo.LoadRate
-			}
-			return ranked[i].Account.ID < ranked[j].Account.ID
-		})
-		topK := min(settings.AnthropicAdaptiveSchedulerTopK, len(ranked))
-		order = appendAnthropicAdaptiveSoftmaxOrder(order, ranked[:topK], settings.AnthropicAdaptiveSchedulerSoftmaxTemperature)
-		order = append(order, ranked[topK:]...)
+	ordered := orderAdaptiveCandidates(inputs, newSession, settings.AnthropicAdaptiveSchedulerMode == AnthropicAdaptiveSchedulerModeShadow, time.Now(), anthropicAdaptiveCoreSettings(settings))
+	result := make([]AnthropicAdaptiveCandidate, 0, len(ordered))
+	for _, candidate := range ordered {
+		result = append(result, byID[candidate.AccountID])
 	}
-	return order
+	return result
 }
 
 func appendAnthropicAdaptiveSoftmaxOrder(order, candidates []AnthropicAdaptiveCandidate, temperature float64) []AnthropicAdaptiveCandidate {

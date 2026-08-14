@@ -184,9 +184,7 @@ export default {
         empty: 'No OpenAI accounts for the current filters',
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
-        recentFailureRate: 'recent fail',
         cooldownRemaining: 'cooldown {value}',
-        balanceProbeAt: 'balance probe {value}',
         consecutiveFailures: 'fail streak {count}',
         totalAccounts: 'Total accounts: {total}',
         scoreNote: 'Current score is a 0-100 reference score for observing adaptive calculation in the current account pool; real scheduling still depends on model capability, sticky session, excluded accounts, and request context.',
@@ -199,15 +197,20 @@ export default {
           unavailable: 'Unavailable',
           cooldown: 'Cooldown',
           halfOpen: 'Half-open',
-          insufficientBalance: 'Insufficient balance',
+          quotaLimited: 'Quota limited',
           highError: 'High error',
           saturated: 'Saturated',
           learning: 'Learning',
           unlearned: 'Unlearned',
+          learned: 'Learned',
+          notApplicable: 'Not applicable',
           healthy: 'Healthy'
         },
         statusFilter: {
-          all: 'All statuses'
+          all: 'All learning states'
+        },
+        runtimeFilter: {
+          all: 'All runtime states'
         },
         summary: {
           tracked: 'Tracked',
@@ -218,23 +221,16 @@ export default {
         settings: {
           window: 'Window',
           noReset: 'No reset',
-          minSamples: 'Shrink samples',
-          shrinkThreshold: 'Shrink threshold',
-          halfOpenFailures: 'Half-open failures',
-          burstRatio: 'Burst probe',
+          minSamples: 'Learning samples',
           topK: 'TopK',
-          accountTypePriority: 'Type priority'
-        },
-        accountTypePriorityModes: {
-          mixed: 'Mixed',
-          oauthFirst: 'OAuth first',
-          apiKeyFirst: 'API Key first'
+          temperature: 'Softmax temp',
+          weights: 'R/C/T/$ weights'
         },
         table: {
           account: 'Account',
           status: 'Status',
           capacity: 'Capacity',
-          capacityHint: 'stable/effective/config',
+          capacityHint: 'effective/configured',
           load: 'Load',
           score: 'Current Score',
           samples: 'Samples',
@@ -244,7 +240,7 @@ export default {
       },
       anthropicAdaptiveLearning: {
         title: 'Anthropic Adaptive Scheduling Learning',
-        description: 'Shows Anthropic account learning state, capacity estimates, and model-family latency in shadow or enforce mode.',
+        description: 'Shows Anthropic account-level learning, runtime constraints, capacity, and unified scores.',
         disabled: 'Disabled',
         realtimeOff: 'Realtime concurrency off',
         openSettings: 'Scheduler Settings',
@@ -254,34 +250,33 @@ export default {
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
         successEma: 'success EMA',
-        failureStreaks: 'failure streak H {health} / C {capacity}',
-        capacityFailureRate: 'capacity fail',
+        failureStreaks: 'failure streak {count}',
         cooldownRemaining: 'cooldown {value}',
         totalAccounts: 'Total accounts: {total}',
-        scoreNote: 'Current score is a 0-100 reference score. R/C/L/E represent reliability, remaining capacity, selected model-family latency, and exploration. Real scheduling still prioritizes an available sticky account and depends on model capability, exclusions, and request context.',
+        scoreNote: 'Scores use a 0-100 scale. R/C/T/$ represent reliability, available capacity, time to first token, and dynamic cost within the active candidate layer. OAuth and setup-token accounts use the preferred layer.',
         mode: {
           enforce: 'Enforce',
           shadow: 'Shadow'
-        },
-        modelFamily: {
-          sonnet: 'Sonnet',
-          opus: 'Opus',
-          haiku: 'Haiku',
-          other: 'Other models',
-          tooltip: 'Select the Anthropic model family used for latency EMA and scheduling score calculation'
         },
         status: {
           disabled: 'Disabled',
           unavailable: 'Unavailable',
           cooldown: 'Cooldown',
-          highError: 'High capacity error',
+          halfOpen: 'Half-open',
+          quotaLimited: 'Quota limited',
+          highError: 'High error',
           saturated: 'Saturated',
           learning: 'Learning',
           unlearned: 'Unlearned',
+          learned: 'Learned',
+          notApplicable: 'Not applicable',
           healthy: 'Healthy'
         },
         statusFilter: {
-          all: 'All statuses'
+          all: 'All learning states'
+        },
+        runtimeFilter: {
+          all: 'All runtime states'
         },
         summary: {
           tracked: 'Tracked',
@@ -292,28 +287,25 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax temp',
-          weights: 'R/C/L/E weights',
+          weights: 'R/C/T/$ weights',
           window: 'Window',
-          minSamples: 'Shrink samples',
-          capacityFailures: 'Capacity failures',
-          shrinkThreshold: 'Shrink threshold',
-          shrinkFactors: 'Soft/hard shrink'
+          minSamples: 'Learning samples'
         },
         table: {
           account: 'Account',
           status: 'Status',
-          capacity: 'Learned Capacity',
-          capacityHint: 'estimated/config',
+          capacity: 'Effective Capacity',
+          capacityHint: 'effective/configured',
           load: 'Load',
           score: 'Current Score',
           samples: 'Samples',
-          latency: 'TTFT/Total',
+          latency: 'TTFT',
           lastEvent: 'Last Event'
         }
       },
       geminiAdaptiveLearning: {
         title: 'Gemini Adaptive Scheduling Learning',
-        description: 'Shows dynamic capacity, six-dimension scores, model-family EMAs, quota pace, and sticky migration metrics for the Gemini and Antigravity pool.',
+        description: 'Shows Gemini account-level learning, runtime constraints, dynamic capacity, unified scores, and quota eligibility.',
         disabled: 'Disabled',
         realtimeOff: 'Realtime concurrency off',
         openSettings: 'Scheduler Settings',
@@ -323,32 +315,33 @@ export default {
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
         successEma: 'success EMA',
-        failureStreaks: 'failure streak H {health} / C {capacity}',
-        capacityFailureRate: 'capacity fail',
+        failureStreaks: 'failure streak {count}',
         cooldownRemaining: 'cooldown {value}',
         totalAccounts: 'Total accounts: {total}',
-        scoreNote: 'Scores use a 0-100 reference scale. R/Q/C/L/$/E represent reliability, quota pace, remaining capacity, model-family latency, cost, and exploration. Real routing also enforces Priority tiers, model capability, sticky state, exclusions, and request context.',
+        scoreNote: 'Scores use a 0-100 scale. R/C/T/$ represent reliability, available capacity, time to first token, and dynamic cost within the active candidate layer. Quota only hard-filters candidates and is not scored.',
         mode: {
           enforce: 'Enforce',
           shadow: 'Shadow'
-        },
-        model: {
-          placeholder: 'Requested model',
-          tooltip: 'Enter the actual requested model used for model-family EMA, model mapping, and Pro/Flash quota snapshots'
         },
         status: {
           disabled: 'Disabled',
           unavailable: 'Unavailable',
           quotaLimited: 'Quota limited',
           cooldown: 'Cooldown',
-          highError: 'High capacity error',
+          halfOpen: 'Half-open',
+          highError: 'High error',
           saturated: 'Saturated',
           learning: 'Learning',
           unlearned: 'Unlearned',
+          learned: 'Learned',
+          notApplicable: 'Not applicable',
           healthy: 'Healthy'
         },
         statusFilter: {
-          all: 'All statuses'
+          all: 'All learning states'
+        },
+        runtimeFilter: {
+          all: 'All runtime states'
         },
         summary: {
           tracked: 'Tracked',
@@ -359,8 +352,7 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax temp',
-          weights: 'R/Q/C/L/$/E weights',
-          stickyEscape: 'Sticky migration',
+          weights: 'R/C/T/$ weights',
           window: 'Window'
         },
         metrics: {

@@ -807,10 +807,10 @@ type GatewayService struct {
 	modelsListCacheTTL         time.Duration
 	settingService             *SettingService
 	anthropicAdaptiveScheduler *anthropicAdaptiveScheduler
-	anthropicStatePersistence  *anthropicAdaptiveStatePersistence
+	anthropicStatePersistence  *adaptiveCoreStatePersistence
 	anthropicStatePersistOnce  sync.Once
 	geminiAdaptiveScheduler    *geminiAdaptiveScheduler
-	geminiStatePersistence     *geminiAdaptiveStatePersistence
+	geminiStatePersistence     *adaptiveCoreStatePersistence
 	geminiStatePersistOnce     sync.Once
 	responseHeaderFilter       *responseheaders.CompiledHeaderFilter
 	debugModelRouting          atomic.Bool

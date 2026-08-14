@@ -28,8 +28,6 @@ type GeminiAdaptiveSchedulerLearningSnapshot struct {
 	Mode            string    `json:"mode"`
 	RealtimeEnabled bool      `json:"realtime_enabled"`
 	GeneratedAt     time.Time `json:"generated_at"`
-	RequestedModel  string    `json:"requested_model,omitempty"`
-	ModelFamily     string    `json:"model_family"`
 	TimeRange       string    `json:"time_range,omitempty"`
 	StartTime       time.Time `json:"start_time,omitempty"`
 	EndTime         time.Time `json:"end_time,omitempty"`
@@ -52,14 +50,14 @@ type GeminiAdaptiveSchedulerLearningSnapshot struct {
 
 type GeminiAdaptiveSchedulerLearningFilter struct {
 	GroupID        *int64
-	RequestedModel string
 	TimeRange      string
 	StartTime      time.Time
 	EndTime        time.Time
 	TopN           int
 	Page           int
 	PageSize       int
-	Status         string
+	LearningStatus string
+	RuntimeStatus  string
 	SortBy         string
 	SortOrder      string
 }
@@ -69,53 +67,48 @@ func (f *GeminiAdaptiveSchedulerLearningFilter) IsTopNMode() bool {
 }
 
 type GeminiAdaptiveSchedulerLearningSettingsSnapshot struct {
-	StickyEscapeOnCapacityFull bool    `json:"sticky_escape_on_capacity_full"`
-	TopK                       int     `json:"top_k"`
-	SoftmaxTemperature         float64 `json:"softmax_temperature"`
-	WeightReliability          float64 `json:"weight_reliability"`
-	WeightQuota                float64 `json:"weight_quota"`
-	WeightCapacity             float64 `json:"weight_capacity"`
-	WeightLatency              float64 `json:"weight_latency"`
-	WeightCost                 float64 `json:"weight_cost"`
-	WeightExploration          float64 `json:"weight_exploration"`
-	InitialReliability         float64 `json:"initial_reliability"`
-	NeutralLatencyScore        float64 `json:"neutral_latency_score"`
-	NeutralQuotaScore          float64 `json:"neutral_quota_score"`
-	CapacityFailureThreshold   int     `json:"capacity_failure_threshold"`
-	MinRecentSamplesForShrink  int     `json:"min_recent_samples_for_shrink"`
-	ShrinkErrorThreshold       float64 `json:"shrink_error_threshold"`
-	LearningWindowSeconds      int     `json:"learning_window_seconds"`
-	CooldownSeconds            int     `json:"cooldown_seconds"`
-	CooldownMaxSeconds         int     `json:"cooldown_max_seconds"`
-	AccountFailureThreshold    int     `json:"account_failure_threshold"`
-	ModelFailureThreshold      int     `json:"model_failure_threshold"`
-	HalfOpenProbeLeaseSeconds  int     `json:"half_open_probe_lease_seconds"`
-	CapacityIncreaseStep       int     `json:"capacity_increase_step"`
-	MinCapacity                int     `json:"min_capacity"`
-	DiagnosticLogEnabled       bool    `json:"diagnostic_log_enabled"`
-	DiagnosticLogSampleRate    float64 `json:"diagnostic_log_sample_rate"`
+	TopK                      int     `json:"top_k"`
+	SoftmaxTemperature        float64 `json:"softmax_temperature"`
+	ExplorationRate           float64 `json:"exploration_rate"`
+	ConsecutiveFailurePenalty float64 `json:"consecutive_failure_penalty"`
+	WeightReliability         float64 `json:"weight_reliability"`
+	WeightCapacity            float64 `json:"weight_capacity"`
+	WeightLatency             float64 `json:"weight_ttft"`
+	WeightCost                float64 `json:"weight_cost"`
+	LearningWindowSeconds     int     `json:"learning_window_seconds"`
+	LearningMinHealthSamples  int     `json:"learning_min_health_samples"`
+	SuccessEMAAlpha           float64 `json:"success_ema_alpha"`
+	TTFTEMAAlpha              float64 `json:"ttft_ema_alpha"`
+	CooldownSeconds           int     `json:"cooldown_seconds"`
+	CooldownMaxSeconds        int     `json:"cooldown_max_seconds"`
+	AccountFailureThreshold   int     `json:"account_failure_threshold"`
+	HighErrorMinSamples       int     `json:"high_error_min_samples"`
+	HighErrorMaxSamples       int     `json:"high_error_max_samples"`
+	HighErrorEnterRate        float64 `json:"high_error_enter_rate"`
+	HighErrorExitRate         float64 `json:"high_error_exit_rate"`
+	CapacityShrinkFactor      float64 `json:"capacity_shrink_factor"`
+	CapacityGrowthFactor      float64 `json:"capacity_growth_factor"`
+	CapacityRecoverySamples   int     `json:"capacity_recovery_samples"`
+	CapacityRecoveryLoad      float64 `json:"capacity_recovery_load"`
+	QuotaProbeIntervalSeconds int     `json:"quota_probe_interval_seconds"`
+	DiagnosticLogEnabled      bool    `json:"diagnostic_log_enabled"`
+	DiagnosticLogSampleRate   float64 `json:"diagnostic_log_sample_rate"`
 }
 
 type GeminiAdaptiveSchedulerLearningSummary struct {
-	TrackedAccounts      int `json:"tracked_accounts"`
-	DisabledAccounts     int `json:"disabled_accounts"`
-	UnavailableAccounts  int `json:"unavailable_accounts"`
-	QuotaLimitedAccounts int `json:"quota_limited_accounts"`
-	CooldownAccounts     int `json:"cooldown_accounts"`
-	HighErrorAccounts    int `json:"high_error_accounts"`
-	SaturatedAccounts    int `json:"saturated_accounts"`
-	LearningAccounts     int `json:"learning_accounts"`
-	UnlearnedAccounts    int `json:"unlearned_accounts"`
-	HealthyAccounts      int `json:"healthy_accounts"`
-}
-
-type GeminiAdaptiveModelLearningSnapshot struct {
-	ModelFamily string  `json:"model_family"`
-	SuccessEMA  float64 `json:"success_ema"`
-	TTFTEMA     float64 `json:"ttft_ema"`
-	LatencyEMA  float64 `json:"latency_ema"`
-	Samples     int64   `json:"samples"`
-	Failures    int64   `json:"failures"`
+	TrackedAccounts       int `json:"tracked_accounts"`
+	DisabledAccounts      int `json:"disabled_accounts"`
+	UnavailableAccounts   int `json:"unavailable_accounts"`
+	QuotaLimitedAccounts  int `json:"quota_limited_accounts"`
+	CooldownAccounts      int `json:"cooldown_accounts"`
+	HighErrorAccounts     int `json:"high_error_accounts"`
+	SaturatedAccounts     int `json:"saturated_accounts"`
+	LearningAccounts      int `json:"learning_accounts"`
+	UnlearnedAccounts     int `json:"unlearned_accounts"`
+	HealthyAccounts       int `json:"healthy_accounts"`
+	LearnedAccounts       int `json:"learned_accounts"`
+	NotApplicableAccounts int `json:"not_applicable_accounts"`
+	HalfOpenAccounts      int `json:"half_open_accounts"`
 }
 
 type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
@@ -125,63 +118,51 @@ type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
 	Type          string `json:"type"`
 	AccountStatus string `json:"account_status"`
 	Schedulable   bool   `json:"schedulable"`
-	Priority      int    `json:"priority"`
 
 	ConfiguredConcurrency int     `json:"configured_concurrency"`
-	EstimatedCapacity     int     `json:"estimated_capacity"`
 	EffectiveCapacity     int     `json:"effective_capacity"`
 	RateMultiplier        float64 `json:"rate_multiplier"`
 	CurrentConcurrency    int     `json:"current_concurrency"`
 	WaitingCount          int     `json:"waiting_count"`
 	LoadPercentage        float64 `json:"load_percentage"`
 
-	SchedulerStatus string `json:"scheduler_status"`
-	StatusReason    string `json:"status_reason,omitempty"`
-	Learned         bool   `json:"learned"`
+	SchedulerStatus    string   `json:"scheduler_status"`
+	StatusReason       string   `json:"status_reason,omitempty"`
+	Learned            bool     `json:"learned"`
+	LearningStatus     string   `json:"learning_status"`
+	RuntimeStatus      string   `json:"runtime_status"`
+	RuntimeFlags       []string `json:"runtime_flags"`
+	RuntimeReasonCode  string   `json:"runtime_reason_code,omitempty"`
+	RuntimeReason      string   `json:"runtime_reason,omitempty"`
+	HealthSamples      int      `json:"health_samples"`
+	CapacityGeneration uint64   `json:"capacity_generation"`
+	CapacityHalfOpen   bool     `json:"capacity_half_open"`
 
 	SchedulerScore   float64 `json:"scheduler_score"`
 	ReliabilityScore float64 `json:"reliability_score"`
-	QuotaScore       float64 `json:"quota_score"`
 	CapacityScore    float64 `json:"capacity_score"`
 	LatencyScore     float64 `json:"latency_score"`
 	CostScore        float64 `json:"cost_score"`
-	ExplorationScore float64 `json:"exploration_score"`
 
-	PathSuccessEMA  float64                               `json:"path_success_ema"`
-	ModelFamily     string                                `json:"model_family"`
-	ModelSuccessEMA float64                               `json:"model_success_ema"`
-	TTFTEMA         float64                               `json:"ttft_ema"`
-	LatencyEMA      float64                               `json:"latency_ema"`
-	ModelSamples    int64                                 `json:"model_samples"`
-	ModelFailures   int64                                 `json:"model_failures"`
-	ByModelFamily   []GeminiAdaptiveModelLearningSnapshot `json:"by_model_family"`
+	PathSuccessEMA float64 `json:"path_success_ema"`
+	TTFTEMA        float64 `json:"ttft_ema"`
+	TTFTSamples    int64   `json:"ttft_samples"`
 
-	Quota GeminiAdaptiveQuotaSnapshot `json:"quota"`
+	Quota *GeminiAdaptiveQuotaSnapshot `json:"quota,omitempty"`
 
-	TotalSamples               int64   `json:"total_samples"`
-	RecentHealthSamples        int     `json:"recent_health_samples"`
-	RecentHealthFailures       int     `json:"recent_health_failures"`
-	RecentHealthFailureRate    float64 `json:"recent_health_failure_rate"`
-	RecentCapacitySamples      int     `json:"recent_capacity_samples"`
-	RecentCapacityFailures     int     `json:"recent_capacity_failures"`
-	RecentCapacityFailureRate  float64 `json:"recent_capacity_failure_rate"`
-	ConsecutiveSuccess         int     `json:"consecutive_success"`
-	ConsecutiveFailure         int     `json:"consecutive_failure"`
-	ConsecutiveCapacityFailure int     `json:"consecutive_capacity_failure"`
+	TotalSamples       int64 `json:"total_samples"`
+	ConsecutiveFailure int   `json:"consecutive_failure"`
 
-	LearningWindowStartedAt *time.Time `json:"learning_window_started_at,omitempty"`
-	LastSuccessAt           *time.Time `json:"last_success_at,omitempty"`
-	LastFailureAt           *time.Time `json:"last_failure_at,omitempty"`
-	LastCapacityFailureAt   *time.Time `json:"last_capacity_failure_at,omitempty"`
-	CooldownUntil           *time.Time `json:"cooldown_until,omitempty"`
-	CooldownRemainingSec    int64      `json:"cooldown_remaining_sec"`
-	CanonicalModel          string     `json:"canonical_model,omitempty"`
-	AccountCircuitStatus    string     `json:"account_circuit_status"`
-	AccountCircuitOpenUntil *time.Time `json:"account_circuit_open_until,omitempty"`
-	AccountCircuitFailures  int        `json:"account_circuit_failures"`
-	ModelCircuitStatus      string     `json:"model_circuit_status"`
-	ModelCircuitOpenUntil   *time.Time `json:"model_circuit_open_until,omitempty"`
-	ModelCircuitFailures    int        `json:"model_circuit_failures"`
+	LastSuccessAt             *time.Time `json:"last_success_at,omitempty"`
+	LastFailureAt             *time.Time `json:"last_failure_at,omitempty"`
+	CooldownUntil             *time.Time `json:"cooldown_until,omitempty"`
+	CooldownRemainingSec      int64      `json:"cooldown_remaining_sec"`
+	CircuitOpenCount          int        `json:"circuit_open_count"`
+	CapacityCooldownUntil     *time.Time `json:"capacity_cooldown_until,omitempty"`
+	CapacityRecoverySuccesses int        `json:"capacity_recovery_successes"`
+	QuotaLimited              bool       `json:"quota_limited"`
+	QuotaResetAt              *time.Time `json:"quota_reset_at,omitempty"`
+	QuotaNextProbeAt          *time.Time `json:"quota_next_probe_at,omitempty"`
 }
 
 func (s *OpsService) GetGeminiAdaptiveSchedulerLearningSnapshot(ctx context.Context, filter *GeminiAdaptiveSchedulerLearningFilter) (*GeminiAdaptiveSchedulerLearningSnapshot, error) {
@@ -198,11 +179,11 @@ func (s *OpsService) GetGeminiAdaptiveSchedulerLearningSnapshot(ctx context.Cont
 	}
 
 	cfg := DefaultGeminiAdaptiveSchedulerSettings()
-	var stateStore *geminiAdaptiveStateStore
+	var stateStore *adaptiveStateStore
 	metrics := GeminiAdaptiveMetricsSnapshot{}
 	if s != nil && s.gatewayService != nil {
 		cfg = s.gatewayService.geminiAdaptiveSchedulerSettingsForSnapshot(ctx)
-		stateStore = s.gatewayService.geminiAdaptiveSchedulerStateStoreForSnapshot()
+		stateStore = s.gatewayService.geminiAdaptiveSchedulerCoreStateStoreForSnapshot()
 		if s.gatewayService.geminiAdaptiveScheduler != nil {
 			metrics = s.gatewayService.geminiAdaptiveScheduler.SnapshotMetrics()
 		}
@@ -216,33 +197,22 @@ func (s *OpsService) GetGeminiAdaptiveSchedulerLearningSnapshot(ctx context.Cont
 	accounts = filterGeminiAdaptiveLearningSchedulableAccounts(accounts)
 
 	now := time.Now()
-	states := make(map[int64]geminiAdaptiveAccountState, len(accounts))
+	coreStates := make(map[int64]adaptiveAccountState, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
-	accountPtrs := make([]*Account, 0, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
-		state := defaultGeminiAdaptiveAccountState(account, now, cfg)
+		coreState := newAdaptiveAccountState(account.ID, account.Concurrency, now)
 		if stateStore != nil {
-			state = stateStore.snapshot(account, cfg)
+			snapshot := stateStore.snapshot(account.ID, account.Concurrency, now, geminiAdaptiveCoreSettings(cfg))
+			coreState = &snapshot
 		}
-		states[account.ID] = state
-		loadReq = append(loadReq, AccountWithConcurrency{ID: account.ID, MaxConcurrency: normalizedGeminiAdaptiveCapacity(account, state)})
-		accountPtrs = append(accountPtrs, account)
+		coreStates[account.ID] = *coreState
+		loadReq = append(loadReq, AccountWithConcurrency{ID: account.ID, MaxConcurrency: coreState.EffectiveCapacity})
 	}
 	loadMap := map[int64]*AccountLoadInfo{}
 	if realtimeEnabled {
 		loadMap = s.getGeminiAdaptiveLearningLoadMapBestEffort(ctx, loadReq)
 	}
-	quotaMap := map[int64]GeminiAdaptiveQuotaSnapshot{}
-	if filter.RequestedModel != "" && s != nil && s.gatewayService != nil && s.gatewayService.rateLimitService != nil {
-		_, snapshots, quotaErr := s.gatewayService.rateLimitService.PreCheckUsageBatchWithSnapshots(ctx, accountPtrs, filter.RequestedModel)
-		if quotaErr != nil {
-			log.Printf("[Ops] Gemini adaptive quota snapshot failed: %v", quotaErr)
-		} else {
-			quotaMap = snapshots
-		}
-	}
-
 	rows := make([]GeminiAdaptiveSchedulerAccountLearningSnapshot, 0, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
@@ -250,10 +220,11 @@ func (s *OpsService) GetGeminiAdaptiveSchedulerLearningSnapshot(ctx context.Cont
 		if loadInfo == nil {
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
-		rows = append(rows, buildGeminiAdaptiveLearningAccountSnapshot(account, states[account.ID], cfg, loadInfo, quotaMap[account.ID], filter.RequestedModel, now))
+		row := buildGeminiAdaptiveCoreLearningAccountSnapshot(account, coreStates[account.ID], loadInfo, now, geminiAdaptiveCoreSettings(cfg))
+		rows = append(rows, row)
 	}
-	applyGeminiAdaptiveLearningScores(rows, accounts, states, loadMap, quotaMap, filter.RequestedModel, cfg, now)
-	rows = filterGeminiAdaptiveLearningRowsByStatus(rows, filter.Status)
+	applyGeminiAdaptiveCoreScores(rows, accounts, coreStates, loadMap, now, geminiAdaptiveCoreSettings(cfg))
+	rows = filterGeminiAdaptiveLearningRowsByDualStatus(rows, filter.LearningStatus, filter.RuntimeStatus)
 	rows = filterGeminiAdaptiveLearningRowsByTime(rows, filter.StartTime, filter.EndTime)
 	sortGeminiAdaptiveLearningRows(rows, filter.SortBy, filter.SortOrder)
 
@@ -275,8 +246,7 @@ func (s *OpsService) GetGeminiAdaptiveSchedulerLearningSnapshot(ctx context.Cont
 
 	return &GeminiAdaptiveSchedulerLearningSnapshot{
 		Enabled: cfg.GeminiAdaptiveSchedulerEnabled, Mode: cfg.GeminiAdaptiveSchedulerMode,
-		RealtimeEnabled: realtimeEnabled, GeneratedAt: now.UTC(), RequestedModel: filter.RequestedModel,
-		ModelFamily: geminiAdaptiveModelFamily(filter.RequestedModel, "generateContent"), TimeRange: filter.TimeRange,
+		RealtimeEnabled: realtimeEnabled, GeneratedAt: now.UTC(), TimeRange: filter.TimeRange,
 		StartTime: filter.StartTime.UTC(), EndTime: filter.EndTime.UTC(), TotalAccounts: total, Total: total,
 		ReturnedAccounts: len(rows), Limit: limit, Page: filter.Page, PageSize: filter.PageSize, TopN: filter.TopN,
 		SortBy: filter.SortBy, SortOrder: filter.SortOrder, Settings: geminiAdaptiveLearningSettingsSnapshot(cfg),
@@ -297,11 +267,114 @@ func (s *GatewayService) geminiAdaptiveSchedulerSettingsForSnapshot(ctx context.
 	return NormalizeGeminiAdaptiveSchedulerSettings(settings)
 }
 
-func (s *GatewayService) geminiAdaptiveSchedulerStateStoreForSnapshot() *geminiAdaptiveStateStore {
+func (s *GatewayService) geminiAdaptiveSchedulerCoreStateStoreForSnapshot() *adaptiveStateStore {
 	if s == nil || s.geminiAdaptiveScheduler == nil {
 		return nil
 	}
-	return s.geminiAdaptiveScheduler.state
+	return s.geminiAdaptiveScheduler.core
+}
+
+func buildGeminiAdaptiveCoreLearningAccountSnapshot(account *Account, state adaptiveAccountState, load *AccountLoadInfo, now time.Time, settings adaptiveCoreSettings) GeminiAdaptiveSchedulerAccountLearningSnapshot {
+	if account == nil {
+		return GeminiAdaptiveSchedulerAccountLearningSnapshot{}
+	}
+	if load == nil {
+		load = &AccountLoadInfo{AccountID: account.ID}
+	}
+	learning, samples := adaptiveLearningState(state, account.IsOAuth(), now, settings)
+	runtimeStatus, flags, reasonCode, reason := adaptiveRuntimeState(state, account.IsActive() && account.Schedulable, load.CurrentConcurrency, now)
+	row := GeminiAdaptiveSchedulerAccountLearningSnapshot{
+		AccountID:                 account.ID,
+		AccountName:               account.Name,
+		Platform:                  account.Platform,
+		Type:                      account.Type,
+		AccountStatus:             account.Status,
+		Schedulable:               account.IsSchedulable(),
+		ConfiguredConcurrency:     account.Concurrency,
+		EffectiveCapacity:         state.EffectiveCapacity,
+		RateMultiplier:            account.BillingRateMultiplier(),
+		CurrentConcurrency:        load.CurrentConcurrency,
+		WaitingCount:              load.WaitingCount,
+		LoadPercentage:            adaptiveLoadRate(load, state.EffectiveCapacity),
+		SchedulerStatus:           string(runtimeStatus),
+		StatusReason:              reason,
+		Learned:                   learning == adaptiveLearningLearned || learning == adaptiveLearningNotApplicable,
+		LearningStatus:            string(learning),
+		RuntimeStatus:             string(runtimeStatus),
+		RuntimeFlags:              make([]string, 0, len(flags)),
+		RuntimeReasonCode:         reasonCode,
+		RuntimeReason:             reason,
+		HealthSamples:             samples,
+		CapacityGeneration:        state.CapacityGeneration,
+		CapacityHalfOpen:          state.CapacityHalfOpen,
+		PathSuccessEMA:            state.SuccessEMA,
+		TTFTEMA:                   state.TTFTEMA,
+		TTFTSamples:               state.TTFTSamples,
+		TotalSamples:              int64(samples),
+		ConsecutiveFailure:        state.ConsecutiveFailures,
+		LastSuccessAt:             geminiAdaptiveTimePtr(state.LastSuccessAt),
+		LastFailureAt:             geminiAdaptiveTimePtr(state.LastFailureAt),
+		CooldownUntil:             geminiAdaptiveTimePtr(state.CircuitOpenUntil),
+		CircuitOpenCount:          state.CircuitOpenCount,
+		CapacityCooldownUntil:     geminiAdaptiveTimePtr(state.CapacityCooldownUntil),
+		CapacityRecoverySuccesses: state.CapacityRecoverySuccesses,
+		QuotaLimited:              state.QuotaLimited,
+		QuotaResetAt:              geminiAdaptiveTimePtr(state.QuotaResetAt),
+		QuotaNextProbeAt:          geminiAdaptiveTimePtr(state.QuotaNextProbeAt),
+	}
+	for _, flag := range flags {
+		row.RuntimeFlags = append(row.RuntimeFlags, string(flag))
+	}
+	if state.CircuitOpenUntil.After(now) {
+		row.CooldownRemainingSec = int64(state.CircuitOpenUntil.Sub(now).Seconds())
+		if row.CooldownRemainingSec < 1 {
+			row.CooldownRemainingSec = 1
+		}
+	}
+	return row
+}
+
+func applyGeminiAdaptiveCoreScores(rows []GeminiAdaptiveSchedulerAccountLearningSnapshot, accounts []Account, states map[int64]adaptiveAccountState, loads map[int64]*AccountLoadInfo, now time.Time, settings adaptiveCoreSettings) {
+	inputs := make([]adaptiveScoreCandidate, 0, len(accounts))
+	for i := range accounts {
+		account := &accounts[i]
+		load := loads[account.ID]
+		if load == nil {
+			load = &AccountLoadInfo{AccountID: account.ID}
+		}
+		inputs = append(inputs, adaptiveScoreCandidate{AccountID: account.ID, OAuth: account.IsOAuth(), Cost: account.BillingRateMultiplier(), CurrentConcurrency: load.CurrentConcurrency, State: states[account.ID]})
+	}
+	byID := make(map[int64]adaptiveScoreCandidate, len(inputs))
+	for _, score := range scoreAdaptiveCandidates(inputs, now, settings) {
+		byID[score.AccountID] = score
+	}
+	for i := range rows {
+		score := byID[rows[i].AccountID]
+		rows[i].SchedulerScore = score.Score
+		rows[i].ReliabilityScore = score.ReliabilityScore
+		rows[i].CapacityScore = score.CapacityScore
+		rows[i].LatencyScore = score.TTFTScore
+		rows[i].CostScore = score.CostScore
+	}
+}
+
+func filterGeminiAdaptiveLearningRowsByDualStatus(rows []GeminiAdaptiveSchedulerAccountLearningSnapshot, learningStatus, runtimeStatus string) []GeminiAdaptiveSchedulerAccountLearningSnapshot {
+	learningStatus = strings.ToLower(strings.TrimSpace(learningStatus))
+	runtimeStatus = strings.ToLower(strings.TrimSpace(runtimeStatus))
+	if learningStatus == "" && runtimeStatus == "" {
+		return rows
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		if learningStatus != "" && row.LearningStatus != learningStatus {
+			continue
+		}
+		if runtimeStatus != "" && row.RuntimeStatus != runtimeStatus {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 func (s *OpsService) getGeminiAdaptiveLearningLoadMapBestEffort(ctx context.Context, accounts []AccountWithConcurrency) map[int64]*AccountLoadInfo {
@@ -349,138 +422,6 @@ func filterGeminiAdaptiveLearningSchedulableAccounts(accounts []Account) []Accou
 	return out
 }
 
-func normalizedGeminiAdaptiveCapacity(account *Account, state geminiAdaptiveAccountState) int {
-	if account == nil || account.Concurrency <= 0 {
-		return 0
-	}
-	capacity := state.EstimatedCapacity
-	if capacity <= 0 || capacity > account.Concurrency {
-		capacity = account.Concurrency
-	}
-	return capacity
-}
-
-func buildGeminiAdaptiveLearningAccountSnapshot(account *Account, state geminiAdaptiveAccountState, cfg GeminiAdaptiveSchedulerSettings, load *AccountLoadInfo, quota GeminiAdaptiveQuotaSnapshot, requestedModel string, now time.Time) GeminiAdaptiveSchedulerAccountLearningSnapshot {
-	if load == nil {
-		load = &AccountLoadInfo{}
-	}
-	capacity := normalizedGeminiAdaptiveCapacity(account, state)
-	healthFailureRate := adaptiveFailureRate(state.RecentHealthFailures, state.RecentHealthSamples)
-	capacityFailureRate := adaptiveFailureRate(state.RecentCapacityFailures, state.RecentCapacitySamples)
-	status, reason := geminiAdaptiveLearningAccountStatus(account, state, cfg, load, quota, capacity, capacityFailureRate, requestedModel, now)
-	cooldownRemaining := int64(0)
-	if state.CooldownUntil.After(now) {
-		cooldownRemaining = int64(state.CooldownUntil.Sub(now).Seconds())
-		if cooldownRemaining < 1 {
-			cooldownRemaining = 1
-		}
-	}
-	family := geminiAdaptiveModelFamily(requestedModel, "generateContent")
-	modelState := state.ByModelFamily[family]
-	canonicalModel := geminiAdaptiveCanonicalModel(account, requestedModel, "", "generateContent")
-	modelCircuit := state.ModelCircuits[canonicalModel]
-	return GeminiAdaptiveSchedulerAccountLearningSnapshot{
-		AccountID: account.ID, AccountName: account.Name, Platform: account.Platform, Type: account.Type,
-		AccountStatus: account.Status, Schedulable: account.IsSchedulable(), Priority: account.Priority,
-		ConfiguredConcurrency: account.Concurrency, EstimatedCapacity: capacity, EffectiveCapacity: capacity,
-		RateMultiplier:     account.BillingRateMultiplier(),
-		CurrentConcurrency: load.CurrentConcurrency, WaitingCount: load.WaitingCount, LoadPercentage: adaptiveLoadRate(load, capacity),
-		SchedulerStatus: status, StatusReason: reason, Learned: state.TotalSamples > 0,
-		PathSuccessEMA: state.PathSuccessEMA, ModelFamily: family, ModelSuccessEMA: modelState.SuccessEMA,
-		TTFTEMA: modelState.TTFTEMA, LatencyEMA: modelState.LatencyEMA, ModelSamples: modelState.Samples,
-		ModelFailures: modelState.Failures, ByModelFamily: geminiAdaptiveModelLearningSnapshots(state.ByModelFamily), Quota: quota,
-		TotalSamples: state.TotalSamples, RecentHealthSamples: state.RecentHealthSamples,
-		RecentHealthFailures: state.RecentHealthFailures, RecentHealthFailureRate: healthFailureRate,
-		RecentCapacitySamples: state.RecentCapacitySamples, RecentCapacityFailures: state.RecentCapacityFailures,
-		RecentCapacityFailureRate: capacityFailureRate, ConsecutiveSuccess: state.ConsecutiveSuccess,
-		ConsecutiveFailure: state.ConsecutiveFailure, ConsecutiveCapacityFailure: state.ConsecutiveCapacityFailure,
-		LearningWindowStartedAt: geminiAdaptiveTimePtr(state.RecentWindowStartedAt), LastSuccessAt: geminiAdaptiveTimePtr(state.LastSuccessAt),
-		LastFailureAt: geminiAdaptiveTimePtr(state.LastFailureAt), LastCapacityFailureAt: geminiAdaptiveTimePtr(state.LastCapacityFailureAt),
-		CooldownUntil: geminiAdaptiveTimePtr(state.CooldownUntil), CooldownRemainingSec: cooldownRemaining,
-		CanonicalModel:       canonicalModel,
-		AccountCircuitStatus: geminiAdaptiveCircuitStatus(state.AccountCircuit, now), AccountCircuitOpenUntil: geminiAdaptiveTimePtr(state.AccountCircuit.OpenUntil),
-		AccountCircuitFailures: state.AccountCircuit.ConsecutiveFailure,
-		ModelCircuitStatus:     geminiAdaptiveCircuitStatus(modelCircuit, now), ModelCircuitOpenUntil: geminiAdaptiveTimePtr(modelCircuit.OpenUntil),
-		ModelCircuitFailures: modelCircuit.ConsecutiveFailure,
-	}
-}
-
-func geminiAdaptiveLearningAccountStatus(account *Account, state geminiAdaptiveAccountState, cfg GeminiAdaptiveSchedulerSettings, load *AccountLoadInfo, quota GeminiAdaptiveQuotaSnapshot, capacity int, capacityFailureRate float64, requestedModel string, now time.Time) (string, string) {
-	if !cfg.GeminiAdaptiveSchedulerEnabled {
-		return GeminiAdaptiveLearningStatusDisabled, "adaptive scheduler disabled"
-	}
-	if account == nil || !account.IsSchedulable() {
-		if account != nil && account.ErrorMessage != "" {
-			return GeminiAdaptiveLearningStatusUnavailable, account.ErrorMessage
-		}
-		return GeminiAdaptiveLearningStatusUnavailable, "account is not schedulable"
-	}
-	if quota.HardRejected {
-		return GeminiAdaptiveLearningStatusQuotaLimited, "local Gemini quota precheck rejected the account"
-	}
-	accountCircuitStatus := geminiAdaptiveCircuitStatus(state.AccountCircuit, now)
-	if accountCircuitStatus == geminiAdaptiveCircuitStatusOpen || accountCircuitStatus == geminiAdaptiveCircuitStatusProbeActive {
-		return GeminiAdaptiveLearningStatusCooldown, "account health circuit is " + accountCircuitStatus
-	}
-	modelKey := geminiAdaptiveCanonicalModel(account, requestedModel, "", "generateContent")
-	modelCircuitStatus := geminiAdaptiveCircuitStatus(state.ModelCircuits[modelKey], now)
-	if modelCircuitStatus == geminiAdaptiveCircuitStatusOpen || modelCircuitStatus == geminiAdaptiveCircuitStatusProbeActive {
-		return GeminiAdaptiveLearningStatusCooldown, "model health circuit is " + modelCircuitStatus
-	}
-	if state.CooldownUntil.After(now) {
-		return GeminiAdaptiveLearningStatusCooldown, "adaptive cooldown after concurrency failures"
-	}
-	if (state.RecentCapacitySamples > 0 && capacityFailureRate >= cfg.GeminiAdaptiveSchedulerShrinkErrorThreshold) || state.ConsecutiveCapacityFailure >= cfg.GeminiAdaptiveSchedulerCapacityFailureThreshold {
-		return GeminiAdaptiveLearningStatusHighError, "concurrency failure signal reached shrink threshold"
-	}
-	if capacity > 0 && load != nil && (load.CurrentConcurrency >= capacity || load.WaitingCount > 0) {
-		return GeminiAdaptiveLearningStatusSaturated, "current load reached adaptive capacity"
-	}
-	if state.TotalSamples == 0 {
-		return GeminiAdaptiveLearningStatusUnlearned, "no runtime samples yet"
-	}
-	if state.TotalSamples < int64(cfg.GeminiAdaptiveSchedulerMinRecentSamplesForShrink) {
-		return GeminiAdaptiveLearningStatusLearning, "sample count below shrink confidence threshold"
-	}
-	return GeminiAdaptiveLearningStatusHealthy, ""
-}
-
-func applyGeminiAdaptiveLearningScores(rows []GeminiAdaptiveSchedulerAccountLearningSnapshot, accounts []Account, states map[int64]geminiAdaptiveAccountState, loads map[int64]*AccountLoadInfo, quotas map[int64]GeminiAdaptiveQuotaSnapshot, requestedModel string, cfg GeminiAdaptiveSchedulerSettings, now time.Time) {
-	rowByID := make(map[int64]*GeminiAdaptiveSchedulerAccountLearningSnapshot, len(rows))
-	for i := range rows {
-		rowByID[rows[i].AccountID] = &rows[i]
-	}
-	candidates := make([]GeminiAdaptiveCandidate, 0, len(accounts))
-	for i := range accounts {
-		account := &accounts[i]
-		row := rowByID[account.ID]
-		if row == nil || row.SchedulerStatus == GeminiAdaptiveLearningStatusUnavailable {
-			continue
-		}
-		load := loads[account.ID]
-		if load == nil {
-			load = &AccountLoadInfo{AccountID: account.ID}
-		}
-		candidates = append(candidates, GeminiAdaptiveCandidate{Account: account, Load: load, Quota: quotas[account.ID], EffectiveCapacity: row.EffectiveCapacity, state: states[account.ID]})
-	}
-	applyGeminiAdaptiveScores(candidates, requestedModel, "generateContent", false, now, cfg)
-	for _, candidate := range candidates {
-		row := rowByID[candidate.Account.ID]
-		row.SchedulerScore, row.ReliabilityScore = candidate.Score, candidate.ReliabilityScore
-		row.QuotaScore, row.CapacityScore = candidate.QuotaScore, candidate.CapacityScore
-		row.LatencyScore, row.CostScore, row.ExplorationScore = candidate.LatencyScore, candidate.CostScore, candidate.ExplorationScore
-	}
-}
-
-func geminiAdaptiveModelLearningSnapshots(states map[string]geminiAdaptiveModelState) []GeminiAdaptiveModelLearningSnapshot {
-	out := make([]GeminiAdaptiveModelLearningSnapshot, 0, len(states))
-	for family, state := range states {
-		out = append(out, GeminiAdaptiveModelLearningSnapshot{ModelFamily: family, SuccessEMA: state.SuccessEMA, TTFTEMA: state.TTFTEMA, LatencyEMA: state.LatencyEMA, Samples: state.Samples, Failures: state.Failures})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ModelFamily < out[j].ModelFamily })
-	return out
-}
-
 func geminiAdaptiveTimePtr(value time.Time) *time.Time {
 	if value.IsZero() {
 		return nil
@@ -498,24 +439,10 @@ func normalizeGeminiAdaptiveLearningFilter(filter *GeminiAdaptiveSchedulerLearni
 		filter.PageSize = geminiAdaptiveLearningDefaultLimit
 	}
 	filter.PageSize = min(filter.PageSize, geminiAdaptiveLearningMaxLimit)
-	filter.RequestedModel = strings.TrimSpace(filter.RequestedModel)
 	filter.SortBy = normalizeGeminiAdaptiveLearningSortBy(filter.SortBy)
 	filter.SortOrder = normalizeGeminiAdaptiveLearningSortOrder(filter.SortOrder)
-	filter.Status = normalizeGeminiAdaptiveLearningStatusFilter(filter.Status)
-}
-
-func filterGeminiAdaptiveLearningRowsByStatus(rows []GeminiAdaptiveSchedulerAccountLearningSnapshot, status string) []GeminiAdaptiveSchedulerAccountLearningSnapshot {
-	status = normalizeGeminiAdaptiveLearningStatusFilter(status)
-	if status == "" {
-		return rows
-	}
-	out := rows[:0]
-	for _, row := range rows {
-		if row.SchedulerStatus == status {
-			out = append(out, row)
-		}
-	}
-	return out
+	filter.LearningStatus = strings.ToLower(strings.TrimSpace(filter.LearningStatus))
+	filter.RuntimeStatus = strings.ToLower(strings.TrimSpace(filter.RuntimeStatus))
 }
 
 func filterGeminiAdaptiveLearningRowsByTime(rows []GeminiAdaptiveSchedulerAccountLearningSnapshot, start, end time.Time) []GeminiAdaptiveSchedulerAccountLearningSnapshot {
@@ -548,7 +475,7 @@ func sortGeminiAdaptiveLearningRows(rows []GeminiAdaptiveSchedulerAccountLearnin
 
 func normalizeGeminiAdaptiveLearningSortBy(value string) string {
 	switch strings.TrimSpace(value) {
-	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "quota", "last_event":
+	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "last_event":
 		return strings.TrimSpace(value)
 	default:
 		return ""
@@ -560,17 +487,6 @@ func normalizeGeminiAdaptiveLearningSortOrder(value string) string {
 		return "asc"
 	}
 	return "desc"
-}
-
-func normalizeGeminiAdaptiveLearningStatusFilter(value string) string {
-	switch strings.TrimSpace(value) {
-	case GeminiAdaptiveLearningStatusDisabled, GeminiAdaptiveLearningStatusUnavailable, GeminiAdaptiveLearningStatusQuotaLimited,
-		GeminiAdaptiveLearningStatusCooldown, GeminiAdaptiveLearningStatusHighError, GeminiAdaptiveLearningStatusSaturated,
-		GeminiAdaptiveLearningStatusLearning, GeminiAdaptiveLearningStatusUnlearned, GeminiAdaptiveLearningStatusHealthy:
-		return strings.TrimSpace(value)
-	default:
-		return ""
-	}
 }
 
 func compareGeminiAdaptiveLearningRows(left, right GeminiAdaptiveSchedulerAccountLearningSnapshot, sortBy string) int {
@@ -600,15 +516,11 @@ func compareGeminiAdaptiveLearningRows(left, right GeminiAdaptiveSchedulerAccoun
 			return cmp
 		}
 	case "error":
-		if cmp := compareFloat64(left.RecentHealthFailureRate, right.RecentHealthFailureRate); cmp != 0 {
+		if cmp := compareFloat64(1-left.PathSuccessEMA, 1-right.PathSuccessEMA); cmp != 0 {
 			return cmp
 		}
 	case "latency":
-		if cmp := compareFloat64(left.LatencyEMA, right.LatencyEMA); cmp != 0 {
-			return cmp
-		}
-	case "quota":
-		if cmp := compareFloat64(left.QuotaScore, right.QuotaScore); cmp != 0 {
+		if cmp := compareFloat64(left.TTFTEMA, right.TTFTEMA); cmp != 0 {
 			return cmp
 		}
 	case "last_event":
@@ -619,9 +531,6 @@ func compareGeminiAdaptiveLearningRows(left, right GeminiAdaptiveSchedulerAccoun
 		if cmp := compareInt(geminiAdaptiveLearningStatusRank(left.SchedulerStatus), geminiAdaptiveLearningStatusRank(right.SchedulerStatus)); cmp != 0 {
 			return cmp
 		}
-		if cmp := compareInt(left.Priority, right.Priority); cmp != 0 {
-			return cmp
-		}
 		if cmp := compareFloat64(right.SchedulerScore, left.SchedulerScore); cmp != 0 {
 			return cmp
 		}
@@ -630,7 +539,7 @@ func compareGeminiAdaptiveLearningRows(left, right GeminiAdaptiveSchedulerAccoun
 }
 
 func geminiAdaptiveLearningLastEventTime(row GeminiAdaptiveSchedulerAccountLearningSnapshot) time.Time {
-	values := []*time.Time{row.LastSuccessAt, row.LastFailureAt, row.LastCapacityFailureAt, row.CooldownUntil}
+	values := []*time.Time{row.LastSuccessAt, row.LastFailureAt, row.CooldownUntil, row.CapacityCooldownUntil, row.QuotaNextProbeAt}
 	latest := time.Time{}
 	for _, value := range values {
 		if value != nil && value.After(latest) {
@@ -668,23 +577,29 @@ func geminiAdaptiveLearningStatusRank(status string) int {
 func summarizeGeminiAdaptiveLearningRows(rows []GeminiAdaptiveSchedulerAccountLearningSnapshot) GeminiAdaptiveSchedulerLearningSummary {
 	summary := GeminiAdaptiveSchedulerLearningSummary{TrackedAccounts: len(rows)}
 	for _, row := range rows {
-		switch row.SchedulerStatus {
-		case GeminiAdaptiveLearningStatusDisabled:
-			summary.DisabledAccounts++
+		switch row.LearningStatus {
+		case string(adaptiveLearningUnlearned):
+			summary.UnlearnedAccounts++
+		case string(adaptiveLearningLearning):
+			summary.LearningAccounts++
+		case string(adaptiveLearningLearned):
+			summary.LearnedAccounts++
+		case string(adaptiveLearningNotApplicable):
+			summary.NotApplicableAccounts++
+		}
+		switch row.RuntimeStatus {
 		case GeminiAdaptiveLearningStatusUnavailable:
 			summary.UnavailableAccounts++
 		case GeminiAdaptiveLearningStatusQuotaLimited:
 			summary.QuotaLimitedAccounts++
 		case GeminiAdaptiveLearningStatusCooldown:
 			summary.CooldownAccounts++
+		case string(adaptiveRuntimeHalfOpen):
+			summary.HalfOpenAccounts++
 		case GeminiAdaptiveLearningStatusHighError:
 			summary.HighErrorAccounts++
 		case GeminiAdaptiveLearningStatusSaturated:
 			summary.SaturatedAccounts++
-		case GeminiAdaptiveLearningStatusLearning:
-			summary.LearningAccounts++
-		case GeminiAdaptiveLearningStatusUnlearned:
-			summary.UnlearnedAccounts++
 		case GeminiAdaptiveLearningStatusHealthy:
 			summary.HealthyAccounts++
 		}
@@ -694,21 +609,31 @@ func summarizeGeminiAdaptiveLearningRows(rows []GeminiAdaptiveSchedulerAccountLe
 
 func geminiAdaptiveLearningSettingsSnapshot(cfg GeminiAdaptiveSchedulerSettings) GeminiAdaptiveSchedulerLearningSettingsSnapshot {
 	return GeminiAdaptiveSchedulerLearningSettingsSnapshot{
-		StickyEscapeOnCapacityFull: cfg.GeminiAdaptiveSchedulerStickyEscapeOnCapacityFull, TopK: cfg.GeminiAdaptiveSchedulerTopK,
-		SoftmaxTemperature: cfg.GeminiAdaptiveSchedulerSoftmaxTemperature, WeightReliability: cfg.GeminiAdaptiveSchedulerWeightReliability,
-		WeightQuota: cfg.GeminiAdaptiveSchedulerWeightQuota, WeightCapacity: cfg.GeminiAdaptiveSchedulerWeightCapacity,
-		WeightLatency: cfg.GeminiAdaptiveSchedulerWeightLatency, WeightCost: cfg.GeminiAdaptiveSchedulerWeightCost,
-		WeightExploration: cfg.GeminiAdaptiveSchedulerWeightExploration, InitialReliability: cfg.GeminiAdaptiveSchedulerInitialReliability,
-		NeutralLatencyScore: cfg.GeminiAdaptiveSchedulerNeutralLatencyScore, NeutralQuotaScore: cfg.GeminiAdaptiveSchedulerNeutralQuotaScore,
-		CapacityFailureThreshold:  cfg.GeminiAdaptiveSchedulerCapacityFailureThreshold,
-		MinRecentSamplesForShrink: cfg.GeminiAdaptiveSchedulerMinRecentSamplesForShrink,
-		ShrinkErrorThreshold:      cfg.GeminiAdaptiveSchedulerShrinkErrorThreshold, LearningWindowSeconds: cfg.GeminiAdaptiveSchedulerLearningWindowSeconds,
-		CooldownSeconds: cfg.GeminiAdaptiveSchedulerCooldownSeconds, CapacityIncreaseStep: cfg.GeminiAdaptiveSchedulerCapacityIncreaseStep,
+		TopK:                      cfg.GeminiAdaptiveSchedulerTopK,
+		SoftmaxTemperature:        cfg.GeminiAdaptiveSchedulerSoftmaxTemperature,
+		ExplorationRate:           cfg.GeminiAdaptiveSchedulerExplorationRate,
+		ConsecutiveFailurePenalty: cfg.GeminiAdaptiveSchedulerConsecutiveFailurePenalty,
+		WeightReliability:         cfg.GeminiAdaptiveSchedulerWeightReliability,
+		WeightCapacity:            cfg.GeminiAdaptiveSchedulerWeightCapacity,
+		WeightLatency:             cfg.GeminiAdaptiveSchedulerWeightLatency,
+		WeightCost:                cfg.GeminiAdaptiveSchedulerWeightCost,
+		LearningWindowSeconds:     cfg.GeminiAdaptiveSchedulerLearningWindowSeconds,
+		LearningMinHealthSamples:  cfg.GeminiAdaptiveSchedulerLearningMinHealthSamples,
+		SuccessEMAAlpha:           cfg.GeminiAdaptiveSchedulerSuccessEMAAlpha,
+		TTFTEMAAlpha:              cfg.GeminiAdaptiveSchedulerLatencyEMAAlpha,
+		CooldownSeconds:           cfg.GeminiAdaptiveSchedulerCooldownSeconds,
 		CooldownMaxSeconds:        cfg.GeminiAdaptiveSchedulerCooldownMaxSeconds,
 		AccountFailureThreshold:   cfg.GeminiAdaptiveSchedulerAccountFailureThreshold,
-		ModelFailureThreshold:     cfg.GeminiAdaptiveSchedulerModelFailureThreshold,
-		HalfOpenProbeLeaseSeconds: cfg.GeminiAdaptiveSchedulerHalfOpenProbeLeaseSeconds,
-		MinCapacity:               cfg.GeminiAdaptiveSchedulerMinCapacity, DiagnosticLogEnabled: cfg.GeminiAdaptiveSchedulerDiagnosticLogEnabled,
-		DiagnosticLogSampleRate: cfg.GeminiAdaptiveSchedulerDiagnosticLogSampleRate,
+		HighErrorMinSamples:       cfg.GeminiAdaptiveSchedulerHighErrorMinSamples,
+		HighErrorMaxSamples:       cfg.GeminiAdaptiveSchedulerHighErrorMaxSamples,
+		HighErrorEnterRate:        cfg.GeminiAdaptiveSchedulerHighErrorEnterRate,
+		HighErrorExitRate:         cfg.GeminiAdaptiveSchedulerHighErrorExitRate,
+		CapacityShrinkFactor:      cfg.GeminiAdaptiveSchedulerShrinkFactorSoft,
+		CapacityGrowthFactor:      cfg.GeminiAdaptiveSchedulerCapacityGrowthFactor,
+		CapacityRecoverySamples:   cfg.GeminiAdaptiveSchedulerCapacityRecoverySamples,
+		CapacityRecoveryLoad:      cfg.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold,
+		QuotaProbeIntervalSeconds: cfg.GeminiAdaptiveSchedulerQuotaProbeIntervalSeconds,
+		DiagnosticLogEnabled:      cfg.GeminiAdaptiveSchedulerDiagnosticLogEnabled,
+		DiagnosticLogSampleRate:   cfg.GeminiAdaptiveSchedulerDiagnosticLogSampleRate,
 	}
 }

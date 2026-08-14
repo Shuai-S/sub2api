@@ -181,7 +181,7 @@ func TestAdaptiveOpenAIAccountSchedulerFiltersImageStreamCapability(t *testing.T
 	scheduler := &adaptiveOpenAIAccountScheduler{
 		service:  svc,
 		baseline: &defaultOpenAIAccountScheduler{service: svc, stats: newOpenAIAccountRuntimeStats()},
-		state:    newOpenAIAdaptiveSchedulerStateStore(),
+		core:     newAdaptiveStateStore(),
 	}
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 	cfg.OpenAIAdaptiveSchedulerTopK = len(accounts)

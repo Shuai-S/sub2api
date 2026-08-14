@@ -47,8 +47,6 @@ const sampleResponse = {
   mode: 'shadow',
   realtime_enabled: true,
   generated_at: '2026-07-28T00:00:00Z',
-  requested_model: 'gemini-2.5-pro',
-  model_family: 'pro',
   total_accounts: 1,
   total: 1,
   returned_accounts: 1,
@@ -57,16 +55,32 @@ const sampleResponse = {
   sort_by: 'status',
   sort_order: 'desc',
   settings: {
-    sticky_escape_on_capacity_full: false,
     top_k: 8,
     softmax_temperature: 0.35,
-    weight_reliability: 0.3,
-    weight_quota: 0.25,
+    exploration_rate: 0.02,
+    consecutive_failure_penalty: 0.1,
+    weight_reliability: 0.5,
     weight_capacity: 0.2,
-    weight_latency: 0.15,
-    weight_cost: 0.05,
-    weight_exploration: 0.05,
+    weight_ttft: 0.15,
+    weight_cost: 0.15,
     learning_window_seconds: 1200,
+    learning_min_health_samples: 30,
+    success_ema_alpha: 0.1,
+    ttft_ema_alpha: 0.1,
+    cooldown_seconds: 60,
+    cooldown_max_seconds: 600,
+    account_failure_threshold: 3,
+    high_error_min_samples: 10,
+    high_error_max_samples: 30,
+    high_error_enter_rate: 0.25,
+    high_error_exit_rate: 0.1,
+    capacity_shrink_factor: 0.85,
+    capacity_growth_factor: 1.15,
+    capacity_recovery_samples: 30,
+    capacity_recovery_load: 0.8,
+    quota_probe_interval_seconds: 60,
+    diagnostic_log_enabled: false,
+    diagnostic_log_sample_rate: 0.01,
   },
   metrics: {
     select_total: 12,
@@ -79,7 +93,6 @@ const sampleResponse = {
   },
   summary: {
     tracked_accounts: 1,
-    disabled_accounts: 0,
     unavailable_accounts: 0,
     quota_limited_accounts: 0,
     cooldown_accounts: 0,
@@ -88,6 +101,9 @@ const sampleResponse = {
     learning_accounts: 1,
     unlearned_accounts: 0,
     healthy_accounts: 0,
+    learned_accounts: 0,
+    not_applicable_accounts: 0,
+    half_open_accounts: 0,
   },
   accounts: [
     {
@@ -97,9 +113,7 @@ const sampleResponse = {
       type: 'apikey',
       account_status: 'active',
       schedulable: true,
-      priority: 1,
       configured_concurrency: 10,
-      estimated_capacity: 8,
       effective_capacity: 8,
       rate_multiplier: 1.25,
       current_concurrency: 3,
@@ -107,21 +121,20 @@ const sampleResponse = {
       load_percentage: 37.5,
       scheduler_status: 'learning',
       learned: true,
+      learning_status: 'learning',
+      runtime_status: 'healthy',
+      runtime_flags: ['healthy'],
+      health_samples: 12,
+      capacity_generation: 0,
+      capacity_half_open: false,
       scheduler_score: 0.78,
       reliability_score: 0.95,
-      quota_score: 0.8,
       capacity_score: 0.625,
       latency_score: 0.7,
       cost_score: 0.4,
-      exploration_score: 0.2,
       path_success_ema: 0.95,
-      model_family: 'pro',
-      model_success_ema: 0.92,
       ttft_ema: 180,
-      latency_ema: 950,
-      model_samples: 12,
-      model_failures: 1,
-      by_model_family: [],
+      ttft_samples: 12,
       quota: {
         scope: { daily: 'pro', minute: 'shared' },
         daily_used: 10,
@@ -134,17 +147,12 @@ const sampleResponse = {
         data_available: true,
       },
       total_samples: 12,
-      recent_health_samples: 12,
-      recent_health_failures: 1,
-      recent_health_failure_rate: 1 / 12,
-      recent_capacity_samples: 8,
-      recent_capacity_failures: 1,
-      recent_capacity_failure_rate: 0.125,
-      consecutive_success: 3,
       consecutive_failure: 0,
-      consecutive_capacity_failure: 0,
       last_success_at: '2026-07-28T00:00:00Z',
       cooldown_remaining_sec: 0,
+      circuit_open_count: 0,
+      capacity_recovery_successes: 0,
+      quota_limited: false,
     },
   ],
 }
@@ -175,19 +183,19 @@ describe('OpsGeminiAdaptiveLearningCard', () => {
     await flushPromises()
 
     expect(mockGetGeminiAdaptiveLearning).toHaveBeenCalledWith(
-      expect.objectContaining({ group_id: 7, model: 'gemini-2.5-pro', top_n: 20 })
+      expect.objectContaining({ group_id: 7, top_n: 20 })
     )
     expect(wrapper.text()).toContain('Gemini primary')
     expect(wrapper.text()).toContain('admin.ops.geminiAdaptiveLearning.rateMultiplier {"value":"1.25"}')
-    expect(wrapper.text()).toContain('R 95 / Q 80 / C 63')
+    expect(wrapper.text()).toContain('R 95 / C 63 / T 70 / $ 40')
     expect(wrapper.text()).toContain('10/100 (10%)')
 
     const selects = wrapper.findAllComponents(SelectStub)
-    await selects[0].vm.$emit('update:modelValue', 'quota_limited')
+    await selects[1].vm.$emit('update:modelValue', 'quota_limited')
     await flushPromises()
 
     expect(mockGetGeminiAdaptiveLearning).toHaveBeenLastCalledWith(
-      expect.objectContaining({ status: 'quota_limited' })
+      expect.objectContaining({ runtime_status: 'quota_limited' })
     )
   })
 
@@ -204,7 +212,7 @@ describe('OpsGeminiAdaptiveLearningCard', () => {
     await flushPromises()
 
     const selects = wrapper.findAllComponents(SelectStub)
-    await selects[1].vm.$emit('update:modelValue', 'pagination')
+    await selects[2].vm.$emit('update:modelValue', 'pagination')
     await flushPromises()
 
     expect(mockGetGeminiAdaptiveLearning).toHaveBeenLastCalledWith(

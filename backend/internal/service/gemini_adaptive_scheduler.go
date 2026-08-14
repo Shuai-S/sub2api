@@ -21,7 +21,7 @@ type GeminiAdaptiveMetricsSnapshot struct {
 }
 
 type geminiAdaptiveScheduler struct {
-	state                 *geminiAdaptiveStateStore
+	core                  *adaptiveStateStore
 	now                   func() time.Time
 	selectTotal           atomic.Uint64
 	shadowDivergeTotal    atomic.Uint64
@@ -33,7 +33,7 @@ type geminiAdaptiveScheduler struct {
 }
 
 func newGeminiAdaptiveScheduler() *geminiAdaptiveScheduler {
-	return &geminiAdaptiveScheduler{state: newGeminiAdaptiveStateStore(), now: time.Now}
+	return &geminiAdaptiveScheduler{core: newAdaptiveStateStore(), now: time.Now}
 }
 
 func (s *geminiAdaptiveScheduler) SnapshotMetrics() GeminiAdaptiveMetricsSnapshot {
@@ -109,7 +109,7 @@ func (s *GatewayService) geminiAdaptiveCapacity(mode string, settings GeminiAdap
 	if mode != GeminiAdaptiveSchedulerModeEnforce || s == nil || s.geminiAdaptiveScheduler == nil || account.Platform != PlatformGemini {
 		return account.Concurrency
 	}
-	return s.geminiAdaptiveScheduler.state.effectiveCapacity(account, settings)
+	return s.geminiAdaptiveScheduler.core.effectiveCapacity(account.ID, account.Concurrency, s.geminiAdaptiveScheduler.now(), geminiAdaptiveCoreSettings(settings))
 }
 
 func (s *GatewayService) geminiAdaptiveCircuitAllowed(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, account *Account, requestedModel string) bool {
@@ -117,9 +117,7 @@ func (s *GatewayService) geminiAdaptiveCircuitAllowed(ctx context.Context, mode 
 		return true
 	}
 	now := s.geminiAdaptiveScheduler.now()
-	hint := geminiAdaptiveHintFromContext(ctx)
-	eligibility := s.geminiAdaptiveScheduler.state.circuitEligibility(account, requestedModel, hint.Action, now, settings)
-	return eligibility.Allowed
+	return s.geminiAdaptiveScheduler.core.allowedForSelection(account.ID, account.Concurrency, now, geminiAdaptiveCoreSettings(settings))
 }
 
 func (s *GatewayService) claimGeminiAdaptiveCircuitProbe(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, account *Account, requestedModel string) (bool, func()) {
@@ -127,17 +125,25 @@ func (s *GatewayService) claimGeminiAdaptiveCircuitProbe(ctx context.Context, mo
 	if mode != GeminiAdaptiveSchedulerModeEnforce || s == nil || s.geminiAdaptiveScheduler == nil || account == nil || account.Platform != PlatformGemini {
 		return true, noop
 	}
-	hint := geminiAdaptiveHintFromContext(ctx)
 	owner := firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
 	now := s.geminiAdaptiveScheduler.now()
-	allowed, claimed := s.geminiAdaptiveScheduler.state.claimCircuitProbe(account, requestedModel, hint.Action, owner, now, settings)
-	if !allowed || !claimed {
-		return allowed, noop
+	coreSettings := geminiAdaptiveCoreSettings(settings)
+	if !s.geminiAdaptiveScheduler.core.claimHealthProbe(account.ID, owner, account.Concurrency, now, coreSettings) {
+		return false, noop
+	}
+	quotaAllowed, quotaClaimed := s.geminiAdaptiveScheduler.core.claimQuotaProbe(account.ID, owner, account.Concurrency, now, coreSettings)
+	if !quotaAllowed {
+		s.geminiAdaptiveScheduler.core.releaseHealthProbe(account.ID, owner, now)
+		return false, noop
 	}
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
-			s.geminiAdaptiveScheduler.state.releaseCircuitProbe(account, requestedModel, hint.Action, owner, s.geminiAdaptiveScheduler.now(), settings)
+			releasedAt := s.geminiAdaptiveScheduler.now()
+			s.geminiAdaptiveScheduler.core.releaseHealthProbe(account.ID, owner, releasedAt)
+			if quotaClaimed {
+				s.geminiAdaptiveScheduler.core.releaseQuotaProbe(account.ID, owner, releasedAt)
+			}
 		})
 	}
 	stop := context.AfterFunc(ctx, release)
@@ -155,6 +161,9 @@ func (s *GatewayService) tryAcquireGeminiAdaptiveAccountSlot(ctx context.Context
 	result, err := s.tryAcquireAccountSlot(ctx, account.ID, maxConcurrency)
 	if err != nil || result == nil || !result.Acquired {
 		releaseProbe()
+	} else {
+		requestID := firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
+		s.geminiAdaptiveScheduler.core.registerAdmission(account.ID, requestID, account.Concurrency, s.geminiAdaptiveScheduler.now(), geminiAdaptiveCoreSettings(settings))
 	}
 	if result == nil {
 		result = &AcquireResult{}
@@ -162,7 +171,7 @@ func (s *GatewayService) tryAcquireGeminiAdaptiveAccountSlot(ctx context.Context
 	return result, releaseProbe, err
 }
 
-func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, requestedModel, scope string, groupID *int64, sessionHash string, candidates []accountWithLoad, quota map[int64]GeminiAdaptiveQuotaSnapshot) ([]accountWithLoad, map[int64]int, *GeminiAdaptiveDecision) {
+func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, settings GeminiAdaptiveSchedulerSettings, requestedModel, scope string, groupID *int64, sessionHash string, newSession bool, candidates []accountWithLoad, quota map[int64]GeminiAdaptiveQuotaSnapshot) ([]accountWithLoad, map[int64]int, *GeminiAdaptiveDecision) {
 	if mode == "" || s == nil || s.geminiAdaptiveScheduler == nil || len(candidates) == 0 {
 		return candidates, nil, nil
 	}
@@ -186,6 +195,7 @@ func (s *GatewayService) geminiAdaptiveOrder(ctx context.Context, mode string, s
 		Candidates:     inputs,
 		BaselineOrder:  baseline,
 		Settings:       &settings,
+		NewSession:     newSession,
 		ctx:            ctx,
 	})
 	for accountID, snapshot := range quota {

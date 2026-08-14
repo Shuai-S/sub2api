@@ -549,39 +549,30 @@ const baseSettingsResponse = {
 
 const openAIAdaptiveSchedulerDefaults = {
   openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
-  openai_adaptive_scheduler_top_k: 10,
-  openai_adaptive_scheduler_exploration_rate: 0.01,
+  openai_adaptive_scheduler_top_k: 8,
+  openai_adaptive_scheduler_exploration_rate: 0.02,
   openai_adaptive_scheduler_softmax_temperature: 0.35,
-  openai_adaptive_scheduler_min_cost_multiplier: 0.03,
-  openai_adaptive_scheduler_thompson_prior_alpha: 1,
-  openai_adaptive_scheduler_thompson_prior_beta: 1,
-  openai_adaptive_scheduler_initial_capacity_fraction: 0.03,
-  openai_adaptive_scheduler_min_capacity: 2,
-  openai_adaptive_scheduler_capacity_increase_step: 2,
   openai_adaptive_scheduler_capacity_growth_factor: 1.15,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
-  openai_adaptive_scheduler_burst_probe_ratio: 0.15,
-  openai_adaptive_scheduler_capacity_success_threshold: 0.95,
-  openai_adaptive_scheduler_capacity_failure_threshold: 3,
-  openai_adaptive_scheduler_min_recent_samples_for_shrink: 50,
-  openai_adaptive_scheduler_shrink_error_threshold: 0.35,
   openai_adaptive_scheduler_shrink_factor_soft: 0.9,
-  openai_adaptive_scheduler_shrink_factor_hard: 0.7,
-  openai_adaptive_scheduler_half_open_failure_threshold: 1,
-  openai_adaptive_scheduler_half_open_probe_capacity: 3,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
-  openai_adaptive_scheduler_success_ema_alpha: 0.04,
-  openai_adaptive_scheduler_error_ema_alpha: 0.06,
-  openai_adaptive_scheduler_latency_ema_alpha: 0.05,
+  openai_adaptive_scheduler_success_ema_alpha: 0.05,
   openai_adaptive_scheduler_ttft_ema_alpha: 0.05,
   openai_adaptive_scheduler_cooldown_base_seconds: 60,
   openai_adaptive_scheduler_cooldown_max_seconds: 600,
-  openai_adaptive_scheduler_weight_success: 0.4,
-  openai_adaptive_scheduler_weight_cost: 0.25,
+  openai_adaptive_scheduler_weight_success: 0.5,
+  openai_adaptive_scheduler_weight_cost: 0.15,
   openai_adaptive_scheduler_weight_capacity: 0.2,
-  openai_adaptive_scheduler_weight_latency: 0.1,
-  openai_adaptive_scheduler_weight_stability: 0.03,
-  openai_adaptive_scheduler_weight_exploration: 0.02,
+  openai_adaptive_scheduler_weight_latency: 0.15,
+  openai_adaptive_scheduler_consecutive_failure_penalty: 0.25,
+  openai_adaptive_scheduler_learning_min_health_samples: 30,
+  openai_adaptive_scheduler_health_failure_threshold: 3,
+  openai_adaptive_scheduler_high_error_min_samples: 10,
+  openai_adaptive_scheduler_high_error_max_samples: 100,
+  openai_adaptive_scheduler_high_error_enter_rate: 0.25,
+  openai_adaptive_scheduler_high_error_exit_rate: 0.15,
+  openai_adaptive_scheduler_capacity_recovery_samples: 30,
+  openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
 } as const;
 
 type OpenAIAdaptiveSchedulerDefaultKey =
@@ -1271,7 +1262,7 @@ describe("admin SettingsView payment visible method controls", () => {
       wrapper
         .get('[data-testid="anthropic-adaptive-scheduler-parameters"]')
         .findAll("svg.cursor-help"),
-    ).toHaveLength(24);
+    ).toHaveLength(25);
     await topKInput.setValue("6");
     await wrapper
       .get('[data-testid="anthropic-adaptive-mode-enforce"]')
@@ -1287,7 +1278,7 @@ describe("admin SettingsView payment visible method controls", () => {
         anthropic_adaptive_scheduler_mode: "enforce",
         anthropic_adaptive_scheduler_top_k: 6,
         anthropic_adaptive_scheduler_softmax_temperature: 0.2,
-        anthropic_adaptive_scheduler_capacity_increase_step: 1,
+        anthropic_adaptive_scheduler_health_failure_threshold: 3,
         anthropic_adaptive_scheduler_weight_reliability: 0.5,
       }),
     );
@@ -1298,15 +1289,12 @@ describe("admin SettingsView payment visible method controls", () => {
       ...baseSettingsResponse,
       gemini_adaptive_scheduler_enabled: true,
       gemini_adaptive_scheduler_mode: "shadow",
-      gemini_adaptive_scheduler_sticky_escape_on_capacity_full: true,
       gemini_adaptive_scheduler_top_k: 4,
       gemini_adaptive_scheduler_softmax_temperature: 0.2,
-      gemini_adaptive_scheduler_neutral_quota_score: 0.6,
-      gemini_adaptive_scheduler_weight_quota: 0.35,
+      gemini_adaptive_scheduler_exploration_rate: 0.03,
+      gemini_adaptive_scheduler_weight_cost: 0.2,
       gemini_adaptive_scheduler_cooldown_max_seconds: 480,
       gemini_adaptive_scheduler_account_failure_threshold: 4,
-      gemini_adaptive_scheduler_model_failure_threshold: 5,
-      gemini_adaptive_scheduler_half_open_probe_lease_seconds: 90,
       gemini_adaptive_scheduler_diagnostic_log_enabled: true,
       gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.25,
     });
@@ -1323,12 +1311,6 @@ describe("admin SettingsView payment visible method controls", () => {
     ).toBe(true);
     expect(
       (
-        wrapper.get('[data-testid="gemini-adaptive-sticky-escape-toggle"]')
-          .element as HTMLInputElement
-      ).checked,
-    ).toBe(true);
-    expect(
-      (
         wrapper.get('[data-testid="gemini-adaptive-diagnostic-log-toggle"]')
           .element as HTMLInputElement
       ).checked,
@@ -1340,10 +1322,10 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(
       (
         wrapper.get(
-          '[data-testid="gemini-adaptive-scheduler-neutral-quota-score"]',
+          '[data-testid="gemini-adaptive-scheduler-account-failure-threshold"]',
         ).element as HTMLInputElement
       ).value,
-    ).toBe("0.6");
+    ).toBe("4");
 
     await topKInput.setValue("6");
     await wrapper
@@ -1356,15 +1338,12 @@ describe("admin SettingsView payment visible method controls", () => {
       expect.objectContaining({
         gemini_adaptive_scheduler_enabled: true,
         gemini_adaptive_scheduler_mode: "enforce",
-        gemini_adaptive_scheduler_sticky_escape_on_capacity_full: true,
         gemini_adaptive_scheduler_top_k: 6,
         gemini_adaptive_scheduler_softmax_temperature: 0.2,
-        gemini_adaptive_scheduler_neutral_quota_score: 0.6,
-        gemini_adaptive_scheduler_weight_quota: 0.35,
+        gemini_adaptive_scheduler_exploration_rate: 0.03,
+        gemini_adaptive_scheduler_weight_cost: 0.2,
         gemini_adaptive_scheduler_cooldown_max_seconds: 480,
         gemini_adaptive_scheduler_account_failure_threshold: 4,
-        gemini_adaptive_scheduler_model_failure_threshold: 5,
-        gemini_adaptive_scheduler_half_open_probe_lease_seconds: 90,
         gemini_adaptive_scheduler_diagnostic_log_enabled: true,
         gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.25,
       }),
@@ -1551,57 +1530,57 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+        "admin.settings.openaiAdaptiveScheduler.parameters.capacityShrinkFactor",
       ).value,
-    ).toBe("0.03");
+    ).toBe("0.9");
     expect(
-      inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor").value,
+      inputForLabel("admin.settings.openaiAdaptiveScheduler.parameters.capacityGrowthFactor").value,
     ).toBe("1.15");
     expect(
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
+        "admin.settings.openaiAdaptiveScheduler.parameters.learningWindowSeconds",
       ).value,
     ).toBe("1200");
     expect(
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.diagnosticSampleRate",
+        "admin.settings.openaiAdaptiveScheduler.parameters.diagnosticLogSampleRate",
       ).value,
     ).toBe("0.05");
 
     await wrapper.findAll("input").find((node) =>
       node.element ===
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+        "admin.settings.openaiAdaptiveScheduler.parameters.capacityShrinkFactor",
       ),
     )?.setValue("");
     await wrapper.findAll("input").find((node) =>
       node.element ===
-      inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor"),
+      inputForLabel("admin.settings.openaiAdaptiveScheduler.parameters.capacityGrowthFactor"),
     )?.setValue("");
     await wrapper.findAll("input").find((node) =>
       node.element ===
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
+        "admin.settings.openaiAdaptiveScheduler.parameters.learningWindowSeconds",
       ),
     )?.setValue("");
 
     expect(
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+        "admin.settings.openaiAdaptiveScheduler.parameters.capacityShrinkFactor",
       ).placeholder,
-    ).toBe("0.03");
+    ).toBe("0.9");
     expect(
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.initialCapacityFraction",
+        "admin.settings.openaiAdaptiveScheduler.parameters.capacityShrinkFactor",
       ).value,
     ).toBe("");
     expect(
-      inputForLabel("admin.settings.openaiAdaptiveScheduler.growthFactor")
+      inputForLabel("admin.settings.openaiAdaptiveScheduler.parameters.capacityGrowthFactor")
         .placeholder,
     ).toBe("1.15");
     expect(
       inputForLabel(
-        "admin.settings.openaiAdaptiveScheduler.learningWindowSeconds",
+        "admin.settings.openaiAdaptiveScheduler.parameters.learningWindowSeconds",
       ).placeholder,
     ).toBe("1200");
 
@@ -1618,7 +1597,6 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         ...openAIAdaptiveSchedulerDefaults,
-        openai_adaptive_scheduler_account_type_priority_mode: "mixed",
         openai_adaptive_scheduler_diagnostic_log_enabled: true,
       }),
     );

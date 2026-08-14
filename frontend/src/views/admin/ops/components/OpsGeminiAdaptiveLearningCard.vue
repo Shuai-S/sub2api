@@ -11,7 +11,8 @@ import {
   type OpsGeminiAdaptiveLearningResponse,
   type OpsGeminiAdaptiveLearningSortBy,
   type OpsGeminiAdaptiveLearningSortOrder,
-  type OpsGeminiAdaptiveLearningStatus,
+  type OpsAdaptiveLearningStatus,
+  type OpsAdaptiveRuntimeStatus,
   type OpsGeminiAdaptiveQuotaBucket
 } from '@/api/admin/ops'
 import { formatNumber } from '@/utils/format'
@@ -30,13 +31,14 @@ const props = withDefaults(defineProps<Props>(), {
 const { t } = useI18n()
 
 type ViewMode = 'topn' | 'pagination'
-type StatusFilter = '' | OpsGeminiAdaptiveLearningStatus
+type LearningStatusFilter = '' | OpsAdaptiveLearningStatus
+type RuntimeStatusFilter = '' | OpsAdaptiveRuntimeStatus
 
 const loading = ref(false)
 const errorMessage = ref('')
 const response = ref<OpsGeminiAdaptiveLearningResponse | null>(null)
-const statusFilter = ref<StatusFilter>('')
-const requestedModel = ref('gemini-2.5-pro')
+const learningStatusFilter = ref<LearningStatusFilter>('')
+const runtimeStatusFilter = ref<RuntimeStatusFilter>('')
 const viewMode = ref<ViewMode>('topn')
 const topN = ref(20)
 const page = ref(1)
@@ -58,17 +60,23 @@ const totalPages = computed(() => {
   return Math.max(1, Math.ceil(total.value / Math.max(1, pageSize.value)))
 })
 
-const statusFilterOptions = computed(() => [
+const learningStatusFilterOptions = computed(() => [
   { value: '', label: t('admin.ops.geminiAdaptiveLearning.statusFilter.all') },
-  { value: 'healthy', label: t('admin.ops.geminiAdaptiveLearning.status.healthy') },
-  { value: 'learning', label: t('admin.ops.geminiAdaptiveLearning.status.learning') },
   { value: 'unlearned', label: t('admin.ops.geminiAdaptiveLearning.status.unlearned') },
+  { value: 'learning', label: t('admin.ops.geminiAdaptiveLearning.status.learning') },
+  { value: 'learned', label: t('admin.ops.geminiAdaptiveLearning.status.learned') },
+  { value: 'not_applicable', label: t('admin.ops.geminiAdaptiveLearning.status.notApplicable') }
+])
+
+const runtimeStatusFilterOptions = computed(() => [
+  { value: '', label: t('admin.ops.geminiAdaptiveLearning.runtimeFilter.all') },
+  { value: 'healthy', label: t('admin.ops.geminiAdaptiveLearning.status.healthy') },
   { value: 'quota_limited', label: t('admin.ops.geminiAdaptiveLearning.status.quotaLimited') },
   { value: 'high_error', label: t('admin.ops.geminiAdaptiveLearning.status.highError') },
   { value: 'cooldown', label: t('admin.ops.geminiAdaptiveLearning.status.cooldown') },
+  { value: 'half_open', label: t('admin.ops.geminiAdaptiveLearning.status.halfOpen') },
   { value: 'saturated', label: t('admin.ops.geminiAdaptiveLearning.status.saturated') },
-  { value: 'unavailable', label: t('admin.ops.geminiAdaptiveLearning.status.unavailable') },
-  { value: 'disabled', label: t('admin.ops.geminiAdaptiveLearning.status.disabled') }
+  { value: 'unavailable', label: t('admin.ops.geminiAdaptiveLearning.status.unavailable') }
 ])
 
 const viewModeOptions = computed(() => [
@@ -84,10 +92,13 @@ const statusKeyMap: Record<string, string> = {
   unavailable: 'admin.ops.geminiAdaptiveLearning.status.unavailable',
   quota_limited: 'admin.ops.geminiAdaptiveLearning.status.quotaLimited',
   cooldown: 'admin.ops.geminiAdaptiveLearning.status.cooldown',
+  half_open: 'admin.ops.geminiAdaptiveLearning.status.halfOpen',
   high_error: 'admin.ops.geminiAdaptiveLearning.status.highError',
   saturated: 'admin.ops.geminiAdaptiveLearning.status.saturated',
   learning: 'admin.ops.geminiAdaptiveLearning.status.learning',
   unlearned: 'admin.ops.geminiAdaptiveLearning.status.unlearned',
+  learned: 'admin.ops.geminiAdaptiveLearning.status.learned',
+  not_applicable: 'admin.ops.geminiAdaptiveLearning.status.notApplicable',
   healthy: 'admin.ops.geminiAdaptiveLearning.status.healthy'
 }
 
@@ -98,9 +109,12 @@ const statusClassMap: Record<string, string> = {
   saturated: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   quota_limited: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   cooldown: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  half_open: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
   high_error: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   unavailable: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
-  disabled: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+  disabled: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
+  learned: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  not_applicable: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
 }
 
 const summaryItems = computed(() => {
@@ -145,17 +159,10 @@ const settingsItems = computed(() => {
       label: t('admin.ops.geminiAdaptiveLearning.settings.weights'),
       value: [
         settings.weight_reliability,
-        settings.weight_quota,
         settings.weight_capacity,
-        settings.weight_latency,
-        settings.weight_cost,
-        settings.weight_exploration
+        settings.weight_ttft,
+        settings.weight_cost
       ].map((value) => value.toFixed(2)).join('/')
-    },
-    {
-      key: 'sticky',
-      label: t('admin.ops.geminiAdaptiveLearning.settings.stickyEscape'),
-      value: settings.sticky_escape_on_capacity_full ? t('common.enabled') : t('common.disabled')
     },
     { key: 'window', label: t('admin.ops.geminiAdaptiveLearning.settings.window'), value: formatDuration(settings.learning_window_seconds) }
   ]
@@ -180,8 +187,8 @@ function buildParams(): OpsGeminiAdaptiveLearningParams {
     group_id: typeof props.groupIdFilter === 'number' && props.groupIdFilter > 0
       ? props.groupIdFilter
       : undefined,
-    model: requestedModel.value.trim() || undefined,
-    status: statusFilter.value || undefined,
+    learning_status: learningStatusFilter.value || undefined,
+    runtime_status: runtimeStatusFilter.value || undefined,
     sort_by: sortBy.value,
     sort_order: sortOrder.value
   }
@@ -226,8 +233,8 @@ watch(
     platform: props.platformFilter,
     groupId: props.groupIdFilter,
     refreshToken: props.refreshToken,
-    status: statusFilter.value,
-    model: requestedModel.value,
+    learningStatus: learningStatusFilter.value,
+    runtimeStatus: runtimeStatusFilter.value,
     viewMode: viewMode.value,
     topN: topN.value,
     page: page.value,
@@ -239,8 +246,8 @@ watch(
     const filtersChanged = !prev ||
       next.platform !== prev.platform ||
       next.groupId !== prev.groupId ||
-      next.status !== prev.status ||
-      next.model !== prev.model ||
+      next.learningStatus !== prev.learningStatus ||
+      next.runtimeStatus !== prev.runtimeStatus ||
       next.viewMode !== prev.viewMode ||
       next.pageSize !== prev.pageSize ||
       next.sortBy !== prev.sortBy ||
@@ -326,7 +333,7 @@ function formatTime(value?: string | null): string {
 }
 
 function latestEvent(row: OpsGeminiAdaptiveLearningAccount): string | undefined {
-  return [row.last_success_at, row.last_failure_at, row.last_capacity_failure_at]
+  return [row.last_success_at, row.last_failure_at, row.capacity_cooldown_until, row.quota_next_probe_at]
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
 }
@@ -349,8 +356,8 @@ function loadBarStyle(row: OpsGeminiAdaptiveLearningAccount): string {
 }
 
 function loadBarClass(row: OpsGeminiAdaptiveLearningAccount): string {
-  if (row.scheduler_status === 'cooldown' || row.scheduler_status === 'high_error') return 'bg-red-500'
-  if (row.load_percentage >= 90 || row.scheduler_status === 'saturated') return 'bg-orange-500'
+  if (row.runtime_status === 'cooldown' || row.runtime_status === 'high_error' || row.runtime_status === 'quota_limited') return 'bg-red-500'
+  if (row.load_percentage >= 90 || row.runtime_status === 'saturated') return 'bg-orange-500'
   if (row.load_percentage >= 70 || row.waiting_count > 0) return 'bg-amber-500'
   return 'bg-green-500'
 }
@@ -396,23 +403,11 @@ function onNextPage() {
       </div>
 
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <input
-          v-model.trim="requestedModel"
-          class="input h-9 w-52 text-xs"
-          type="text"
-          list="gemini-adaptive-model-suggestions"
-          :placeholder="t('admin.ops.geminiAdaptiveLearning.model.placeholder')"
-          :title="t('admin.ops.geminiAdaptiveLearning.model.tooltip')"
-          data-testid="gemini-adaptive-model-filter"
-        />
-        <datalist id="gemini-adaptive-model-suggestions">
-          <option value="gemini-2.5-pro" />
-          <option value="gemini-2.5-flash" />
-          <option value="gemini-2.5-flash-image" />
-          <option value="text-embedding-004" />
-        </datalist>
         <div class="w-36">
-          <Select v-model="statusFilter" :options="statusFilterOptions" />
+          <Select v-model="learningStatusFilter" :options="learningStatusFilterOptions" />
+        </div>
+        <div class="w-36">
+          <Select v-model="runtimeStatusFilter" :options="runtimeStatusFilterOptions" />
         </div>
         <div class="w-36">
           <Select v-model="viewMode" :options="viewModeOptions" />
@@ -495,8 +490,8 @@ function onNextPage() {
                 <th
                   v-for="column in ([
                     ['account', 'account'], ['status', 'status'], ['capacity', 'capacity'],
-                    ['load', 'load'], ['score', 'score'], ['quota', 'quota'],
-                    ['samples', 'samples'], ['latency', 'latency'], ['last_event', 'lastEvent']
+                    ['load', 'load'], ['score', 'score'], ['samples', 'samples'],
+                    ['latency', 'latency'], ['last_event', 'lastEvent']
                   ] as const)"
                   :key="column[0]"
                   class="px-3 py-2 font-semibold"
@@ -510,6 +505,9 @@ function onNextPage() {
                     />
                   </button>
                 </th>
+                <th class="px-3 py-2 font-semibold">
+                  {{ t('admin.ops.geminiAdaptiveLearning.table.quota') }}
+                </th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
@@ -519,21 +517,26 @@ function onNextPage() {
                     {{ row.account_name || `#${row.account_id}` }}
                   </div>
                   <div class="mt-0.5 flex flex-wrap gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-                    <span>#{{ row.account_id }}</span><span>{{ row.platform }}</span><span>{{ row.type || '-' }}</span><span>P{{ row.priority }}</span>
+                    <span>#{{ row.account_id }}</span><span>{{ row.platform }}</span><span>{{ row.type || '-' }}</span>
                     <span>{{ t('admin.ops.geminiAdaptiveLearning.rateMultiplier', { value: formatRate(row.rate_multiplier) }) }}</span>
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.scheduler_status)]">
-                    {{ statusLabel(row.scheduler_status) }}
-                  </span>
-                  <div v-if="row.status_reason" class="mt-1 max-w-[180px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.status_reason">
-                    {{ row.status_reason }}
+                  <div class="flex flex-wrap gap-1">
+                    <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.learning_status)]">
+                      {{ statusLabel(row.learning_status) }}
+                    </span>
+                    <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.runtime_status)]">
+                      {{ statusLabel(row.runtime_status) }}<template v-if="row.runtime_flags.length > 1"> +{{ row.runtime_flags.length - 1 }}</template>
+                    </span>
+                  </div>
+                  <div v-if="row.runtime_reason" class="mt-1 max-w-[180px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.runtime_reason">
+                    {{ row.runtime_reason }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">
-                    {{ formatInt(row.estimated_capacity) }}/{{ formatInt(row.configured_concurrency) }}
+					{{ formatInt(row.effective_capacity) }}/{{ formatInt(row.configured_concurrency) }}
                   </div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.geminiAdaptiveLearning.table.capacityHint') }}
@@ -554,14 +557,32 @@ function onNextPage() {
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatScore(row.scheduler_score) }}</div>
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
-                    R {{ formatScore(row.reliability_score) }} / Q {{ formatScore(row.quota_score) }} / C {{ formatScore(row.capacity_score) }}
-                  </div>
-                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
-                    L {{ formatScore(row.latency_score) }} / $ {{ formatScore(row.cost_score) }} / E {{ formatScore(row.exploration_score) }}
+                    R {{ formatScore(row.reliability_score) }} / C {{ formatScore(row.capacity_score) }} / T {{ formatScore(row.latency_score) }} / $ {{ formatScore(row.cost_score) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div v-if="row.quota.data_available" class="space-y-0.5 whitespace-nowrap text-[11px]">
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.health_samples) }}</div>
+                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
+                    {{ t('admin.ops.geminiAdaptiveLearning.successEma') }} {{ formatPercent(row.path_success_ema, 1) }}
+                  </div>
+				  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+					{{ t('admin.ops.geminiAdaptiveLearning.failureStreaks', { count: row.consecutive_failure }) }}
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
+                    {{ formatLatency(row.ttft_ema) }}
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <div class="whitespace-nowrap text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(latestEvent(row))">
+                    {{ row.cooldown_remaining_sec > 0
+                      ? t('admin.ops.geminiAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
+                      : formatTime(latestEvent(row)) }}
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <div v-if="row.quota?.data_available" class="space-y-0.5 whitespace-nowrap text-[11px]">
                     <div :class="row.quota.hard_rejected ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'">
                       {{ quotaBucketLabel(row.quota.scope.daily) }} D: {{ formatQuotaUsage(row.quota.daily_used, row.quota.daily_limit, row.quota.scope.daily) }}
                     </div>
@@ -573,36 +594,6 @@ function onNextPage() {
                     </div>
                   </div>
                   <span v-else class="text-[11px] text-gray-400">{{ t('admin.ops.geminiAdaptiveLearning.quota.unavailable') }}</span>
-                </td>
-                <td class="px-3 py-2">
-                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.total_samples) }}</div>
-                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.geminiAdaptiveLearning.successEma') }} P {{ formatPercent(row.path_success_ema, 1) }} / M {{ formatPercent(row.model_success_ema, 1) }}
-                  </div>
-                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
-                    H {{ formatInt(row.recent_health_samples) }}/{{ formatInt(row.recent_health_failures) }} / C {{ formatInt(row.recent_capacity_samples) }}/{{ formatInt(row.recent_capacity_failures) }}
-                  </div>
-                  <div v-if="row.consecutive_failure > 0 || row.consecutive_capacity_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
-                    {{ t('admin.ops.geminiAdaptiveLearning.failureStreaks', { health: row.consecutive_failure, capacity: row.consecutive_capacity_failure }) }}
-                  </div>
-                </td>
-                <td class="px-3 py-2">
-                  <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
-                    {{ formatLatency(row.ttft_ema) }} / {{ formatLatency(row.latency_ema) }}
-                  </div>
-                  <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                    {{ row.model_family }} / n={{ formatInt(row.model_samples) }} / f={{ formatInt(row.model_failures) }}
-                  </div>
-                </td>
-                <td class="px-3 py-2">
-                  <div class="whitespace-nowrap text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(latestEvent(row))">
-                    {{ row.cooldown_remaining_sec > 0
-                      ? t('admin.ops.geminiAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
-                      : formatTime(latestEvent(row)) }}
-                  </div>
-                  <div v-if="row.last_capacity_failure_at" class="mt-0.5 whitespace-nowrap text-[11px] text-orange-600 dark:text-orange-400">
-                    {{ t('admin.ops.geminiAdaptiveLearning.capacityFailureRate') }} {{ formatPercent(row.recent_capacity_failure_rate, 1) }}
-                  </div>
                 </td>
               </tr>
             </tbody>

@@ -39,22 +39,32 @@ const sampleResponse = {
   limit: 20,
   top_n: 20,
   settings: {
-    top_k: 10,
-    account_type_priority_mode: 'oauth_first',
-    exploration_rate: 0.05,
+    diagnostic_log_enabled: false,
+    diagnostic_log_sample_rate: 0.01,
+    top_k: 8,
+    exploration_rate: 0.02,
     softmax_temperature: 0.35,
-    initial_capacity_fraction: 0.1,
-    min_capacity: 1,
-    capacity_growth_factor: 1.1,
-    burst_probe_ratio: 0.3,
-    capacity_failure_threshold: 3,
-    min_recent_samples_for_shrink: 50,
-    shrink_error_threshold: 0.3,
-    shrink_factor_soft: 0.8,
-    shrink_factor_hard: 0.5,
-    half_open_failure_threshold: 3,
-    half_open_probe_capacity: 3,
+    consecutive_failure_penalty: 0.1,
     learning_window_seconds: 1200,
+    learning_min_health_samples: 30,
+    success_ema_alpha: 0.1,
+    ttft_ema_alpha: 0.1,
+    health_failure_threshold: 3,
+    cooldown_seconds: 60,
+    cooldown_max_seconds: 600,
+    high_error_min_samples: 10,
+    high_error_max_samples: 30,
+    high_error_enter_rate: 0.25,
+    high_error_exit_rate: 0.1,
+    capacity_shrink_factor: 0.85,
+    capacity_growth_factor: 1.15,
+    capacity_recovery_samples: 30,
+    capacity_recovery_load: 0.8,
+    quota_probe_interval_seconds: 60,
+    weight_reliability: 0.5,
+    weight_capacity: 0.2,
+    weight_ttft: 0.15,
+    weight_cost: 0.15,
   },
   summary: {
     tracked_accounts: 1,
@@ -64,9 +74,11 @@ const sampleResponse = {
     high_error_accounts: 1,
     cooldown_accounts: 1,
     half_open_accounts: 1,
-    insufficient_balance_accounts: 1,
+    quota_limited_accounts: 1,
     saturated_accounts: 1,
     unavailable_accounts: 0,
+    learned_accounts: 1,
+    not_applicable_accounts: 0,
   },
   accounts: [{
     account_id: 7,
@@ -75,40 +87,39 @@ const sampleResponse = {
     type: 'apikey',
     account_status: 'active',
     schedulable: true,
-    priority: 1,
     configured_concurrency: 100,
-    stable_capacity: 80,
     effective_capacity: 3,
-    burst_capacity: 0,
     rate_multiplier: 1,
     current_concurrency: 1,
     waiting_count: 0,
     load_percentage: 33.3,
-    scheduler_status: 'insufficient_balance',
-    status_reason: 'probing account after insufficient balance',
+    scheduler_status: 'quota_limited',
+    status_reason: 'quota exhausted',
     learned: true,
+    learning_status: 'learned',
+    runtime_status: 'quota_limited',
+    runtime_flags: ['quota_limited'],
+    runtime_reason_code: 'quota_limited',
+    runtime_reason: 'quota exhausted',
+    health_samples: 30,
+    capacity_generation: 2,
+    capacity_half_open: false,
     scheduler_score: 0.5,
     success_score: 0.9,
     cost_score: 0.5,
     capacity_score: 0.67,
     latency_score: 0.5,
-    stability_score: 0.9,
-    exploration_score: 0.1,
     success_ema: 0.9,
-    error_ema: 0.1,
-    latency_ema: 1000,
     ttft_ema: 200,
-    total_samples: 10,
-    recent_samples: 5,
-    recent_failures: 0,
-    recent_failure_rate: 0,
-    consecutive_success: 0,
-    consecutive_failure: 9,
-    consecutive_capacity_failure: 0,
+    ttft_samples: 12,
+    total_samples: 30,
+    consecutive_failure: 0,
     cooldown_remaining_sec: 0,
-    balance_insufficient_at: '2026-08-01T00:00:00Z',
-    last_balance_probe_at: '2026-08-01T00:01:00Z',
-    balance_generation: 2,
+    circuit_open_count: 0,
+    capacity_recovery_successes: 0,
+    quota_limited: true,
+    quota_reset_at: '2026-08-01T01:00:00Z',
+    quota_next_probe_at: '2026-08-01T00:01:00Z',
   }],
 }
 
@@ -117,7 +128,7 @@ describe('OpsOpenAIAdaptiveLearningCard', () => {
     vi.clearAllMocks()
   })
 
-  it('renders insufficient balance as a probe state without a failure streak', async () => {
+  it('renders quota limits separately from account failure streaks', async () => {
     mockGetOpenAIAdaptiveLearning.mockResolvedValue(sampleResponse)
     const wrapper = mount(OpsOpenAIAdaptiveLearningCard, {
       props: { refreshToken: 0 },
@@ -131,8 +142,8 @@ describe('OpsOpenAIAdaptiveLearningCard', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.status.insufficientBalance')
-    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.balanceProbeAt')
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.status.quotaLimited')
+    expect(wrapper.text()).toContain('quota exhausted')
     expect(wrapper.text()).not.toContain('admin.ops.openaiAdaptiveLearning.consecutiveFailures')
 
     const riskCard = wrapper.findAll('.grid > div').find((node) =>

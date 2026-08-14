@@ -5247,35 +5247,20 @@
                 </div>
 
                 <div
-                  class="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2 dark:border-dark-700"
+                  class="flex items-center justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700"
                   :class="{ 'opacity-60': !form.gemini_adaptive_scheduler_enabled }"
                 >
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <span>{{ t("admin.settings.geminiAdaptiveScheduler.stickyEscape") }}</span>
-                      <SchedulerParamHelp
-                        :content="t('admin.settings.geminiAdaptiveScheduler.tooltips.stickyEscape')"
-                      />
-                    </span>
-                    <Toggle
-                      v-model="form.gemini_adaptive_scheduler_sticky_escape_on_capacity_full"
-                      :disabled="!form.gemini_adaptive_scheduler_enabled"
-                      data-testid="gemini-adaptive-sticky-escape-toggle"
+                  <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>{{ t("admin.settings.geminiAdaptiveScheduler.diagnosticLog") }}</span>
+                    <SchedulerParamHelp
+                      :content="t('admin.settings.geminiAdaptiveScheduler.tooltips.diagnosticLog')"
                     />
-                  </div>
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <span>{{ t("admin.settings.geminiAdaptiveScheduler.diagnosticLog") }}</span>
-                      <SchedulerParamHelp
-                        :content="t('admin.settings.geminiAdaptiveScheduler.tooltips.diagnosticLog')"
-                      />
-                    </span>
-                    <Toggle
-                      v-model="form.gemini_adaptive_scheduler_diagnostic_log_enabled"
-                      :disabled="!form.gemini_adaptive_scheduler_enabled"
-                      data-testid="gemini-adaptive-diagnostic-log-toggle"
-                    />
-                  </div>
+                  </span>
+                  <Toggle
+                    v-model="form.gemini_adaptive_scheduler_diagnostic_log_enabled"
+                    :disabled="!form.gemini_adaptive_scheduler_enabled"
+                    data-testid="gemini-adaptive-diagnostic-log-toggle"
+                  />
                 </div>
 
                 <div
@@ -5416,332 +5401,57 @@
 
                 <div
                   class="space-y-4"
-                  :class="{
-                    'opacity-60': !form.openai_adaptive_scheduler_enabled,
-                  }"
+                  :class="{ 'opacity-60': !form.openai_adaptive_scheduler_enabled }"
                 >
-                  <div class="grid gap-4 md:grid-cols-3">
+                  <div class="grid gap-4 md:grid-cols-2">
                     <div>
                       <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.mode") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.mode')" />
                       </label>
                       <select v-model="form.openai_adaptive_scheduler_mode" class="input" :disabled="!form.openai_adaptive_scheduler_enabled">
-                        <option value="shadow">
-                          {{ t("admin.settings.openaiAdaptiveScheduler.modes.shadow") }}
-                        </option>
-                        <option value="enforce">
-                          {{ t("admin.settings.openaiAdaptiveScheduler.modes.enforce") }}
-                        </option>
+                        <option value="shadow">{{ t("admin.settings.openaiAdaptiveScheduler.modes.shadow") }}</option>
+                        <option value="enforce">{{ t("admin.settings.openaiAdaptiveScheduler.modes.enforce") }}</option>
                       </select>
                     </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriority") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.accountTypePriority')" />
-                      </label>
-                      <select v-model="form.openai_adaptive_scheduler_account_type_priority_mode" class="input" :disabled="!form.openai_adaptive_scheduler_enabled">
-                        <option value="mixed">
-                          {{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriorities.mixed") }}
-                        </option>
-                        <option value="oauth_first">
-                          {{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriorities.oauthFirst") }}
-                        </option>
-                        <option value="apikey_first">
-                          {{ t("admin.settings.openaiAdaptiveScheduler.accountTypePriorities.apiKeyFirst") }}
-                        </option>
-                      </select>
-                    </div>
-                    <div class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 dark:border-dark-700">
-                      <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <div class="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 dark:border-dark-600">
+                      <div class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
                         <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticLog") }}</span>
                         <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.diagnosticLog')" />
-                      </span>
+                      </div>
                       <Toggle v-model="form.openai_adaptive_scheduler_diagnostic_log_enabled" :disabled="!form.openai_adaptive_scheduler_enabled" />
                     </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticSampleRate") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.diagnosticSampleRate')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_diagnostic_log_sample_rate" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_diagnostic_log_sample_rate')" :disabled="!form.openai_adaptive_scheduler_enabled || !form.openai_adaptive_scheduler_diagnostic_log_enabled" />
-                    </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.topK") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.topK')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_top_k" class="input" type="number" min="1" max="100" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_top_k')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.explorationRate") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.explorationRate')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_exploration_rate" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_exploration_rate')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.softmaxTemperature") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.softmaxTemperature')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_softmax_temperature" class="input" type="number" min="0.01" max="10" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_softmax_temperature')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.minCostMultiplier") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minCostMultiplier')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_min_cost_multiplier" class="input" type="number" min="0.0001" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_min_cost_multiplier')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                    <div class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 dark:border-dark-700">
-                      <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.thompson") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.thompson')" />
-                      </span>
-                      <Toggle v-model="form.openai_adaptive_scheduler_thompson_enabled" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.thompsonAlpha") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.thompsonAlpha')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_alpha" class="input" type="number" min="0.01" step="0.1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_thompson_prior_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.thompsonBeta") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.thompsonBeta')" />
-                      </label>
-                      <input v-model.number="form.openai_adaptive_scheduler_thompson_prior_beta" class="input" type="number" min="0.01" step="0.1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_thompson_prior_beta')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
                   </div>
 
-                  <div>
-                    <h3 class="mb-3 flex items-center text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      <span>{{ t("admin.settings.openaiAdaptiveScheduler.capacityLearning") }}</span>
-                      <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.capacityLearning')" />
-                    </h3>
-                    <div class="grid gap-4 md:grid-cols-4">
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.minCapacity") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minCapacity')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_min_capacity" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_min_capacity')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.increaseStep") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.increaseStep')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_increase_step" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_increase_step')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.probeThreshold") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.probeThreshold')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_probe_load_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_probe_load_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.successThreshold") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.successThreshold')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_success_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_success_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.failureThreshold") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.failureThreshold')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_failure_threshold" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_failure_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.cooldownBase") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.cooldownBase')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_cooldown_base_seconds" class="input" type="number" min="0" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_cooldown_base_seconds')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.cooldownMax") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.cooldownMax')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_cooldown_max_seconds" class="input" type="number" min="0" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_cooldown_max_seconds')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 class="mb-3 flex items-center text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      <span>{{ t("admin.settings.openaiAdaptiveScheduler.burstAndShrink") }}</span>
-                      <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.burstAndShrink')" />
+                  <div
+                    v-for="section in openAIAdaptiveSchedulerSections"
+                    :key="section.key"
+                    class="space-y-3"
+                  >
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      {{ t(`admin.settings.openaiAdaptiveScheduler.sections.${section.key}`) }}
                     </h3>
                     <div class="grid gap-4 md:grid-cols-3">
-                      <div>
+                      <div v-for="field in section.fields" :key="field.key">
                         <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.initialCapacityFraction") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.initialCapacityFraction')" />
+                          <span>{{ t(`admin.settings.openaiAdaptiveScheduler.parameters.${field.label}`) }}</span>
+                          <SchedulerParamHelp :content="t(`admin.settings.openaiAdaptiveScheduler.tooltips.${field.label}`)" />
                         </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_initial_capacity_fraction" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_initial_capacity_fraction')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.growthFactor") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.growthFactor')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_capacity_growth_factor" class="input" type="number" min="1" max="10" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_capacity_growth_factor')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.burstProbeRatio") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.burstProbeRatio')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_burst_probe_ratio" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_burst_probe_ratio')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.minRecentSamplesForShrink") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.minRecentSamplesForShrink')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_min_recent_samples_for_shrink" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_min_recent_samples_for_shrink')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkErrorThreshold") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkErrorThreshold')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_shrink_error_threshold" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_error_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkFactorSoft") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorSoft')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_soft" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_factor_soft')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.shrinkFactorHard") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.shrinkFactorHard')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_shrink_factor_hard" class="input" type="number" min="0.01" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_shrink_factor_hard')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.halfOpenFailureThreshold") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.halfOpenFailureThreshold')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_half_open_failure_threshold" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_half_open_failure_threshold')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.halfOpenProbeCapacity") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.halfOpenProbeCapacity')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_half_open_probe_capacity" class="input" type="number" min="1" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_half_open_probe_capacity')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.learningWindowSeconds") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.learningWindowSeconds')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_learning_window_seconds" class="input" type="number" min="0" step="1" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_learning_window_seconds')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 class="mb-3 flex items-center text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      <span>{{ t("admin.settings.openaiAdaptiveScheduler.ema") }}</span>
-                      <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.ema')" />
-                    </h3>
-                    <div class="grid gap-4 md:grid-cols-4">
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.successEma") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.successEma')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_success_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_success_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.errorEma") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.errorEma')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_error_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_error_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.latencyEma") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.latencyEma')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_latency_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_latency_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.ttftEma") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.ttftEma')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_ttft_ema_alpha" class="input" type="number" min="0" max="1" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_ttft_ema_alpha')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 class="mb-3 flex items-center text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      <span>{{ t("admin.settings.openaiAdaptiveScheduler.weights") }}</span>
-                      <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weights')" />
-                    </h3>
-                    <div class="grid gap-4 md:grid-cols-6">
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightSuccess") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightSuccess')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_success" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_success')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightCost") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightCost')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_cost" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_cost')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightCapacity") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightCapacity')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_capacity" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_capacity')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightLatency") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightLatency')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_latency" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_latency')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightStability") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightStability')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_stability" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_stability')" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                      </div>
-                      <div>
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t("admin.settings.openaiAdaptiveScheduler.weightExploration") }}</span>
-                          <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.weightExploration')" />
-                        </label>
-                        <input v-model.number="form.openai_adaptive_scheduler_weight_exploration" class="input" type="number" min="0" step="0.01" :placeholder="openAIAdaptiveSchedulerPlaceholder('openai_adaptive_scheduler_weight_exploration')" :disabled="!form.openai_adaptive_scheduler_enabled" />
+                        <input
+                          v-model.number="form[field.key]"
+                          class="input"
+                          type="number"
+                          :min="field.min"
+                          :max="field.max"
+                          :step="field.step"
+                          :placeholder="openAIAdaptiveSchedulerPlaceholder(field.key)"
+                          :disabled="!form.openai_adaptive_scheduler_enabled || (section.key === 'diagnostics' && !form.openai_adaptive_scheduler_diagnostic_log_enabled)"
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
+
               </div>
 
               <div
@@ -10145,90 +9855,65 @@ type SettingsForm = Omit<
   anthropic_adaptive_scheduler_weight_reliability: number;
   anthropic_adaptive_scheduler_weight_capacity: number;
   anthropic_adaptive_scheduler_weight_latency: number;
-  anthropic_adaptive_scheduler_weight_exploration: number;
-  anthropic_adaptive_scheduler_initial_reliability: number;
   anthropic_adaptive_scheduler_consecutive_failure_penalty: number;
-  anthropic_adaptive_scheduler_neutral_latency_score: number;
   anthropic_adaptive_scheduler_success_ema_alpha: number;
   anthropic_adaptive_scheduler_latency_ema_alpha: number;
-  anthropic_adaptive_scheduler_capacity_success_threshold: number;
   anthropic_adaptive_scheduler_capacity_probe_load_threshold: number;
-  anthropic_adaptive_scheduler_capacity_failure_threshold: number;
-  anthropic_adaptive_scheduler_min_recent_samples_for_shrink: number;
-  anthropic_adaptive_scheduler_shrink_error_threshold: number;
   anthropic_adaptive_scheduler_learning_window_seconds: number;
   anthropic_adaptive_scheduler_cooldown_seconds: number;
   anthropic_adaptive_scheduler_shrink_factor_soft: number;
-  anthropic_adaptive_scheduler_shrink_factor_hard: number;
-  anthropic_adaptive_scheduler_capacity_increase_step: number;
-  anthropic_adaptive_scheduler_min_capacity: number;
-  anthropic_adaptive_scheduler_hard_shrink_failure_multiplier: number;
+  anthropic_adaptive_scheduler_exploration_rate: number;
+  anthropic_adaptive_scheduler_weight_cost: number;
+  anthropic_adaptive_scheduler_learning_min_health_samples: number;
+  anthropic_adaptive_scheduler_health_failure_threshold: number;
+  anthropic_adaptive_scheduler_cooldown_max_seconds: number;
+  anthropic_adaptive_scheduler_high_error_min_samples: number;
+  anthropic_adaptive_scheduler_high_error_max_samples: number;
+  anthropic_adaptive_scheduler_high_error_enter_rate: number;
+  anthropic_adaptive_scheduler_high_error_exit_rate: number;
+  anthropic_adaptive_scheduler_capacity_recovery_samples: number;
+  anthropic_adaptive_scheduler_capacity_growth_factor: number;
+  anthropic_adaptive_scheduler_quota_probe_interval_seconds: number;
   gemini_adaptive_scheduler_enabled: boolean;
   gemini_adaptive_scheduler_mode: string;
-  gemini_adaptive_scheduler_sticky_escape_on_capacity_full: boolean;
   gemini_adaptive_scheduler_top_k: number;
   gemini_adaptive_scheduler_softmax_temperature: number;
-  gemini_adaptive_scheduler_initial_reliability: number;
   gemini_adaptive_scheduler_consecutive_failure_penalty: number;
-  gemini_adaptive_scheduler_neutral_latency_score: number;
-  gemini_adaptive_scheduler_neutral_quota_score: number;
   gemini_adaptive_scheduler_success_ema_alpha: number;
   gemini_adaptive_scheduler_latency_ema_alpha: number;
-  gemini_adaptive_scheduler_min_cost_multiplier: number;
   gemini_adaptive_scheduler_weight_reliability: number;
-  gemini_adaptive_scheduler_weight_quota: number;
   gemini_adaptive_scheduler_weight_capacity: number;
   gemini_adaptive_scheduler_weight_latency: number;
   gemini_adaptive_scheduler_weight_cost: number;
-  gemini_adaptive_scheduler_weight_exploration: number;
   gemini_adaptive_scheduler_capacity_probe_load_threshold: number;
-  gemini_adaptive_scheduler_capacity_success_threshold: number;
-  gemini_adaptive_scheduler_capacity_increase_step: number;
-  gemini_adaptive_scheduler_min_capacity: number;
-  gemini_adaptive_scheduler_capacity_failure_threshold: number;
-  gemini_adaptive_scheduler_min_recent_samples_for_shrink: number;
-  gemini_adaptive_scheduler_shrink_error_threshold: number;
   gemini_adaptive_scheduler_shrink_factor_soft: number;
-  gemini_adaptive_scheduler_shrink_factor_hard: number;
-  gemini_adaptive_scheduler_hard_shrink_failure_multiplier: number;
   gemini_adaptive_scheduler_learning_window_seconds: number;
   gemini_adaptive_scheduler_cooldown_seconds: number;
   gemini_adaptive_scheduler_cooldown_max_seconds: number;
   gemini_adaptive_scheduler_account_failure_threshold: number;
-  gemini_adaptive_scheduler_model_failure_threshold: number;
-  gemini_adaptive_scheduler_half_open_probe_lease_seconds: number;
   gemini_adaptive_scheduler_diagnostic_log_enabled: boolean;
   gemini_adaptive_scheduler_diagnostic_log_sample_rate: number;
+  gemini_adaptive_scheduler_exploration_rate: number;
+  gemini_adaptive_scheduler_learning_min_health_samples: number;
+  gemini_adaptive_scheduler_high_error_min_samples: number;
+  gemini_adaptive_scheduler_high_error_max_samples: number;
+  gemini_adaptive_scheduler_high_error_enter_rate: number;
+  gemini_adaptive_scheduler_high_error_exit_rate: number;
+  gemini_adaptive_scheduler_capacity_recovery_samples: number;
+  gemini_adaptive_scheduler_capacity_growth_factor: number;
+  gemini_adaptive_scheduler_quota_probe_interval_seconds: number;
   openai_adaptive_scheduler_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_enabled: boolean;
   openai_adaptive_scheduler_diagnostic_log_sample_rate: number;
   openai_adaptive_scheduler_mode: string;
-  openai_adaptive_scheduler_account_type_priority_mode: string;
   openai_adaptive_scheduler_top_k: number;
   openai_adaptive_scheduler_exploration_rate: number;
   openai_adaptive_scheduler_softmax_temperature: number;
-  openai_adaptive_scheduler_min_cost_multiplier: number;
-  openai_adaptive_scheduler_thompson_enabled: boolean;
-  openai_adaptive_scheduler_thompson_prior_alpha: number;
-  openai_adaptive_scheduler_thompson_prior_beta: number;
-  openai_adaptive_scheduler_initial_capacity_fraction: number;
-  openai_adaptive_scheduler_min_capacity: number;
-  openai_adaptive_scheduler_capacity_increase_step: number;
   openai_adaptive_scheduler_capacity_growth_factor: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold: number;
-  openai_adaptive_scheduler_burst_probe_ratio: number;
-  openai_adaptive_scheduler_capacity_success_threshold: number;
-  openai_adaptive_scheduler_capacity_failure_threshold: number;
-  openai_adaptive_scheduler_min_recent_samples_for_shrink: number;
-  openai_adaptive_scheduler_shrink_error_threshold: number;
   openai_adaptive_scheduler_shrink_factor_soft: number;
-  openai_adaptive_scheduler_shrink_factor_hard: number;
-  openai_adaptive_scheduler_half_open_failure_threshold: number;
-  openai_adaptive_scheduler_half_open_probe_capacity: number;
   openai_adaptive_scheduler_learning_window_seconds: number;
   openai_adaptive_scheduler_success_ema_alpha: number;
-  openai_adaptive_scheduler_error_ema_alpha: number;
-  openai_adaptive_scheduler_latency_ema_alpha: number;
   openai_adaptive_scheduler_ttft_ema_alpha: number;
   openai_adaptive_scheduler_cooldown_base_seconds: number;
   openai_adaptive_scheduler_cooldown_max_seconds: number;
@@ -10236,8 +9921,15 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_weight_cost: number;
   openai_adaptive_scheduler_weight_capacity: number;
   openai_adaptive_scheduler_weight_latency: number;
-  openai_adaptive_scheduler_weight_stability: number;
-  openai_adaptive_scheduler_weight_exploration: number;
+  openai_adaptive_scheduler_consecutive_failure_penalty: number;
+  openai_adaptive_scheduler_learning_min_health_samples: number;
+  openai_adaptive_scheduler_health_failure_threshold: number;
+  openai_adaptive_scheduler_high_error_min_samples: number;
+  openai_adaptive_scheduler_high_error_max_samples: number;
+  openai_adaptive_scheduler_high_error_enter_rate: number;
+  openai_adaptive_scheduler_high_error_exit_rate: number;
+  openai_adaptive_scheduler_capacity_recovery_samples: number;
+  openai_adaptive_scheduler_quota_probe_interval_seconds: number;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
@@ -10248,101 +9940,83 @@ const anthropicAdaptiveSchedulerRecommendedValues = {
   anthropic_adaptive_scheduler_top_k: 8,
   anthropic_adaptive_scheduler_softmax_temperature: 0.35,
   anthropic_adaptive_scheduler_weight_reliability: 0.5,
-  anthropic_adaptive_scheduler_weight_capacity: 0.3,
+  anthropic_adaptive_scheduler_weight_capacity: 0.2,
   anthropic_adaptive_scheduler_weight_latency: 0.15,
-  anthropic_adaptive_scheduler_weight_exploration: 0.05,
-  anthropic_adaptive_scheduler_initial_reliability: 0.5,
+  anthropic_adaptive_scheduler_weight_cost: 0.15,
+  anthropic_adaptive_scheduler_exploration_rate: 0.02,
   anthropic_adaptive_scheduler_consecutive_failure_penalty: 0.25,
-  anthropic_adaptive_scheduler_neutral_latency_score: 0.5,
   anthropic_adaptive_scheduler_success_ema_alpha: 0.05,
   anthropic_adaptive_scheduler_latency_ema_alpha: 0.05,
-  anthropic_adaptive_scheduler_capacity_success_threshold: 0.97,
   anthropic_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
-  anthropic_adaptive_scheduler_capacity_failure_threshold: 3,
-  anthropic_adaptive_scheduler_min_recent_samples_for_shrink: 30,
-  anthropic_adaptive_scheduler_shrink_error_threshold: 0.25,
   anthropic_adaptive_scheduler_learning_window_seconds: 1200,
   anthropic_adaptive_scheduler_cooldown_seconds: 60,
   anthropic_adaptive_scheduler_shrink_factor_soft: 0.85,
-  anthropic_adaptive_scheduler_shrink_factor_hard: 0.6,
-  anthropic_adaptive_scheduler_capacity_increase_step: 1,
-  anthropic_adaptive_scheduler_min_capacity: 1,
-  anthropic_adaptive_scheduler_hard_shrink_failure_multiplier: 2,
+  anthropic_adaptive_scheduler_learning_min_health_samples: 30,
+  anthropic_adaptive_scheduler_health_failure_threshold: 3,
+  anthropic_adaptive_scheduler_cooldown_max_seconds: 600,
+  anthropic_adaptive_scheduler_high_error_min_samples: 10,
+  anthropic_adaptive_scheduler_high_error_max_samples: 100,
+  anthropic_adaptive_scheduler_high_error_enter_rate: 0.25,
+  anthropic_adaptive_scheduler_high_error_exit_rate: 0.15,
+  anthropic_adaptive_scheduler_capacity_recovery_samples: 30,
+  anthropic_adaptive_scheduler_capacity_growth_factor: 1.15,
+  anthropic_adaptive_scheduler_quota_probe_interval_seconds: 300,
 } satisfies Partial<SettingsForm>;
 
 type AnthropicAdaptiveSchedulerNumberKey =
   keyof typeof anthropicAdaptiveSchedulerRecommendedValues;
 
 const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
-  key: "selection" | "capacity" | "learningAndWeights" | "diagnostics";
-  fields: ReadonlyArray<{
-    key: AnthropicAdaptiveSchedulerNumberKey;
-    label:
-      | "topK"
-      | "softmaxTemperature"
-      | "initialReliability"
-      | "consecutiveFailurePenalty"
-      | "neutralLatencyScore"
-      | "capacityProbeLoadThreshold"
-      | "capacitySuccessThreshold"
-      | "capacityIncreaseStep"
-      | "minCapacity"
-      | "capacityFailureThreshold"
-      | "minRecentSamplesForShrink"
-      | "shrinkErrorThreshold"
-      | "shrinkFactorSoft"
-      | "shrinkFactorHard"
-      | "hardShrinkFailureMultiplier"
-      | "learningWindowSeconds"
-      | "cooldownSeconds"
-      | "successEmaAlpha"
-      | "latencyEmaAlpha"
-      | "weightReliability"
-      | "weightCapacity"
-      | "weightLatency"
-      | "weightExploration"
-      | "diagnosticLogSampleRate";
-    min: number;
-    max?: number;
-    step: number;
-  }>;
+  key: "selection" | "health" | "capacity" | "quota" | "weights" | "diagnostics";
+  fields: ReadonlyArray<{ key: AnthropicAdaptiveSchedulerNumberKey; label: string; min: number; max?: number; step: number }>;
 }> = [
   {
     key: "selection",
     fields: [
       { key: "anthropic_adaptive_scheduler_top_k", label: "topK", min: 1, max: 100, step: 1 },
       { key: "anthropic_adaptive_scheduler_softmax_temperature", label: "softmaxTemperature", min: 0.01, max: 10, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_initial_reliability", label: "initialReliability", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_exploration_rate", label: "explorationRate", min: 0, max: 1, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_consecutive_failure_penalty", label: "consecutiveFailurePenalty", min: 0, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_neutral_latency_score", label: "neutralLatencyScore", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    key: "health",
+    fields: [
+      { key: "anthropic_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_learning_min_health_samples", label: "learningMinHealthSamples", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0.0001, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_latency_ema_alpha", label: "ttftEmaAlpha", min: 0.0001, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_health_failure_threshold", label: "healthFailureThreshold", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
+      { key: "anthropic_adaptive_scheduler_cooldown_max_seconds", label: "cooldownMaxSeconds", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_high_error_min_samples", label: "highErrorMinSamples", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_high_error_max_samples", label: "highErrorMaxSamples", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_high_error_enter_rate", label: "highErrorEnterRate", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_high_error_exit_rate", label: "highErrorExitRate", min: 0, max: 1, step: 0.01 },
     ],
   },
   {
     key: "capacity",
     fields: [
-      { key: "anthropic_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityProbeLoadThreshold", min: 0, max: 1, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_capacity_success_threshold", label: "capacitySuccessThreshold", min: 0, max: 1, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_capacity_increase_step", label: "capacityIncreaseStep", min: 1, step: 1 },
-      { key: "anthropic_adaptive_scheduler_min_capacity", label: "minCapacity", min: 1, step: 1 },
-      { key: "anthropic_adaptive_scheduler_capacity_failure_threshold", label: "capacityFailureThreshold", min: 1, step: 1 },
-      { key: "anthropic_adaptive_scheduler_min_recent_samples_for_shrink", label: "minRecentSamplesForShrink", min: 1, step: 1 },
-      { key: "anthropic_adaptive_scheduler_shrink_error_threshold", label: "shrinkErrorThreshold", min: 0, max: 1, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_shrink_factor_soft", label: "shrinkFactorSoft", min: 0.01, max: 1, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_shrink_factor_hard", label: "shrinkFactorHard", min: 0.01, max: 1, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_hard_shrink_failure_multiplier", label: "hardShrinkFailureMultiplier", min: 1, max: 100, step: 1 },
-      { key: "anthropic_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
-      { key: "anthropic_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
+      { key: "anthropic_adaptive_scheduler_shrink_factor_soft", label: "capacityShrinkFactor", min: 0.01, max: 0.99, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_capacity_growth_factor", label: "capacityGrowthFactor", min: 1.01, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_capacity_recovery_samples", label: "capacityRecoverySamples", min: 1, step: 1 },
+      { key: "anthropic_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityRecoveryLoad", min: 0, max: 1, step: 0.01 },
     ],
   },
   {
-    key: "learningAndWeights",
+    key: "quota",
     fields: [
-      { key: "anthropic_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0, max: 1, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_latency_ema_alpha", label: "latencyEmaAlpha", min: 0, max: 1, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_quota_probe_interval_seconds", label: "quotaProbeIntervalSeconds", min: 1, step: 1 },
+    ],
+  },
+  {
+    key: "weights",
+    fields: [
       { key: "anthropic_adaptive_scheduler_weight_reliability", label: "weightReliability", min: 0, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_weight_latency", label: "weightLatency", min: 0, step: 0.01 },
-      { key: "anthropic_adaptive_scheduler_weight_exploration", label: "weightExploration", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_latency", label: "weightTTFT", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
     ],
   },
   {
@@ -10381,82 +10055,41 @@ function anthropicAdaptiveSchedulerNumber(
 }
 
 const geminiAdaptiveSchedulerRecommendedValues = {
-  gemini_adaptive_scheduler_top_k: 4,
-  gemini_adaptive_scheduler_softmax_temperature: 0.12,
-  gemini_adaptive_scheduler_initial_reliability: 0.5,
+  gemini_adaptive_scheduler_top_k: 8,
+  gemini_adaptive_scheduler_softmax_temperature: 0.35,
   gemini_adaptive_scheduler_consecutive_failure_penalty: 0.25,
-  gemini_adaptive_scheduler_neutral_latency_score: 0.5,
-  gemini_adaptive_scheduler_neutral_quota_score: 0.5,
   gemini_adaptive_scheduler_success_ema_alpha: 0.05,
   gemini_adaptive_scheduler_latency_ema_alpha: 0.05,
-  gemini_adaptive_scheduler_min_cost_multiplier: 0.03,
-  gemini_adaptive_scheduler_weight_reliability: 0.55,
-  gemini_adaptive_scheduler_weight_quota: 0.2,
-  gemini_adaptive_scheduler_weight_capacity: 0.1,
-  gemini_adaptive_scheduler_weight_latency: 0.1,
-  gemini_adaptive_scheduler_weight_cost: 0.03,
-  gemini_adaptive_scheduler_weight_exploration: 0.02,
+  gemini_adaptive_scheduler_weight_reliability: 0.5,
+  gemini_adaptive_scheduler_weight_capacity: 0.2,
+  gemini_adaptive_scheduler_weight_latency: 0.15,
+  gemini_adaptive_scheduler_weight_cost: 0.15,
   gemini_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
-  gemini_adaptive_scheduler_capacity_success_threshold: 0.97,
-  gemini_adaptive_scheduler_capacity_increase_step: 1,
-  gemini_adaptive_scheduler_min_capacity: 1,
-  gemini_adaptive_scheduler_capacity_failure_threshold: 3,
-  gemini_adaptive_scheduler_min_recent_samples_for_shrink: 30,
-  gemini_adaptive_scheduler_shrink_error_threshold: 0.25,
   gemini_adaptive_scheduler_shrink_factor_soft: 0.85,
-  gemini_adaptive_scheduler_shrink_factor_hard: 0.6,
-  gemini_adaptive_scheduler_hard_shrink_failure_multiplier: 2,
   gemini_adaptive_scheduler_learning_window_seconds: 1200,
   gemini_adaptive_scheduler_cooldown_seconds: 60,
   gemini_adaptive_scheduler_cooldown_max_seconds: 600,
   gemini_adaptive_scheduler_account_failure_threshold: 3,
-  gemini_adaptive_scheduler_model_failure_threshold: 3,
-  gemini_adaptive_scheduler_half_open_probe_lease_seconds: 600,
   gemini_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
+  gemini_adaptive_scheduler_exploration_rate: 0.02,
+  gemini_adaptive_scheduler_learning_min_health_samples: 30,
+  gemini_adaptive_scheduler_high_error_min_samples: 10,
+  gemini_adaptive_scheduler_high_error_max_samples: 100,
+  gemini_adaptive_scheduler_high_error_enter_rate: 0.25,
+  gemini_adaptive_scheduler_high_error_exit_rate: 0.15,
+  gemini_adaptive_scheduler_capacity_recovery_samples: 30,
+  gemini_adaptive_scheduler_capacity_growth_factor: 1.15,
+  gemini_adaptive_scheduler_quota_probe_interval_seconds: 300,
 } satisfies Partial<SettingsForm>;
 
 type GeminiAdaptiveSchedulerNumberKey =
   keyof typeof geminiAdaptiveSchedulerRecommendedValues;
 
-type GeminiAdaptiveSchedulerParameterLabel =
-  | "topK"
-  | "softmaxTemperature"
-  | "initialReliability"
-  | "consecutiveFailurePenalty"
-  | "neutralLatencyScore"
-  | "neutralQuotaScore"
-  | "minCostMultiplier"
-  | "capacityProbeLoadThreshold"
-  | "capacitySuccessThreshold"
-  | "capacityIncreaseStep"
-  | "minCapacity"
-  | "capacityFailureThreshold"
-  | "minRecentSamplesForShrink"
-  | "shrinkErrorThreshold"
-  | "shrinkFactorSoft"
-  | "shrinkFactorHard"
-  | "hardShrinkFailureMultiplier"
-  | "learningWindowSeconds"
-  | "cooldownSeconds"
-  | "cooldownMaxSeconds"
-  | "accountFailureThreshold"
-  | "modelFailureThreshold"
-  | "halfOpenProbeLeaseSeconds"
-  | "successEmaAlpha"
-  | "latencyEmaAlpha"
-  | "weightReliability"
-  | "weightQuota"
-  | "weightCapacity"
-  | "weightLatency"
-  | "weightCost"
-  | "weightExploration"
-  | "diagnosticLogSampleRate";
-
 const geminiAdaptiveSchedulerSections: ReadonlyArray<{
-  key: "selection" | "capacity" | "learningAndWeights" | "diagnostics";
+  key: "selection" | "health" | "capacity" | "quota" | "weights" | "diagnostics";
   fields: ReadonlyArray<{
     key: GeminiAdaptiveSchedulerNumberKey;
-    label: GeminiAdaptiveSchedulerParameterLabel;
+    label: string;
     min: number;
     max?: number;
     step: number;
@@ -10467,45 +10100,48 @@ const geminiAdaptiveSchedulerSections: ReadonlyArray<{
     fields: [
       { key: "gemini_adaptive_scheduler_top_k", label: "topK", min: 1, max: 100, step: 1 },
       { key: "gemini_adaptive_scheduler_softmax_temperature", label: "softmaxTemperature", min: 0.01, max: 10, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_initial_reliability", label: "initialReliability", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_exploration_rate", label: "explorationRate", min: 0, max: 1, step: 0.01 },
       { key: "gemini_adaptive_scheduler_consecutive_failure_penalty", label: "consecutiveFailurePenalty", min: 0, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_neutral_latency_score", label: "neutralLatencyScore", min: 0, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_neutral_quota_score", label: "neutralQuotaScore", min: 0, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_min_cost_multiplier", label: "minCostMultiplier", min: 0.0001, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_account_failure_threshold", label: "accountFailureThreshold", min: 1, max: 100, step: 1 },
-      { key: "gemini_adaptive_scheduler_model_failure_threshold", label: "modelFailureThreshold", min: 1, max: 100, step: 1 },
+    ],
+  },
+  {
+    key: "health",
+    fields: [
+      { key: "gemini_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_learning_min_health_samples", label: "learningMinHealthSamples", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0.0001, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_latency_ema_alpha", label: "ttftEmaAlpha", min: 0.0001, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_account_failure_threshold", label: "healthFailureThreshold", min: 1, max: 100, step: 1 },
+      { key: "gemini_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
+      { key: "gemini_adaptive_scheduler_cooldown_max_seconds", label: "cooldownMaxSeconds", min: 0, step: 1 },
+      { key: "gemini_adaptive_scheduler_high_error_min_samples", label: "highErrorMinSamples", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_high_error_max_samples", label: "highErrorMaxSamples", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_high_error_enter_rate", label: "highErrorEnterRate", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_high_error_exit_rate", label: "highErrorExitRate", min: 0, max: 1, step: 0.01 },
     ],
   },
   {
     key: "capacity",
     fields: [
-      { key: "gemini_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityProbeLoadThreshold", min: 0, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_capacity_success_threshold", label: "capacitySuccessThreshold", min: 0, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_capacity_increase_step", label: "capacityIncreaseStep", min: 1, step: 1 },
-      { key: "gemini_adaptive_scheduler_min_capacity", label: "minCapacity", min: 1, step: 1 },
-      { key: "gemini_adaptive_scheduler_capacity_failure_threshold", label: "capacityFailureThreshold", min: 1, step: 1 },
-      { key: "gemini_adaptive_scheduler_min_recent_samples_for_shrink", label: "minRecentSamplesForShrink", min: 1, step: 1 },
-      { key: "gemini_adaptive_scheduler_shrink_error_threshold", label: "shrinkErrorThreshold", min: 0, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_shrink_factor_soft", label: "shrinkFactorSoft", min: 0.01, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_shrink_factor_hard", label: "shrinkFactorHard", min: 0.01, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_hard_shrink_failure_multiplier", label: "hardShrinkFailureMultiplier", min: 1, max: 100, step: 1 },
-      { key: "gemini_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
-      { key: "gemini_adaptive_scheduler_cooldown_seconds", label: "cooldownSeconds", min: 0, step: 1 },
-      { key: "gemini_adaptive_scheduler_cooldown_max_seconds", label: "cooldownMaxSeconds", min: 0, step: 1 },
-      { key: "gemini_adaptive_scheduler_half_open_probe_lease_seconds", label: "halfOpenProbeLeaseSeconds", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_shrink_factor_soft", label: "capacityShrinkFactor", min: 0.01, max: 0.99, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_capacity_growth_factor", label: "capacityGrowthFactor", min: 1.01, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_capacity_recovery_samples", label: "capacityRecoverySamples", min: 1, step: 1 },
+      { key: "gemini_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityRecoveryLoad", min: 0, max: 1, step: 0.01 },
     ],
   },
   {
-    key: "learningAndWeights",
+    key: "quota",
     fields: [
-      { key: "gemini_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0, max: 1, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_latency_ema_alpha", label: "latencyEmaAlpha", min: 0, max: 1, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_quota_probe_interval_seconds", label: "quotaProbeIntervalSeconds", min: 1, step: 1 },
+    ],
+  },
+  {
+    key: "weights",
+    fields: [
       { key: "gemini_adaptive_scheduler_weight_reliability", label: "weightReliability", min: 0, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_weight_quota", label: "weightQuota", min: 0, step: 0.01 },
       { key: "gemini_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_weight_latency", label: "weightLatency", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_latency", label: "weightTTFT", min: 0, step: 0.01 },
       { key: "gemini_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
-      { key: "gemini_adaptive_scheduler_weight_exploration", label: "weightExploration", min: 0, step: 0.01 },
     ],
   },
   {
@@ -10545,43 +10181,95 @@ function geminiAdaptiveSchedulerNumber(
 
 const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
-  openai_adaptive_scheduler_top_k: 10,
-  openai_adaptive_scheduler_exploration_rate: 0.01,
+  openai_adaptive_scheduler_top_k: 8,
+  openai_adaptive_scheduler_exploration_rate: 0.02,
   openai_adaptive_scheduler_softmax_temperature: 0.35,
-  openai_adaptive_scheduler_min_cost_multiplier: 0.03,
-  openai_adaptive_scheduler_thompson_prior_alpha: 1,
-  openai_adaptive_scheduler_thompson_prior_beta: 1,
-  openai_adaptive_scheduler_initial_capacity_fraction: 0.03,
-  openai_adaptive_scheduler_min_capacity: 2,
-  openai_adaptive_scheduler_capacity_increase_step: 2,
   openai_adaptive_scheduler_capacity_growth_factor: 1.15,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
-  openai_adaptive_scheduler_burst_probe_ratio: 0.15,
-  openai_adaptive_scheduler_capacity_success_threshold: 0.95,
-  openai_adaptive_scheduler_capacity_failure_threshold: 3,
-  openai_adaptive_scheduler_min_recent_samples_for_shrink: 50,
-  openai_adaptive_scheduler_shrink_error_threshold: 0.35,
   openai_adaptive_scheduler_shrink_factor_soft: 0.9,
-  openai_adaptive_scheduler_shrink_factor_hard: 0.7,
-  openai_adaptive_scheduler_half_open_failure_threshold: 1,
-  openai_adaptive_scheduler_half_open_probe_capacity: 3,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
-  openai_adaptive_scheduler_success_ema_alpha: 0.04,
-  openai_adaptive_scheduler_error_ema_alpha: 0.06,
-  openai_adaptive_scheduler_latency_ema_alpha: 0.05,
+  openai_adaptive_scheduler_success_ema_alpha: 0.05,
   openai_adaptive_scheduler_ttft_ema_alpha: 0.05,
   openai_adaptive_scheduler_cooldown_base_seconds: 60,
   openai_adaptive_scheduler_cooldown_max_seconds: 600,
-  openai_adaptive_scheduler_weight_success: 0.4,
-  openai_adaptive_scheduler_weight_cost: 0.25,
+  openai_adaptive_scheduler_weight_success: 0.5,
+  openai_adaptive_scheduler_weight_cost: 0.15,
   openai_adaptive_scheduler_weight_capacity: 0.2,
-  openai_adaptive_scheduler_weight_latency: 0.1,
-  openai_adaptive_scheduler_weight_stability: 0.03,
-  openai_adaptive_scheduler_weight_exploration: 0.02,
+  openai_adaptive_scheduler_weight_latency: 0.15,
+  openai_adaptive_scheduler_consecutive_failure_penalty: 0.25,
+  openai_adaptive_scheduler_learning_min_health_samples: 30,
+  openai_adaptive_scheduler_health_failure_threshold: 3,
+  openai_adaptive_scheduler_high_error_min_samples: 10,
+  openai_adaptive_scheduler_high_error_max_samples: 100,
+  openai_adaptive_scheduler_high_error_enter_rate: 0.25,
+  openai_adaptive_scheduler_high_error_exit_rate: 0.15,
+  openai_adaptive_scheduler_capacity_recovery_samples: 30,
+  openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
 } satisfies Partial<SettingsForm>;
 
 type OpenAIAdaptiveSchedulerRecommendedKey =
   keyof typeof openAIAdaptiveSchedulerRecommendedValues;
+
+const openAIAdaptiveSchedulerSections: ReadonlyArray<{
+  key: "selection" | "health" | "capacity" | "quota" | "weights" | "diagnostics";
+  fields: ReadonlyArray<{ key: OpenAIAdaptiveSchedulerRecommendedKey; label: string; min: number; max?: number; step: number }>;
+}> = [
+  {
+    key: "selection",
+    fields: [
+      { key: "openai_adaptive_scheduler_top_k", label: "topK", min: 1, max: 100, step: 1 },
+      { key: "openai_adaptive_scheduler_softmax_temperature", label: "softmaxTemperature", min: 0.01, max: 10, step: 0.01 },
+      { key: "openai_adaptive_scheduler_exploration_rate", label: "explorationRate", min: 0, max: 1, step: 0.01 },
+      { key: "openai_adaptive_scheduler_consecutive_failure_penalty", label: "consecutiveFailurePenalty", min: 0, step: 0.01 },
+    ],
+  },
+  {
+    key: "health",
+    fields: [
+      { key: "openai_adaptive_scheduler_learning_window_seconds", label: "learningWindowSeconds", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_learning_min_health_samples", label: "learningMinHealthSamples", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_success_ema_alpha", label: "successEmaAlpha", min: 0.0001, max: 1, step: 0.01 },
+      { key: "openai_adaptive_scheduler_ttft_ema_alpha", label: "ttftEmaAlpha", min: 0.0001, max: 1, step: 0.01 },
+      { key: "openai_adaptive_scheduler_health_failure_threshold", label: "healthFailureThreshold", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_cooldown_base_seconds", label: "cooldownSeconds", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_cooldown_max_seconds", label: "cooldownMaxSeconds", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_high_error_min_samples", label: "highErrorMinSamples", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_high_error_max_samples", label: "highErrorMaxSamples", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_high_error_enter_rate", label: "highErrorEnterRate", min: 0, max: 1, step: 0.01 },
+      { key: "openai_adaptive_scheduler_high_error_exit_rate", label: "highErrorExitRate", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    key: "capacity",
+    fields: [
+      { key: "openai_adaptive_scheduler_shrink_factor_soft", label: "capacityShrinkFactor", min: 0.01, max: 0.99, step: 0.01 },
+      { key: "openai_adaptive_scheduler_capacity_growth_factor", label: "capacityGrowthFactor", min: 1.01, step: 0.01 },
+      { key: "openai_adaptive_scheduler_capacity_recovery_samples", label: "capacityRecoverySamples", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityRecoveryLoad", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    key: "quota",
+    fields: [
+      { key: "openai_adaptive_scheduler_quota_probe_interval_seconds", label: "quotaProbeIntervalSeconds", min: 1, step: 1 },
+    ],
+  },
+  {
+    key: "weights",
+    fields: [
+      { key: "openai_adaptive_scheduler_weight_success", label: "weightReliability", min: 0, step: 0.01 },
+      { key: "openai_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
+      { key: "openai_adaptive_scheduler_weight_latency", label: "weightTTFT", min: 0, step: 0.01 },
+      { key: "openai_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
+    ],
+  },
+  {
+    key: "diagnostics",
+    fields: [
+      { key: "openai_adaptive_scheduler_diagnostic_log_sample_rate", label: "diagnosticLogSampleRate", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+];
 
 function openAIAdaptiveSchedulerPlaceholder(
   key: OpenAIAdaptiveSchedulerRecommendedKey,
@@ -10849,14 +10537,11 @@ const form = reactive<SettingsForm>({
   ...anthropicAdaptiveSchedulerRecommendedValues,
   gemini_adaptive_scheduler_enabled: false,
   gemini_adaptive_scheduler_mode: "shadow",
-  gemini_adaptive_scheduler_sticky_escape_on_capacity_full: false,
   gemini_adaptive_scheduler_diagnostic_log_enabled: false,
   ...geminiAdaptiveSchedulerRecommendedValues,
   openai_adaptive_scheduler_enabled: false,
   openai_adaptive_scheduler_diagnostic_log_enabled: false,
-  openai_adaptive_scheduler_mode: "enforce",
-  openai_adaptive_scheduler_account_type_priority_mode: "mixed",
-  openai_adaptive_scheduler_thompson_enabled: true,
+  openai_adaptive_scheduler_mode: "shadow",
   ...openAIAdaptiveSchedulerRecommendedValues,
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
@@ -12684,116 +12369,102 @@ async function saveSettings() {
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_top_k"),
       anthropic_adaptive_scheduler_softmax_temperature:
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_softmax_temperature"),
+      anthropic_adaptive_scheduler_exploration_rate:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_exploration_rate"),
+      anthropic_adaptive_scheduler_consecutive_failure_penalty:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_consecutive_failure_penalty"),
+      anthropic_adaptive_scheduler_learning_window_seconds:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_learning_window_seconds"),
+      anthropic_adaptive_scheduler_learning_min_health_samples:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_learning_min_health_samples"),
+      anthropic_adaptive_scheduler_success_ema_alpha:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_success_ema_alpha"),
+      anthropic_adaptive_scheduler_latency_ema_alpha:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_latency_ema_alpha"),
+      anthropic_adaptive_scheduler_health_failure_threshold:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_health_failure_threshold"),
+      anthropic_adaptive_scheduler_cooldown_seconds:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_cooldown_seconds"),
+      anthropic_adaptive_scheduler_cooldown_max_seconds:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_cooldown_max_seconds"),
+      anthropic_adaptive_scheduler_high_error_min_samples:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_high_error_min_samples"),
+      anthropic_adaptive_scheduler_high_error_max_samples:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_high_error_max_samples"),
+      anthropic_adaptive_scheduler_high_error_enter_rate:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_high_error_enter_rate"),
+      anthropic_adaptive_scheduler_high_error_exit_rate:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_high_error_exit_rate"),
+      anthropic_adaptive_scheduler_shrink_factor_soft:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_factor_soft"),
+      anthropic_adaptive_scheduler_capacity_growth_factor:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_growth_factor"),
+      anthropic_adaptive_scheduler_capacity_recovery_samples:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_recovery_samples"),
+      anthropic_adaptive_scheduler_capacity_probe_load_threshold:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_probe_load_threshold"),
+      anthropic_adaptive_scheduler_quota_probe_interval_seconds:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_quota_probe_interval_seconds"),
       anthropic_adaptive_scheduler_weight_reliability:
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_reliability"),
       anthropic_adaptive_scheduler_weight_capacity:
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_capacity"),
       anthropic_adaptive_scheduler_weight_latency:
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_latency"),
-      anthropic_adaptive_scheduler_weight_exploration:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_exploration"),
-      anthropic_adaptive_scheduler_initial_reliability:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_initial_reliability"),
-      anthropic_adaptive_scheduler_consecutive_failure_penalty:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_consecutive_failure_penalty"),
-      anthropic_adaptive_scheduler_neutral_latency_score:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_neutral_latency_score"),
-      anthropic_adaptive_scheduler_success_ema_alpha:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_success_ema_alpha"),
-      anthropic_adaptive_scheduler_latency_ema_alpha:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_latency_ema_alpha"),
-      anthropic_adaptive_scheduler_capacity_success_threshold:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_success_threshold"),
-      anthropic_adaptive_scheduler_capacity_probe_load_threshold:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_probe_load_threshold"),
-      anthropic_adaptive_scheduler_capacity_failure_threshold:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_failure_threshold"),
-      anthropic_adaptive_scheduler_min_recent_samples_for_shrink:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_min_recent_samples_for_shrink"),
-      anthropic_adaptive_scheduler_shrink_error_threshold:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_error_threshold"),
-      anthropic_adaptive_scheduler_learning_window_seconds:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_learning_window_seconds"),
-      anthropic_adaptive_scheduler_cooldown_seconds:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_cooldown_seconds"),
-      anthropic_adaptive_scheduler_shrink_factor_soft:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_factor_soft"),
-      anthropic_adaptive_scheduler_shrink_factor_hard:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_shrink_factor_hard"),
-      anthropic_adaptive_scheduler_capacity_increase_step:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_capacity_increase_step"),
-      anthropic_adaptive_scheduler_min_capacity:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_min_capacity"),
-      anthropic_adaptive_scheduler_hard_shrink_failure_multiplier:
-        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_hard_shrink_failure_multiplier"),
+      anthropic_adaptive_scheduler_weight_cost:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_cost"),
       gemini_adaptive_scheduler_enabled:
         form.gemini_adaptive_scheduler_enabled,
       gemini_adaptive_scheduler_mode:
         form.gemini_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow",
-      gemini_adaptive_scheduler_sticky_escape_on_capacity_full:
-        form.gemini_adaptive_scheduler_sticky_escape_on_capacity_full,
       gemini_adaptive_scheduler_top_k:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_top_k"),
       gemini_adaptive_scheduler_softmax_temperature:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_softmax_temperature"),
-      gemini_adaptive_scheduler_initial_reliability:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_initial_reliability"),
+      gemini_adaptive_scheduler_exploration_rate:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_exploration_rate"),
       gemini_adaptive_scheduler_consecutive_failure_penalty:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_consecutive_failure_penalty"),
-      gemini_adaptive_scheduler_neutral_latency_score:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_neutral_latency_score"),
-      gemini_adaptive_scheduler_neutral_quota_score:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_neutral_quota_score"),
+      gemini_adaptive_scheduler_learning_window_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_learning_window_seconds"),
+      gemini_adaptive_scheduler_learning_min_health_samples:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_learning_min_health_samples"),
       gemini_adaptive_scheduler_success_ema_alpha:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_success_ema_alpha"),
       gemini_adaptive_scheduler_latency_ema_alpha:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_latency_ema_alpha"),
-      gemini_adaptive_scheduler_min_cost_multiplier:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_min_cost_multiplier"),
+      gemini_adaptive_scheduler_account_failure_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_account_failure_threshold"),
+      gemini_adaptive_scheduler_cooldown_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_seconds"),
+      gemini_adaptive_scheduler_cooldown_max_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_max_seconds"),
+      gemini_adaptive_scheduler_high_error_min_samples:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_high_error_min_samples"),
+      gemini_adaptive_scheduler_high_error_max_samples:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_high_error_max_samples"),
+      gemini_adaptive_scheduler_high_error_enter_rate:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_high_error_enter_rate"),
+      gemini_adaptive_scheduler_high_error_exit_rate:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_high_error_exit_rate"),
+      gemini_adaptive_scheduler_shrink_factor_soft:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_factor_soft"),
+      gemini_adaptive_scheduler_capacity_growth_factor:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_growth_factor"),
+      gemini_adaptive_scheduler_capacity_recovery_samples:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_recovery_samples"),
+      gemini_adaptive_scheduler_capacity_probe_load_threshold:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_probe_load_threshold"),
+      gemini_adaptive_scheduler_quota_probe_interval_seconds:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_quota_probe_interval_seconds"),
       gemini_adaptive_scheduler_weight_reliability:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_reliability"),
-      gemini_adaptive_scheduler_weight_quota:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_quota"),
       gemini_adaptive_scheduler_weight_capacity:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_capacity"),
       gemini_adaptive_scheduler_weight_latency:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_latency"),
       gemini_adaptive_scheduler_weight_cost:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_cost"),
-      gemini_adaptive_scheduler_weight_exploration:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_exploration"),
-      gemini_adaptive_scheduler_capacity_probe_load_threshold:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_probe_load_threshold"),
-      gemini_adaptive_scheduler_capacity_success_threshold:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_success_threshold"),
-      gemini_adaptive_scheduler_capacity_increase_step:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_increase_step"),
-      gemini_adaptive_scheduler_min_capacity:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_min_capacity"),
-      gemini_adaptive_scheduler_capacity_failure_threshold:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_capacity_failure_threshold"),
-      gemini_adaptive_scheduler_min_recent_samples_for_shrink:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_min_recent_samples_for_shrink"),
-      gemini_adaptive_scheduler_shrink_error_threshold:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_error_threshold"),
-      gemini_adaptive_scheduler_shrink_factor_soft:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_factor_soft"),
-      gemini_adaptive_scheduler_shrink_factor_hard:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_shrink_factor_hard"),
-      gemini_adaptive_scheduler_hard_shrink_failure_multiplier:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_hard_shrink_failure_multiplier"),
-      gemini_adaptive_scheduler_learning_window_seconds:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_learning_window_seconds"),
-      gemini_adaptive_scheduler_cooldown_seconds:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_seconds"),
-      gemini_adaptive_scheduler_cooldown_max_seconds:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_cooldown_max_seconds"),
-      gemini_adaptive_scheduler_account_failure_threshold:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_account_failure_threshold"),
-      gemini_adaptive_scheduler_model_failure_threshold:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_model_failure_threshold"),
-      gemini_adaptive_scheduler_half_open_probe_lease_seconds:
-        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_half_open_probe_lease_seconds"),
       gemini_adaptive_scheduler_diagnostic_log_enabled:
         form.gemini_adaptive_scheduler_diagnostic_log_enabled,
       gemini_adaptive_scheduler_diagnostic_log_sample_rate:
@@ -12804,65 +12475,48 @@ async function saveSettings() {
         form.openai_adaptive_scheduler_diagnostic_log_enabled,
       openai_adaptive_scheduler_diagnostic_log_sample_rate:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_diagnostic_log_sample_rate"),
-      openai_adaptive_scheduler_mode: form.openai_adaptive_scheduler_mode,
-      openai_adaptive_scheduler_account_type_priority_mode:
-        form.openai_adaptive_scheduler_account_type_priority_mode || "mixed",
+      openai_adaptive_scheduler_mode:
+        form.openai_adaptive_scheduler_mode === "enforce" ? "enforce" : "shadow",
       openai_adaptive_scheduler_top_k:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_top_k"),
       openai_adaptive_scheduler_exploration_rate:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_exploration_rate"),
       openai_adaptive_scheduler_softmax_temperature:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_softmax_temperature"),
-      openai_adaptive_scheduler_min_cost_multiplier:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_min_cost_multiplier"),
-      openai_adaptive_scheduler_thompson_enabled:
-        form.openai_adaptive_scheduler_thompson_enabled,
-      openai_adaptive_scheduler_thompson_prior_alpha:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_thompson_prior_alpha"),
-      openai_adaptive_scheduler_thompson_prior_beta:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_thompson_prior_beta"),
-      openai_adaptive_scheduler_initial_capacity_fraction:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_initial_capacity_fraction"),
-      openai_adaptive_scheduler_min_capacity:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_min_capacity"),
-      openai_adaptive_scheduler_capacity_increase_step:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_increase_step"),
-      openai_adaptive_scheduler_capacity_growth_factor:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_growth_factor"),
-      openai_adaptive_scheduler_capacity_probe_load_threshold:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_probe_load_threshold"),
-      openai_adaptive_scheduler_burst_probe_ratio:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_burst_probe_ratio"),
-      openai_adaptive_scheduler_capacity_success_threshold:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_success_threshold"),
-      openai_adaptive_scheduler_capacity_failure_threshold:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_failure_threshold"),
-      openai_adaptive_scheduler_min_recent_samples_for_shrink:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_min_recent_samples_for_shrink"),
-      openai_adaptive_scheduler_shrink_error_threshold:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_shrink_error_threshold"),
-      openai_adaptive_scheduler_shrink_factor_soft:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_shrink_factor_soft"),
-      openai_adaptive_scheduler_shrink_factor_hard:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_shrink_factor_hard"),
-      openai_adaptive_scheduler_half_open_failure_threshold:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_half_open_failure_threshold"),
-      openai_adaptive_scheduler_half_open_probe_capacity:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_half_open_probe_capacity"),
+      openai_adaptive_scheduler_consecutive_failure_penalty:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_consecutive_failure_penalty"),
       openai_adaptive_scheduler_learning_window_seconds:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_learning_window_seconds"),
+      openai_adaptive_scheduler_learning_min_health_samples:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_learning_min_health_samples"),
       openai_adaptive_scheduler_success_ema_alpha:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_success_ema_alpha"),
-      openai_adaptive_scheduler_error_ema_alpha:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_error_ema_alpha"),
-      openai_adaptive_scheduler_latency_ema_alpha:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_latency_ema_alpha"),
       openai_adaptive_scheduler_ttft_ema_alpha:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_ttft_ema_alpha"),
+      openai_adaptive_scheduler_health_failure_threshold:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_health_failure_threshold"),
       openai_adaptive_scheduler_cooldown_base_seconds:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_cooldown_base_seconds"),
       openai_adaptive_scheduler_cooldown_max_seconds:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_cooldown_max_seconds"),
+      openai_adaptive_scheduler_high_error_min_samples:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_high_error_min_samples"),
+      openai_adaptive_scheduler_high_error_max_samples:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_high_error_max_samples"),
+      openai_adaptive_scheduler_high_error_enter_rate:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_high_error_enter_rate"),
+      openai_adaptive_scheduler_high_error_exit_rate:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_high_error_exit_rate"),
+      openai_adaptive_scheduler_shrink_factor_soft:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_shrink_factor_soft"),
+      openai_adaptive_scheduler_capacity_growth_factor:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_growth_factor"),
+      openai_adaptive_scheduler_capacity_recovery_samples:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_recovery_samples"),
+      openai_adaptive_scheduler_capacity_probe_load_threshold:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_probe_load_threshold"),
+      openai_adaptive_scheduler_quota_probe_interval_seconds:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_quota_probe_interval_seconds"),
       openai_adaptive_scheduler_weight_success:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_success"),
       openai_adaptive_scheduler_weight_cost:
@@ -12871,10 +12525,6 @@ async function saveSettings() {
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_capacity"),
       openai_adaptive_scheduler_weight_latency:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_latency"),
-      openai_adaptive_scheduler_weight_stability:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_stability"),
-      openai_adaptive_scheduler_weight_exploration:
-        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_exploration"),
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

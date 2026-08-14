@@ -474,32 +474,14 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 		OpenAIAdaptiveScheduler: OpenAIAdaptiveSchedulerSettings{
 			OpenAIAdaptiveSchedulerEnabled:                    true,
 			OpenAIAdaptiveSchedulerMode:                       openAIAdaptiveSchedulerModeEnforce,
-			OpenAIAdaptiveSchedulerAccountTypePriorityMode:    openAIAdaptiveSchedulerAccountTypePriorityAPIKeyFirst,
 			OpenAIAdaptiveSchedulerTopK:                       20,
 			OpenAIAdaptiveSchedulerExplorationRate:            0.07,
 			OpenAIAdaptiveSchedulerSoftmaxTemperature:         0.5,
-			OpenAIAdaptiveSchedulerMinCostMultiplier:          0.02,
-			OpenAIAdaptiveSchedulerThompsonEnabled:            false,
-			OpenAIAdaptiveSchedulerThompsonPriorAlpha:         2,
-			OpenAIAdaptiveSchedulerThompsonPriorBeta:          3,
-			OpenAIAdaptiveSchedulerInitialCapacityFraction:    0.12,
-			OpenAIAdaptiveSchedulerMinCapacity:                2,
-			OpenAIAdaptiveSchedulerCapacityIncreaseStep:       4,
 			OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.4,
 			OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.75,
-			OpenAIAdaptiveSchedulerBurstProbeRatio:            0.3,
-			OpenAIAdaptiveSchedulerCapacitySuccessThreshold:   0.95,
-			OpenAIAdaptiveSchedulerCapacityFailureThreshold:   4,
-			OpenAIAdaptiveSchedulerMinRecentSamplesForShrink:  12,
-			OpenAIAdaptiveSchedulerShrinkErrorThreshold:       0.25,
 			OpenAIAdaptiveSchedulerShrinkFactorSoft:           0.85,
-			OpenAIAdaptiveSchedulerShrinkFactorHard:           0.45,
-			OpenAIAdaptiveSchedulerHalfOpenFailureThreshold:   2,
-			OpenAIAdaptiveSchedulerHalfOpenProbeCapacity:      7,
 			OpenAIAdaptiveSchedulerLearningWindowSeconds:      1200,
 			OpenAIAdaptiveSchedulerSuccessEMAAlpha:            0.06,
-			OpenAIAdaptiveSchedulerErrorEMAAlpha:              0.11,
-			OpenAIAdaptiveSchedulerLatencyEMAAlpha:            0.08,
 			OpenAIAdaptiveSchedulerTTFTEMAAlpha:               0.09,
 			OpenAIAdaptiveSchedulerCooldownBaseSeconds:        30,
 			OpenAIAdaptiveSchedulerCooldownMaxSeconds:         300,
@@ -507,8 +489,6 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 			OpenAIAdaptiveSchedulerWeightCost:                 0.3,
 			OpenAIAdaptiveSchedulerWeightCapacity:             0.2,
 			OpenAIAdaptiveSchedulerWeightLatency:              0.1,
-			OpenAIAdaptiveSchedulerWeightStability:            0.05,
-			OpenAIAdaptiveSchedulerWeightExploration:          0.02,
 		},
 	})
 	require.NoError(t, err)
@@ -521,32 +501,14 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "true", repo.updates[openAIAdvancedSchedulerSettingKey])
 	require.Equal(t, "true", repo.updates[openAIAdaptiveSchedulerEnabledKey])
 	require.Equal(t, "enforce", repo.updates[openAIAdaptiveSchedulerModeKey])
-	require.Equal(t, "apikey_first", repo.updates[openAIAdaptiveSchedulerAccountTypePriorityModeKey])
 	require.Equal(t, "20", repo.updates[openAIAdaptiveSchedulerTopKKey])
 	require.Equal(t, "0.07", repo.updates[openAIAdaptiveSchedulerExplorationRateKey])
 	require.Equal(t, "0.5", repo.updates[openAIAdaptiveSchedulerSoftmaxTemperatureKey])
-	require.Equal(t, "0.02", repo.updates[openAIAdaptiveSchedulerMinCostMultiplierKey])
-	require.Equal(t, "false", repo.updates[openAIAdaptiveSchedulerThompsonEnabledKey])
-	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerThompsonPriorAlphaKey])
-	require.Equal(t, "3", repo.updates[openAIAdaptiveSchedulerThompsonPriorBetaKey])
-	require.Equal(t, "0.12", repo.updates[openAIAdaptiveSchedulerInitialCapacityFractionKey])
-	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerMinCapacityKey])
-	require.Equal(t, "4", repo.updates[openAIAdaptiveSchedulerCapacityIncreaseStepKey])
 	require.Equal(t, "1.4", repo.updates[openAIAdaptiveSchedulerCapacityGrowthFactorKey])
 	require.Equal(t, "0.75", repo.updates[openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey])
-	require.Equal(t, "0.3", repo.updates[openAIAdaptiveSchedulerBurstProbeRatioKey])
-	require.Equal(t, "0.95", repo.updates[openAIAdaptiveSchedulerCapacitySuccessThresholdKey])
-	require.Equal(t, "4", repo.updates[openAIAdaptiveSchedulerCapacityFailureThresholdKey])
-	require.Equal(t, "12", repo.updates[openAIAdaptiveSchedulerMinRecentSamplesForShrinkKey])
-	require.Equal(t, "0.25", repo.updates[openAIAdaptiveSchedulerShrinkErrorThresholdKey])
 	require.Equal(t, "0.85", repo.updates[openAIAdaptiveSchedulerShrinkFactorSoftKey])
-	require.Equal(t, "0.45", repo.updates[openAIAdaptiveSchedulerShrinkFactorHardKey])
-	require.Equal(t, "2", repo.updates[openAIAdaptiveSchedulerHalfOpenFailureThresholdKey])
-	require.Equal(t, "7", repo.updates[openAIAdaptiveSchedulerHalfOpenProbeCapacityKey])
 	require.Equal(t, "1200", repo.updates[openAIAdaptiveSchedulerLearningWindowSecondsKey])
 	require.Equal(t, "0.06", repo.updates[openAIAdaptiveSchedulerSuccessEMAAlphaKey])
-	require.Equal(t, "0.11", repo.updates[openAIAdaptiveSchedulerErrorEMAAlphaKey])
-	require.Equal(t, "0.08", repo.updates[openAIAdaptiveSchedulerLatencyEMAAlphaKey])
 	require.Equal(t, "0.09", repo.updates[openAIAdaptiveSchedulerTTFTEMAAlphaKey])
 	require.Equal(t, "30", repo.updates[openAIAdaptiveSchedulerCooldownBaseSecondsKey])
 	require.Equal(t, "300", repo.updates[openAIAdaptiveSchedulerCooldownMaxSecondsKey])
@@ -554,8 +516,6 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "0.3", repo.updates[openAIAdaptiveSchedulerWeightCostKey])
 	require.Equal(t, "0.2", repo.updates[openAIAdaptiveSchedulerWeightCapacityKey])
 	require.Equal(t, "0.1", repo.updates[openAIAdaptiveSchedulerWeightLatencyKey])
-	require.Equal(t, "0.05", repo.updates[openAIAdaptiveSchedulerWeightStabilityKey])
-	require.Equal(t, "0.02", repo.updates[openAIAdaptiveSchedulerWeightExplorationKey])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
 	require.Equal(t, "3", repo.updates[SettingKeyOpenAIAdvancedSchedulerLBTopK])

@@ -7,24 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGeminiAdaptiveLearningSnapshotReadDoesNotCreateState(t *testing.T) {
-	store := newGeminiAdaptiveStateStore()
-	account := &Account{ID: 42, Concurrency: 8}
-
-	snapshot := store.snapshot(account, DefaultGeminiAdaptiveSchedulerSettings())
-
-	require.Equal(t, 8, snapshot.EstimatedCapacity)
-	store.mu.RLock()
-	defer store.mu.RUnlock()
-	require.Empty(t, store.accounts)
-}
-
-func TestGeminiAdaptiveLearningSnapshotIncludesRateMultiplier(t *testing.T) {
-	rate := 1.25
-	now := time.Now()
-	settings := DefaultGeminiAdaptiveSchedulerSettings()
+func TestGeminiAdaptiveLearningSnapshotIncludesAccountLevelCoreState(t *testing.T) {
+	rate := 0.8
+	now := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
 	account := &Account{
 		ID:             42,
+		Name:           "gemini-42",
 		Platform:       PlatformGemini,
 		Type:           AccountTypeAPIKey,
 		Status:         StatusActive,
@@ -32,109 +21,55 @@ func TestGeminiAdaptiveLearningSnapshotIncludesRateMultiplier(t *testing.T) {
 		Concurrency:    8,
 		RateMultiplier: &rate,
 	}
-	state := defaultGeminiAdaptiveAccountState(account, now, settings)
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
+	state.SuccessEMA = 0.9
+	state.TTFTEMA = 180
+	state.TTFTSamples = 12
+	for i := 0; i < settings.LearningMinHealthSamples; i++ {
+		state.HealthObservations = append(state.HealthObservations, adaptiveHealthObservation{At: now.Add(-time.Duration(i) * time.Second), Success: true})
+	}
+	load := &AccountLoadInfo{AccountID: account.ID, CurrentConcurrency: 2, WaitingCount: 1}
 
-	snapshot := buildGeminiAdaptiveLearningAccountSnapshot(
-		account, state, settings, &AccountLoadInfo{}, GeminiAdaptiveQuotaSnapshot{}, "gemini-2.5-pro", now,
-	)
+	snapshot := buildGeminiAdaptiveCoreLearningAccountSnapshot(account, *state, load, now, settings)
 
+	require.Equal(t, account.ID, snapshot.AccountID)
 	require.InDelta(t, rate, snapshot.RateMultiplier, 1e-12)
+	require.Equal(t, account.Concurrency, snapshot.EffectiveCapacity)
+	require.Equal(t, string(adaptiveLearningLearned), snapshot.LearningStatus)
+	require.Equal(t, string(adaptiveRuntimeHealthy), snapshot.RuntimeStatus)
+	require.Equal(t, settings.LearningMinHealthSamples, snapshot.HealthSamples)
+	require.Equal(t, 180.0, snapshot.TTFTEMA)
+	require.Equal(t, int64(12), snapshot.TTFTSamples)
+	require.Nil(t, snapshot.Quota)
 }
 
-func TestGeminiAdaptiveLearningAccountStatuses(t *testing.T) {
+func TestGeminiAdaptiveLearningSnapshotMarksOAuthNotApplicable(t *testing.T) {
 	now := time.Now()
-	settings := DefaultGeminiAdaptiveSchedulerSettings()
-	settings.GeminiAdaptiveSchedulerEnabled = true
-	settings.GeminiAdaptiveSchedulerMinRecentSamplesForShrink = 10
-	settings.GeminiAdaptiveSchedulerCapacityFailureThreshold = 3
-	settings.GeminiAdaptiveSchedulerShrinkErrorThreshold = 0.25
-	account := &Account{
-		ID:          1,
-		Platform:    PlatformGemini,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 10,
-	}
-	baseState := defaultGeminiAdaptiveAccountState(account, now, settings)
+	account := &Account{ID: 1, Platform: PlatformGemini, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Concurrency: 10}
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
 
-	tests := []struct {
-		name     string
-		enabled  bool
-		account  *Account
-		state    geminiAdaptiveAccountState
-		load     *AccountLoadInfo
-		quota    GeminiAdaptiveQuotaSnapshot
-		failRate float64
-		want     string
-	}{
-		{name: "disabled", account: account, state: baseState, load: &AccountLoadInfo{}, want: GeminiAdaptiveLearningStatusDisabled},
-		{name: "unavailable", enabled: true, account: &Account{ID: 1, Status: StatusDisabled, Schedulable: true, Concurrency: 10}, state: baseState, load: &AccountLoadInfo{}, want: GeminiAdaptiveLearningStatusUnavailable},
-		{name: "quota limited", enabled: true, account: account, state: baseState, load: &AccountLoadInfo{}, quota: GeminiAdaptiveQuotaSnapshot{HardRejected: true}, want: GeminiAdaptiveLearningStatusQuotaLimited},
-		{
-			name: "cooldown", enabled: true, account: account,
-			state: func() geminiAdaptiveAccountState {
-				state := baseState
-				state.CooldownUntil = now.Add(time.Minute)
-				return state
-			}(),
-			load: &AccountLoadInfo{}, want: GeminiAdaptiveLearningStatusCooldown,
-		},
-		{
-			name: "high error", enabled: true, account: account,
-			state: func() geminiAdaptiveAccountState {
-				state := baseState
-				state.RecentCapacitySamples = 10
-				state.RecentCapacityFailures = 4
-				return state
-			}(),
-			load: &AccountLoadInfo{}, failRate: 0.4, want: GeminiAdaptiveLearningStatusHighError,
-		},
-		{name: "saturated", enabled: true, account: account, state: baseState, load: &AccountLoadInfo{CurrentConcurrency: 10}, want: GeminiAdaptiveLearningStatusSaturated},
-		{name: "unlearned", enabled: true, account: account, state: baseState, load: &AccountLoadInfo{}, want: GeminiAdaptiveLearningStatusUnlearned},
-		{
-			name: "learning", enabled: true, account: account,
-			state: func() geminiAdaptiveAccountState {
-				state := baseState
-				state.TotalSamples = 9
-				return state
-			}(),
-			load: &AccountLoadInfo{}, want: GeminiAdaptiveLearningStatusLearning,
-		},
-		{
-			name: "healthy", enabled: true, account: account,
-			state: func() geminiAdaptiveAccountState {
-				state := baseState
-				state.TotalSamples = 10
-				return state
-			}(),
-			load: &AccountLoadInfo{}, want: GeminiAdaptiveLearningStatusHealthy,
-		},
-	}
+	snapshot := buildGeminiAdaptiveCoreLearningAccountSnapshot(account, *state, &AccountLoadInfo{}, now, defaultAdaptiveCoreSettings())
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := settings
-			cfg.GeminiAdaptiveSchedulerEnabled = tt.enabled
-			got, _ := geminiAdaptiveLearningAccountStatus(tt.account, tt.state, cfg, tt.load, tt.quota, 10, tt.failRate, "gemini-2.5-pro", now)
-			require.Equal(t, tt.want, got)
-		})
-	}
+	require.Equal(t, string(adaptiveLearningNotApplicable), snapshot.LearningStatus)
+	require.True(t, snapshot.Learned)
 }
 
 func TestGeminiAdaptiveLearningFilterSortAndSummary(t *testing.T) {
 	rows := []GeminiAdaptiveSchedulerAccountLearningSnapshot{
-		{AccountID: 1, AccountName: "alpha", SchedulerStatus: GeminiAdaptiveLearningStatusHealthy, Learned: true, SchedulerScore: 0.9},
-		{AccountID: 2, AccountName: "beta", SchedulerStatus: GeminiAdaptiveLearningStatusCooldown, Learned: true, SchedulerScore: 0.2},
-		{AccountID: 3, AccountName: "gamma", SchedulerStatus: GeminiAdaptiveLearningStatusQuotaLimited, SchedulerScore: 0.5},
+		{AccountID: 1, AccountName: "alpha", LearningStatus: string(adaptiveLearningLearned), RuntimeStatus: string(adaptiveRuntimeHealthy), SchedulerStatus: string(adaptiveRuntimeHealthy), Learned: true, SchedulerScore: 0.9},
+		{AccountID: 2, AccountName: "beta", LearningStatus: string(adaptiveLearningLearned), RuntimeStatus: string(adaptiveRuntimeCooldown), SchedulerStatus: string(adaptiveRuntimeCooldown), Learned: true, SchedulerScore: 0.2},
+		{AccountID: 3, AccountName: "gamma", LearningStatus: string(adaptiveLearningUnlearned), RuntimeStatus: string(adaptiveRuntimeQuotaLimited), SchedulerStatus: string(adaptiveRuntimeQuotaLimited), SchedulerScore: 0.5},
 	}
 
 	summary := summarizeGeminiAdaptiveLearningRows(rows)
 	require.Equal(t, 3, summary.TrackedAccounts)
+	require.Equal(t, 2, summary.LearnedAccounts)
 	require.Equal(t, 1, summary.HealthyAccounts)
 	require.Equal(t, 1, summary.CooldownAccounts)
+	require.Equal(t, 1, summary.UnlearnedAccounts)
 	require.Equal(t, 1, summary.QuotaLimitedAccounts)
 
-	filtered := filterGeminiAdaptiveLearningRowsByStatus(rows, GeminiAdaptiveLearningStatusHealthy)
+	filtered := filterGeminiAdaptiveLearningRowsByDualStatus(rows, string(adaptiveLearningLearned), string(adaptiveRuntimeHealthy))
 	require.Len(t, filtered, 1)
 	require.Equal(t, int64(1), filtered[0].AccountID)
 
@@ -147,14 +82,8 @@ func TestGeminiAdaptiveLearningFilterSortAndSummary(t *testing.T) {
 	require.Equal(t, []int64{2, 3, 1}, []int64{rows[0].AccountID, rows[1].AccountID, rows[2].AccountID})
 }
 
-func TestGeminiAdaptiveModelSnapshotsAreStableAndComplete(t *testing.T) {
-	got := geminiAdaptiveModelLearningSnapshots(map[string]geminiAdaptiveModelState{
-		"pro":   {SuccessEMA: 0.9, TTFTEMA: 120, LatencyEMA: 700, Samples: 4, Failures: 1},
-		"flash": {SuccessEMA: 1, TTFTEMA: 80, LatencyEMA: 400, Samples: 2},
-	})
-
-	require.Equal(t, []GeminiAdaptiveModelLearningSnapshot{
-		{ModelFamily: "flash", SuccessEMA: 1, TTFTEMA: 80, LatencyEMA: 400, Samples: 2},
-		{ModelFamily: "pro", SuccessEMA: 0.9, TTFTEMA: 120, LatencyEMA: 700, Samples: 4, Failures: 1},
-	}, got)
+func TestFilterGeminiAdaptiveLearningSchedulableAccounts(t *testing.T) {
+	accounts := []Account{{ID: 1, Schedulable: false}, {ID: 2, Schedulable: true}, {ID: 3, Status: StatusDisabled, Schedulable: true}}
+	got := filterGeminiAdaptiveLearningSchedulableAccounts(accounts)
+	require.Equal(t, []int64{2, 3}, []int64{got[0].ID, got[1].ID})
 }

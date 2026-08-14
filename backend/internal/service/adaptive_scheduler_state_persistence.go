@@ -4,19 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"math/rand/v2"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 )
-
-func adaptiveStateInstanceID() string {
-	hostname, err := os.Hostname()
-	if err != nil || hostname == "" {
-		hostname = "unknown"
-	}
-	return hostname + "-" + strconv.Itoa(os.Getpid())
-}
 
 const (
 	adaptiveStateFlushInterval        = 5 * time.Minute
@@ -27,12 +17,6 @@ const (
 	adaptiveStateRedisTimeout         = time.Second
 	adaptiveStateShutdownFlushTimeout = time.Second
 	adaptiveStateCleanupBatchSize     = 256
-)
-
-const (
-	adaptiveSchedulerStateNamespaceOpenAI    = "openai"
-	adaptiveSchedulerStateNamespaceAnthropic = "anthropic"
-	adaptiveSchedulerStateNamespaceGemini    = "gemini"
 )
 
 // AdaptiveSchedulerStateCacheRecord is one raw account snapshot read from Redis.
@@ -48,9 +32,8 @@ type AdaptiveSchedulerStateCacheEntry struct {
 	ExpiresAt time.Time
 }
 
-// AdaptiveSchedulerStateCache is an optional GatewayCache capability. Runtime
-// scheduling never reads it; it is used for one startup restore and periodic
-// best-effort checkpoints only.
+// AdaptiveSchedulerStateCache is an optional GatewayCache capability. Redis is
+// read once during startup, then used only for periodic best-effort snapshots.
 type AdaptiveSchedulerStateCache interface {
 	ScanAdaptiveSchedulerStates(ctx context.Context, namespace string, cursor uint64, count int64) ([]AdaptiveSchedulerStateCacheRecord, uint64, error)
 	SaveAdaptiveSchedulerStates(ctx context.Context, namespace string, entries []AdaptiveSchedulerStateCacheEntry, ttl time.Duration) error
@@ -130,7 +113,7 @@ func (w *adaptiveStatePersistenceWorker) run(ctx context.Context) {
 	restored, stale, invalid, err := w.restore(restoreCtx)
 	cancelRestore()
 	if err != nil {
-		slog.Warn(w.namespace+"_adaptive_state_restore_failed", "error", err)
+		slog.Warn(w.namespace+"_adaptive_state_restore_failed", "error", err, "fallback", "cold_start")
 	} else {
 		slog.Info(w.namespace+"_adaptive_state_restore_completed",
 			"restored_accounts", restored,

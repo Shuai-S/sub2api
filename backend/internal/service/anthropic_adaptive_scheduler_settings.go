@@ -19,66 +19,68 @@ const (
 const (
 	anthropicAdaptiveSchedulerSettingPrefix = "anthropic_adaptive_scheduler_"
 
-	SettingKeyAnthropicAdaptiveSchedulerEnabled                     = anthropicAdaptiveSchedulerSettingPrefix + "enabled"
-	SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled        = anthropicAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
-	SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate     = anthropicAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
-	SettingKeyAnthropicAdaptiveSchedulerMode                        = anthropicAdaptiveSchedulerSettingPrefix + "mode"
-	SettingKeyAnthropicAdaptiveSchedulerTopK                        = anthropicAdaptiveSchedulerSettingPrefix + "top_k"
-	SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature          = anthropicAdaptiveSchedulerSettingPrefix + "softmax_temperature"
-	SettingKeyAnthropicAdaptiveSchedulerWeightReliability           = anthropicAdaptiveSchedulerSettingPrefix + "weight_reliability"
-	SettingKeyAnthropicAdaptiveSchedulerWeightCapacity              = anthropicAdaptiveSchedulerSettingPrefix + "weight_capacity"
-	SettingKeyAnthropicAdaptiveSchedulerWeightLatency               = anthropicAdaptiveSchedulerSettingPrefix + "weight_latency"
-	SettingKeyAnthropicAdaptiveSchedulerWeightExploration           = anthropicAdaptiveSchedulerSettingPrefix + "weight_exploration"
-	SettingKeyAnthropicAdaptiveSchedulerInitialReliability          = anthropicAdaptiveSchedulerSettingPrefix + "initial_reliability"
-	SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty   = anthropicAdaptiveSchedulerSettingPrefix + "consecutive_failure_penalty"
-	SettingKeyAnthropicAdaptiveSchedulerNeutralLatencyScore         = anthropicAdaptiveSchedulerSettingPrefix + "neutral_latency_score"
-	SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha             = anthropicAdaptiveSchedulerSettingPrefix + "success_ema_alpha"
-	SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha             = anthropicAdaptiveSchedulerSettingPrefix + "latency_ema_alpha"
-	SettingKeyAnthropicAdaptiveSchedulerCapacitySuccessThreshold    = anthropicAdaptiveSchedulerSettingPrefix + "capacity_success_threshold"
-	SettingKeyAnthropicAdaptiveSchedulerCapacityProbeLoadThreshold  = anthropicAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
-	SettingKeyAnthropicAdaptiveSchedulerCapacityFailureThreshold    = anthropicAdaptiveSchedulerSettingPrefix + "capacity_failure_threshold"
-	SettingKeyAnthropicAdaptiveSchedulerMinRecentSamplesForShrink   = anthropicAdaptiveSchedulerSettingPrefix + "min_recent_samples_for_shrink"
-	SettingKeyAnthropicAdaptiveSchedulerShrinkErrorThreshold        = anthropicAdaptiveSchedulerSettingPrefix + "shrink_error_threshold"
-	SettingKeyAnthropicAdaptiveSchedulerLearningWindowSeconds       = anthropicAdaptiveSchedulerSettingPrefix + "learning_window_seconds"
-	SettingKeyAnthropicAdaptiveSchedulerCooldownSeconds             = anthropicAdaptiveSchedulerSettingPrefix + "cooldown_seconds"
-	SettingKeyAnthropicAdaptiveSchedulerShrinkFactorSoft            = anthropicAdaptiveSchedulerSettingPrefix + "shrink_factor_soft"
-	SettingKeyAnthropicAdaptiveSchedulerShrinkFactorHard            = anthropicAdaptiveSchedulerSettingPrefix + "shrink_factor_hard"
-	SettingKeyAnthropicAdaptiveSchedulerCapacityIncreaseStep        = anthropicAdaptiveSchedulerSettingPrefix + "capacity_increase_step"
-	SettingKeyAnthropicAdaptiveSchedulerMinCapacity                 = anthropicAdaptiveSchedulerSettingPrefix + "min_capacity"
-	SettingKeyAnthropicAdaptiveSchedulerHardShrinkFailureMultiplier = anthropicAdaptiveSchedulerSettingPrefix + "hard_shrink_failure_multiplier"
+	SettingKeyAnthropicAdaptiveSchedulerEnabled                    = anthropicAdaptiveSchedulerSettingPrefix + "enabled"
+	SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled       = anthropicAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
+	SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate    = anthropicAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
+	SettingKeyAnthropicAdaptiveSchedulerMode                       = anthropicAdaptiveSchedulerSettingPrefix + "mode"
+	SettingKeyAnthropicAdaptiveSchedulerTopK                       = anthropicAdaptiveSchedulerSettingPrefix + "top_k"
+	SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature         = anthropicAdaptiveSchedulerSettingPrefix + "softmax_temperature"
+	SettingKeyAnthropicAdaptiveSchedulerWeightReliability          = anthropicAdaptiveSchedulerSettingPrefix + "weight_reliability"
+	SettingKeyAnthropicAdaptiveSchedulerWeightCapacity             = anthropicAdaptiveSchedulerSettingPrefix + "weight_capacity"
+	SettingKeyAnthropicAdaptiveSchedulerWeightLatency              = anthropicAdaptiveSchedulerSettingPrefix + "weight_latency"
+	SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty  = anthropicAdaptiveSchedulerSettingPrefix + "consecutive_failure_penalty"
+	SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha            = anthropicAdaptiveSchedulerSettingPrefix + "success_ema_alpha"
+	SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha            = anthropicAdaptiveSchedulerSettingPrefix + "latency_ema_alpha"
+	SettingKeyAnthropicAdaptiveSchedulerCapacityProbeLoadThreshold = anthropicAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
+	SettingKeyAnthropicAdaptiveSchedulerLearningWindowSeconds      = anthropicAdaptiveSchedulerSettingPrefix + "learning_window_seconds"
+	SettingKeyAnthropicAdaptiveSchedulerCooldownSeconds            = anthropicAdaptiveSchedulerSettingPrefix + "cooldown_seconds"
+	SettingKeyAnthropicAdaptiveSchedulerShrinkFactorSoft           = anthropicAdaptiveSchedulerSettingPrefix + "shrink_factor_soft"
+	SettingKeyAnthropicAdaptiveSchedulerExplorationRate            = anthropicAdaptiveSchedulerSettingPrefix + "exploration_rate"
+	SettingKeyAnthropicAdaptiveSchedulerWeightCost                 = anthropicAdaptiveSchedulerSettingPrefix + "weight_cost"
+	SettingKeyAnthropicAdaptiveSchedulerLearningMinHealthSamples   = anthropicAdaptiveSchedulerSettingPrefix + "learning_min_health_samples"
+	SettingKeyAnthropicAdaptiveSchedulerHealthFailureThreshold     = anthropicAdaptiveSchedulerSettingPrefix + "health_failure_threshold"
+	SettingKeyAnthropicAdaptiveSchedulerCooldownMaxSeconds         = anthropicAdaptiveSchedulerSettingPrefix + "cooldown_max_seconds"
+	SettingKeyAnthropicAdaptiveSchedulerHighErrorMinSamples        = anthropicAdaptiveSchedulerSettingPrefix + "high_error_min_samples"
+	SettingKeyAnthropicAdaptiveSchedulerHighErrorMaxSamples        = anthropicAdaptiveSchedulerSettingPrefix + "high_error_max_samples"
+	SettingKeyAnthropicAdaptiveSchedulerHighErrorEnterRate         = anthropicAdaptiveSchedulerSettingPrefix + "high_error_enter_rate"
+	SettingKeyAnthropicAdaptiveSchedulerHighErrorExitRate          = anthropicAdaptiveSchedulerSettingPrefix + "high_error_exit_rate"
+	SettingKeyAnthropicAdaptiveSchedulerCapacityRecoverySamples    = anthropicAdaptiveSchedulerSettingPrefix + "capacity_recovery_samples"
+	SettingKeyAnthropicAdaptiveSchedulerCapacityGrowthFactor       = anthropicAdaptiveSchedulerSettingPrefix + "capacity_growth_factor"
+	SettingKeyAnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds  = anthropicAdaptiveSchedulerSettingPrefix + "quota_probe_interval_seconds"
 
 	anthropicAdaptiveSchedulerSettingCacheTTL  = 5 * time.Second
 	anthropicAdaptiveSchedulerSettingDBTimeout = 2 * time.Second
 )
 
 type AnthropicAdaptiveSchedulerSettings struct {
-	AnthropicAdaptiveSchedulerEnabled                     bool    `json:"anthropic_adaptive_scheduler_enabled"`
-	AnthropicAdaptiveSchedulerDiagnosticLogEnabled        bool    `json:"anthropic_adaptive_scheduler_diagnostic_log_enabled"`
-	AnthropicAdaptiveSchedulerDiagnosticLogSampleRate     float64 `json:"anthropic_adaptive_scheduler_diagnostic_log_sample_rate"`
-	AnthropicAdaptiveSchedulerMode                        string  `json:"anthropic_adaptive_scheduler_mode"`
-	AnthropicAdaptiveSchedulerTopK                        int     `json:"anthropic_adaptive_scheduler_top_k"`
-	AnthropicAdaptiveSchedulerSoftmaxTemperature          float64 `json:"anthropic_adaptive_scheduler_softmax_temperature"`
-	AnthropicAdaptiveSchedulerWeightReliability           float64 `json:"anthropic_adaptive_scheduler_weight_reliability"`
-	AnthropicAdaptiveSchedulerWeightCapacity              float64 `json:"anthropic_adaptive_scheduler_weight_capacity"`
-	AnthropicAdaptiveSchedulerWeightLatency               float64 `json:"anthropic_adaptive_scheduler_weight_latency"`
-	AnthropicAdaptiveSchedulerWeightExploration           float64 `json:"anthropic_adaptive_scheduler_weight_exploration"`
-	AnthropicAdaptiveSchedulerInitialReliability          float64 `json:"anthropic_adaptive_scheduler_initial_reliability"`
-	AnthropicAdaptiveSchedulerConsecutiveFailurePenalty   float64 `json:"anthropic_adaptive_scheduler_consecutive_failure_penalty"`
-	AnthropicAdaptiveSchedulerNeutralLatencyScore         float64 `json:"anthropic_adaptive_scheduler_neutral_latency_score"`
-	AnthropicAdaptiveSchedulerSuccessEMAAlpha             float64 `json:"anthropic_adaptive_scheduler_success_ema_alpha"`
-	AnthropicAdaptiveSchedulerLatencyEMAAlpha             float64 `json:"anthropic_adaptive_scheduler_latency_ema_alpha"`
-	AnthropicAdaptiveSchedulerCapacitySuccessThreshold    float64 `json:"anthropic_adaptive_scheduler_capacity_success_threshold"`
-	AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold  float64 `json:"anthropic_adaptive_scheduler_capacity_probe_load_threshold"`
-	AnthropicAdaptiveSchedulerCapacityFailureThreshold    int     `json:"anthropic_adaptive_scheduler_capacity_failure_threshold"`
-	AnthropicAdaptiveSchedulerMinRecentSamplesForShrink   int     `json:"anthropic_adaptive_scheduler_min_recent_samples_for_shrink"`
-	AnthropicAdaptiveSchedulerShrinkErrorThreshold        float64 `json:"anthropic_adaptive_scheduler_shrink_error_threshold"`
-	AnthropicAdaptiveSchedulerLearningWindowSeconds       int     `json:"anthropic_adaptive_scheduler_learning_window_seconds"`
-	AnthropicAdaptiveSchedulerCooldownSeconds             int     `json:"anthropic_adaptive_scheduler_cooldown_seconds"`
-	AnthropicAdaptiveSchedulerShrinkFactorSoft            float64 `json:"anthropic_adaptive_scheduler_shrink_factor_soft"`
-	AnthropicAdaptiveSchedulerShrinkFactorHard            float64 `json:"anthropic_adaptive_scheduler_shrink_factor_hard"`
-	AnthropicAdaptiveSchedulerCapacityIncreaseStep        int     `json:"anthropic_adaptive_scheduler_capacity_increase_step"`
-	AnthropicAdaptiveSchedulerMinCapacity                 int     `json:"anthropic_adaptive_scheduler_min_capacity"`
-	AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier int     `json:"anthropic_adaptive_scheduler_hard_shrink_failure_multiplier"`
+	AnthropicAdaptiveSchedulerEnabled                    bool    `json:"anthropic_adaptive_scheduler_enabled"`
+	AnthropicAdaptiveSchedulerDiagnosticLogEnabled       bool    `json:"anthropic_adaptive_scheduler_diagnostic_log_enabled"`
+	AnthropicAdaptiveSchedulerDiagnosticLogSampleRate    float64 `json:"anthropic_adaptive_scheduler_diagnostic_log_sample_rate"`
+	AnthropicAdaptiveSchedulerMode                       string  `json:"anthropic_adaptive_scheduler_mode"`
+	AnthropicAdaptiveSchedulerTopK                       int     `json:"anthropic_adaptive_scheduler_top_k"`
+	AnthropicAdaptiveSchedulerSoftmaxTemperature         float64 `json:"anthropic_adaptive_scheduler_softmax_temperature"`
+	AnthropicAdaptiveSchedulerWeightReliability          float64 `json:"anthropic_adaptive_scheduler_weight_reliability"`
+	AnthropicAdaptiveSchedulerWeightCapacity             float64 `json:"anthropic_adaptive_scheduler_weight_capacity"`
+	AnthropicAdaptiveSchedulerWeightLatency              float64 `json:"anthropic_adaptive_scheduler_weight_latency"`
+	AnthropicAdaptiveSchedulerConsecutiveFailurePenalty  float64 `json:"anthropic_adaptive_scheduler_consecutive_failure_penalty"`
+	AnthropicAdaptiveSchedulerSuccessEMAAlpha            float64 `json:"anthropic_adaptive_scheduler_success_ema_alpha"`
+	AnthropicAdaptiveSchedulerLatencyEMAAlpha            float64 `json:"anthropic_adaptive_scheduler_latency_ema_alpha"`
+	AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold float64 `json:"anthropic_adaptive_scheduler_capacity_probe_load_threshold"`
+	AnthropicAdaptiveSchedulerLearningWindowSeconds      int     `json:"anthropic_adaptive_scheduler_learning_window_seconds"`
+	AnthropicAdaptiveSchedulerCooldownSeconds            int     `json:"anthropic_adaptive_scheduler_cooldown_seconds"`
+	AnthropicAdaptiveSchedulerShrinkFactorSoft           float64 `json:"anthropic_adaptive_scheduler_shrink_factor_soft"`
+	AnthropicAdaptiveSchedulerExplorationRate            float64 `json:"anthropic_adaptive_scheduler_exploration_rate"`
+	AnthropicAdaptiveSchedulerWeightCost                 float64 `json:"anthropic_adaptive_scheduler_weight_cost"`
+	AnthropicAdaptiveSchedulerLearningMinHealthSamples   int     `json:"anthropic_adaptive_scheduler_learning_min_health_samples"`
+	AnthropicAdaptiveSchedulerHealthFailureThreshold     int     `json:"anthropic_adaptive_scheduler_health_failure_threshold"`
+	AnthropicAdaptiveSchedulerCooldownMaxSeconds         int     `json:"anthropic_adaptive_scheduler_cooldown_max_seconds"`
+	AnthropicAdaptiveSchedulerHighErrorMinSamples        int     `json:"anthropic_adaptive_scheduler_high_error_min_samples"`
+	AnthropicAdaptiveSchedulerHighErrorMaxSamples        int     `json:"anthropic_adaptive_scheduler_high_error_max_samples"`
+	AnthropicAdaptiveSchedulerHighErrorEnterRate         float64 `json:"anthropic_adaptive_scheduler_high_error_enter_rate"`
+	AnthropicAdaptiveSchedulerHighErrorExitRate          float64 `json:"anthropic_adaptive_scheduler_high_error_exit_rate"`
+	AnthropicAdaptiveSchedulerCapacityRecoverySamples    int     `json:"anthropic_adaptive_scheduler_capacity_recovery_samples"`
+	AnthropicAdaptiveSchedulerCapacityGrowthFactor       float64 `json:"anthropic_adaptive_scheduler_capacity_growth_factor"`
+	AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds  int     `json:"anthropic_adaptive_scheduler_quota_probe_interval_seconds"`
 }
 
 type cachedAnthropicAdaptiveSchedulerSettings struct {
@@ -92,33 +94,34 @@ var anthropicAdaptiveSchedulerSettingGeneration atomic.Uint64
 
 func DefaultAnthropicAdaptiveSchedulerSettings() AnthropicAdaptiveSchedulerSettings {
 	return AnthropicAdaptiveSchedulerSettings{
-		AnthropicAdaptiveSchedulerEnabled:                     false,
-		AnthropicAdaptiveSchedulerDiagnosticLogEnabled:        false,
-		AnthropicAdaptiveSchedulerDiagnosticLogSampleRate:     0.05,
-		AnthropicAdaptiveSchedulerMode:                        AnthropicAdaptiveSchedulerModeShadow,
-		AnthropicAdaptiveSchedulerTopK:                        8,
-		AnthropicAdaptiveSchedulerSoftmaxTemperature:          0.35,
-		AnthropicAdaptiveSchedulerWeightReliability:           0.50,
-		AnthropicAdaptiveSchedulerWeightCapacity:              0.30,
-		AnthropicAdaptiveSchedulerWeightLatency:               0.15,
-		AnthropicAdaptiveSchedulerWeightExploration:           0.05,
-		AnthropicAdaptiveSchedulerInitialReliability:          0.50,
-		AnthropicAdaptiveSchedulerConsecutiveFailurePenalty:   0.25,
-		AnthropicAdaptiveSchedulerNeutralLatencyScore:         0.50,
-		AnthropicAdaptiveSchedulerSuccessEMAAlpha:             0.05,
-		AnthropicAdaptiveSchedulerLatencyEMAAlpha:             0.05,
-		AnthropicAdaptiveSchedulerCapacitySuccessThreshold:    0.97,
-		AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold:  0.80,
-		AnthropicAdaptiveSchedulerCapacityFailureThreshold:    3,
-		AnthropicAdaptiveSchedulerMinRecentSamplesForShrink:   30,
-		AnthropicAdaptiveSchedulerShrinkErrorThreshold:        0.25,
-		AnthropicAdaptiveSchedulerLearningWindowSeconds:       1200,
-		AnthropicAdaptiveSchedulerCooldownSeconds:             60,
-		AnthropicAdaptiveSchedulerShrinkFactorSoft:            0.85,
-		AnthropicAdaptiveSchedulerShrinkFactorHard:            0.60,
-		AnthropicAdaptiveSchedulerCapacityIncreaseStep:        1,
-		AnthropicAdaptiveSchedulerMinCapacity:                 1,
-		AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier: 2,
+		AnthropicAdaptiveSchedulerEnabled:                    false,
+		AnthropicAdaptiveSchedulerDiagnosticLogEnabled:       false,
+		AnthropicAdaptiveSchedulerDiagnosticLogSampleRate:    0.05,
+		AnthropicAdaptiveSchedulerMode:                       AnthropicAdaptiveSchedulerModeShadow,
+		AnthropicAdaptiveSchedulerTopK:                       8,
+		AnthropicAdaptiveSchedulerSoftmaxTemperature:         0.35,
+		AnthropicAdaptiveSchedulerWeightReliability:          0.50,
+		AnthropicAdaptiveSchedulerWeightCapacity:             0.20,
+		AnthropicAdaptiveSchedulerWeightLatency:              0.15,
+		AnthropicAdaptiveSchedulerConsecutiveFailurePenalty:  0.25,
+		AnthropicAdaptiveSchedulerSuccessEMAAlpha:            0.05,
+		AnthropicAdaptiveSchedulerLatencyEMAAlpha:            0.05,
+		AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold: 0.80,
+		AnthropicAdaptiveSchedulerLearningWindowSeconds:      1200,
+		AnthropicAdaptiveSchedulerCooldownSeconds:            60,
+		AnthropicAdaptiveSchedulerShrinkFactorSoft:           0.90,
+		AnthropicAdaptiveSchedulerExplorationRate:            0.02,
+		AnthropicAdaptiveSchedulerWeightCost:                 0.15,
+		AnthropicAdaptiveSchedulerLearningMinHealthSamples:   30,
+		AnthropicAdaptiveSchedulerHealthFailureThreshold:     3,
+		AnthropicAdaptiveSchedulerCooldownMaxSeconds:         600,
+		AnthropicAdaptiveSchedulerHighErrorMinSamples:        10,
+		AnthropicAdaptiveSchedulerHighErrorMaxSamples:        100,
+		AnthropicAdaptiveSchedulerHighErrorEnterRate:         0.25,
+		AnthropicAdaptiveSchedulerHighErrorExitRate:          0.15,
+		AnthropicAdaptiveSchedulerCapacityRecoverySamples:    30,
+		AnthropicAdaptiveSchedulerCapacityGrowthFactor:       1.15,
+		AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds:  300,
 	}
 }
 
@@ -128,39 +131,37 @@ func NormalizeAnthropicAdaptiveSchedulerSettings(settings AnthropicAdaptiveSched
 	settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate = clampFloat(settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate, 0, 1, defaults.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate)
 	settings.AnthropicAdaptiveSchedulerTopK = clampInt(settings.AnthropicAdaptiveSchedulerTopK, 1, 100, defaults.AnthropicAdaptiveSchedulerTopK)
 	settings.AnthropicAdaptiveSchedulerSoftmaxTemperature = clampFloat(settings.AnthropicAdaptiveSchedulerSoftmaxTemperature, 0.01, 10, defaults.AnthropicAdaptiveSchedulerSoftmaxTemperature)
-	settings.AnthropicAdaptiveSchedulerInitialReliability = clampFloat(settings.AnthropicAdaptiveSchedulerInitialReliability, 0, 1, defaults.AnthropicAdaptiveSchedulerInitialReliability)
 	settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty)
-	settings.AnthropicAdaptiveSchedulerNeutralLatencyScore = clampFloat(settings.AnthropicAdaptiveSchedulerNeutralLatencyScore, 0, 1, defaults.AnthropicAdaptiveSchedulerNeutralLatencyScore)
 	settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha = clampFloat(settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha, 0, 1, defaults.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
 	settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha = clampFloat(settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha, 0, 1, defaults.AnthropicAdaptiveSchedulerLatencyEMAAlpha)
-	settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold = clampFloat(settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold, 0, 1, defaults.AnthropicAdaptiveSchedulerCapacitySuccessThreshold)
 	settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold = clampFloat(settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold, 0, 1, defaults.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold)
-	settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold = clampIntMin(settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold, 1, defaults.AnthropicAdaptiveSchedulerCapacityFailureThreshold)
-	settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink = clampIntMin(settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink, 1, defaults.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink)
-	settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold = clampFloat(settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold, 0, 1, defaults.AnthropicAdaptiveSchedulerShrinkErrorThreshold)
 	settings.AnthropicAdaptiveSchedulerLearningWindowSeconds = clampIntMin(settings.AnthropicAdaptiveSchedulerLearningWindowSeconds, 1, defaults.AnthropicAdaptiveSchedulerLearningWindowSeconds)
 	settings.AnthropicAdaptiveSchedulerCooldownSeconds = clampIntMin(settings.AnthropicAdaptiveSchedulerCooldownSeconds, 0, defaults.AnthropicAdaptiveSchedulerCooldownSeconds)
 	settings.AnthropicAdaptiveSchedulerShrinkFactorSoft = clampFloat(settings.AnthropicAdaptiveSchedulerShrinkFactorSoft, 0.01, 1, defaults.AnthropicAdaptiveSchedulerShrinkFactorSoft)
-	settings.AnthropicAdaptiveSchedulerShrinkFactorHard = clampFloat(settings.AnthropicAdaptiveSchedulerShrinkFactorHard, 0.01, 1, defaults.AnthropicAdaptiveSchedulerShrinkFactorHard)
-	if settings.AnthropicAdaptiveSchedulerShrinkFactorHard > settings.AnthropicAdaptiveSchedulerShrinkFactorSoft {
-		settings.AnthropicAdaptiveSchedulerShrinkFactorHard = settings.AnthropicAdaptiveSchedulerShrinkFactorSoft
-	}
-	settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep = clampIntMin(settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep, 1, defaults.AnthropicAdaptiveSchedulerCapacityIncreaseStep)
-	settings.AnthropicAdaptiveSchedulerMinCapacity = clampIntMin(settings.AnthropicAdaptiveSchedulerMinCapacity, 1, defaults.AnthropicAdaptiveSchedulerMinCapacity)
-	settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier = clampInt(settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier, 1, 100, defaults.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier)
+	settings.AnthropicAdaptiveSchedulerExplorationRate = clampFloat(settings.AnthropicAdaptiveSchedulerExplorationRate, 0, 1, defaults.AnthropicAdaptiveSchedulerExplorationRate)
+	settings.AnthropicAdaptiveSchedulerWeightCost = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightCost)
+	settings.AnthropicAdaptiveSchedulerLearningMinHealthSamples = clampIntMin(settings.AnthropicAdaptiveSchedulerLearningMinHealthSamples, 1, defaults.AnthropicAdaptiveSchedulerLearningMinHealthSamples)
+	settings.AnthropicAdaptiveSchedulerHealthFailureThreshold = clampIntMin(settings.AnthropicAdaptiveSchedulerHealthFailureThreshold, 1, defaults.AnthropicAdaptiveSchedulerHealthFailureThreshold)
+	settings.AnthropicAdaptiveSchedulerCooldownMaxSeconds = clampIntMin(settings.AnthropicAdaptiveSchedulerCooldownMaxSeconds, settings.AnthropicAdaptiveSchedulerCooldownSeconds, defaults.AnthropicAdaptiveSchedulerCooldownMaxSeconds)
+	settings.AnthropicAdaptiveSchedulerHighErrorMinSamples = clampIntMin(settings.AnthropicAdaptiveSchedulerHighErrorMinSamples, 1, defaults.AnthropicAdaptiveSchedulerHighErrorMinSamples)
+	settings.AnthropicAdaptiveSchedulerHighErrorMaxSamples = clampIntMin(settings.AnthropicAdaptiveSchedulerHighErrorMaxSamples, settings.AnthropicAdaptiveSchedulerHighErrorMinSamples, defaults.AnthropicAdaptiveSchedulerHighErrorMaxSamples)
+	settings.AnthropicAdaptiveSchedulerHighErrorEnterRate = clampFloat(settings.AnthropicAdaptiveSchedulerHighErrorEnterRate, 0, 1, defaults.AnthropicAdaptiveSchedulerHighErrorEnterRate)
+	settings.AnthropicAdaptiveSchedulerHighErrorExitRate = clampFloat(settings.AnthropicAdaptiveSchedulerHighErrorExitRate, 0, settings.AnthropicAdaptiveSchedulerHighErrorEnterRate, defaults.AnthropicAdaptiveSchedulerHighErrorExitRate)
+	settings.AnthropicAdaptiveSchedulerCapacityRecoverySamples = clampIntMin(settings.AnthropicAdaptiveSchedulerCapacityRecoverySamples, 1, defaults.AnthropicAdaptiveSchedulerCapacityRecoverySamples)
+	settings.AnthropicAdaptiveSchedulerCapacityGrowthFactor = clampFloat(settings.AnthropicAdaptiveSchedulerCapacityGrowthFactor, 1.01, 10, defaults.AnthropicAdaptiveSchedulerCapacityGrowthFactor)
+	settings.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds = clampIntMin(settings.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds, 1, defaults.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds)
 	settings.AnthropicAdaptiveSchedulerWeightReliability = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightReliability)
 	settings.AnthropicAdaptiveSchedulerWeightCapacity = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightCapacity)
 	settings.AnthropicAdaptiveSchedulerWeightLatency = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightLatency)
-	settings.AnthropicAdaptiveSchedulerWeightExploration = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightExploration)
 	weightSum := settings.AnthropicAdaptiveSchedulerWeightReliability +
 		settings.AnthropicAdaptiveSchedulerWeightCapacity +
 		settings.AnthropicAdaptiveSchedulerWeightLatency +
-		settings.AnthropicAdaptiveSchedulerWeightExploration
+		settings.AnthropicAdaptiveSchedulerWeightCost
 	if weightSum <= 0 {
 		settings.AnthropicAdaptiveSchedulerWeightReliability = defaults.AnthropicAdaptiveSchedulerWeightReliability
 		settings.AnthropicAdaptiveSchedulerWeightCapacity = defaults.AnthropicAdaptiveSchedulerWeightCapacity
 		settings.AnthropicAdaptiveSchedulerWeightLatency = defaults.AnthropicAdaptiveSchedulerWeightLatency
-		settings.AnthropicAdaptiveSchedulerWeightExploration = defaults.AnthropicAdaptiveSchedulerWeightExploration
+		settings.AnthropicAdaptiveSchedulerWeightCost = defaults.AnthropicAdaptiveSchedulerWeightCost
 	}
 	return settings
 }
@@ -187,57 +188,59 @@ func parseAnthropicAdaptiveSchedulerSettings(values map[string]string) Anthropic
 	settings.AnthropicAdaptiveSchedulerWeightReliability = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightReliability, settings.AnthropicAdaptiveSchedulerWeightReliability)
 	settings.AnthropicAdaptiveSchedulerWeightCapacity = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightCapacity, settings.AnthropicAdaptiveSchedulerWeightCapacity)
 	settings.AnthropicAdaptiveSchedulerWeightLatency = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightLatency, settings.AnthropicAdaptiveSchedulerWeightLatency)
-	settings.AnthropicAdaptiveSchedulerWeightExploration = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightExploration, settings.AnthropicAdaptiveSchedulerWeightExploration)
-	settings.AnthropicAdaptiveSchedulerInitialReliability = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerInitialReliability, settings.AnthropicAdaptiveSchedulerInitialReliability)
 	settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty, settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty)
-	settings.AnthropicAdaptiveSchedulerNeutralLatencyScore = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerNeutralLatencyScore, settings.AnthropicAdaptiveSchedulerNeutralLatencyScore)
 	settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
 	settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha, settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha)
-	settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerCapacitySuccessThreshold, settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold)
 	settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerCapacityProbeLoadThreshold, settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold)
-	settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerCapacityFailureThreshold, settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold)
-	settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerMinRecentSamplesForShrink, settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink)
-	settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerShrinkErrorThreshold, settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold)
 	settings.AnthropicAdaptiveSchedulerLearningWindowSeconds = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerLearningWindowSeconds, settings.AnthropicAdaptiveSchedulerLearningWindowSeconds)
 	settings.AnthropicAdaptiveSchedulerCooldownSeconds = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerCooldownSeconds, settings.AnthropicAdaptiveSchedulerCooldownSeconds)
 	settings.AnthropicAdaptiveSchedulerShrinkFactorSoft = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerShrinkFactorSoft, settings.AnthropicAdaptiveSchedulerShrinkFactorSoft)
-	settings.AnthropicAdaptiveSchedulerShrinkFactorHard = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerShrinkFactorHard, settings.AnthropicAdaptiveSchedulerShrinkFactorHard)
-	settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerCapacityIncreaseStep, settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep)
-	settings.AnthropicAdaptiveSchedulerMinCapacity = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerMinCapacity, settings.AnthropicAdaptiveSchedulerMinCapacity)
-	settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerHardShrinkFailureMultiplier, settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier)
+	settings.AnthropicAdaptiveSchedulerExplorationRate = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerExplorationRate, settings.AnthropicAdaptiveSchedulerExplorationRate)
+	settings.AnthropicAdaptiveSchedulerWeightCost = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightCost, settings.AnthropicAdaptiveSchedulerWeightCost)
+	settings.AnthropicAdaptiveSchedulerLearningMinHealthSamples = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerLearningMinHealthSamples, settings.AnthropicAdaptiveSchedulerLearningMinHealthSamples)
+	settings.AnthropicAdaptiveSchedulerHealthFailureThreshold = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerHealthFailureThreshold, settings.AnthropicAdaptiveSchedulerHealthFailureThreshold)
+	settings.AnthropicAdaptiveSchedulerCooldownMaxSeconds = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerCooldownMaxSeconds, settings.AnthropicAdaptiveSchedulerCooldownMaxSeconds)
+	settings.AnthropicAdaptiveSchedulerHighErrorMinSamples = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerHighErrorMinSamples, settings.AnthropicAdaptiveSchedulerHighErrorMinSamples)
+	settings.AnthropicAdaptiveSchedulerHighErrorMaxSamples = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerHighErrorMaxSamples, settings.AnthropicAdaptiveSchedulerHighErrorMaxSamples)
+	settings.AnthropicAdaptiveSchedulerHighErrorEnterRate = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerHighErrorEnterRate, settings.AnthropicAdaptiveSchedulerHighErrorEnterRate)
+	settings.AnthropicAdaptiveSchedulerHighErrorExitRate = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerHighErrorExitRate, settings.AnthropicAdaptiveSchedulerHighErrorExitRate)
+	settings.AnthropicAdaptiveSchedulerCapacityRecoverySamples = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerCapacityRecoverySamples, settings.AnthropicAdaptiveSchedulerCapacityRecoverySamples)
+	settings.AnthropicAdaptiveSchedulerCapacityGrowthFactor = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerCapacityGrowthFactor, settings.AnthropicAdaptiveSchedulerCapacityGrowthFactor)
+	settings.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds = parseIntSetting(values, SettingKeyAnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds, settings.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds)
 	return NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 }
 
 func anthropicAdaptiveSchedulerSettingsToMap(settings AnthropicAdaptiveSchedulerSettings) map[string]string {
 	settings = NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 	return map[string]string{
-		SettingKeyAnthropicAdaptiveSchedulerEnabled:                     strconv.FormatBool(settings.AnthropicAdaptiveSchedulerEnabled),
-		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled:        strconv.FormatBool(settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled),
-		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate:     formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate),
-		SettingKeyAnthropicAdaptiveSchedulerMode:                        settings.AnthropicAdaptiveSchedulerMode,
-		SettingKeyAnthropicAdaptiveSchedulerTopK:                        strconv.Itoa(settings.AnthropicAdaptiveSchedulerTopK),
-		SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature:          formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerSoftmaxTemperature),
-		SettingKeyAnthropicAdaptiveSchedulerWeightReliability:           formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightReliability),
-		SettingKeyAnthropicAdaptiveSchedulerWeightCapacity:              formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightCapacity),
-		SettingKeyAnthropicAdaptiveSchedulerWeightLatency:               formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightLatency),
-		SettingKeyAnthropicAdaptiveSchedulerWeightExploration:           formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightExploration),
-		SettingKeyAnthropicAdaptiveSchedulerInitialReliability:          formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerInitialReliability),
-		SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty:   formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty),
-		SettingKeyAnthropicAdaptiveSchedulerNeutralLatencyScore:         formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerNeutralLatencyScore),
-		SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha:             formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha),
-		SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha:             formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha),
-		SettingKeyAnthropicAdaptiveSchedulerCapacitySuccessThreshold:    formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerCapacitySuccessThreshold),
-		SettingKeyAnthropicAdaptiveSchedulerCapacityProbeLoadThreshold:  formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold),
-		SettingKeyAnthropicAdaptiveSchedulerCapacityFailureThreshold:    strconv.Itoa(settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold),
-		SettingKeyAnthropicAdaptiveSchedulerMinRecentSamplesForShrink:   strconv.Itoa(settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink),
-		SettingKeyAnthropicAdaptiveSchedulerShrinkErrorThreshold:        formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold),
-		SettingKeyAnthropicAdaptiveSchedulerLearningWindowSeconds:       strconv.Itoa(settings.AnthropicAdaptiveSchedulerLearningWindowSeconds),
-		SettingKeyAnthropicAdaptiveSchedulerCooldownSeconds:             strconv.Itoa(settings.AnthropicAdaptiveSchedulerCooldownSeconds),
-		SettingKeyAnthropicAdaptiveSchedulerShrinkFactorSoft:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerShrinkFactorSoft),
-		SettingKeyAnthropicAdaptiveSchedulerShrinkFactorHard:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerShrinkFactorHard),
-		SettingKeyAnthropicAdaptiveSchedulerCapacityIncreaseStep:        strconv.Itoa(settings.AnthropicAdaptiveSchedulerCapacityIncreaseStep),
-		SettingKeyAnthropicAdaptiveSchedulerMinCapacity:                 strconv.Itoa(settings.AnthropicAdaptiveSchedulerMinCapacity),
-		SettingKeyAnthropicAdaptiveSchedulerHardShrinkFailureMultiplier: strconv.Itoa(settings.AnthropicAdaptiveSchedulerHardShrinkFailureMultiplier),
+		SettingKeyAnthropicAdaptiveSchedulerEnabled:                    strconv.FormatBool(settings.AnthropicAdaptiveSchedulerEnabled),
+		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogEnabled:       strconv.FormatBool(settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled),
+		SettingKeyAnthropicAdaptiveSchedulerDiagnosticLogSampleRate:    formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate),
+		SettingKeyAnthropicAdaptiveSchedulerMode:                       settings.AnthropicAdaptiveSchedulerMode,
+		SettingKeyAnthropicAdaptiveSchedulerTopK:                       strconv.Itoa(settings.AnthropicAdaptiveSchedulerTopK),
+		SettingKeyAnthropicAdaptiveSchedulerSoftmaxTemperature:         formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerSoftmaxTemperature),
+		SettingKeyAnthropicAdaptiveSchedulerWeightReliability:          formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightReliability),
+		SettingKeyAnthropicAdaptiveSchedulerWeightCapacity:             formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightCapacity),
+		SettingKeyAnthropicAdaptiveSchedulerWeightLatency:              formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightLatency),
+		SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty:  formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty),
+		SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha),
+		SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha),
+		SettingKeyAnthropicAdaptiveSchedulerCapacityProbeLoadThreshold: formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold),
+		SettingKeyAnthropicAdaptiveSchedulerLearningWindowSeconds:      strconv.Itoa(settings.AnthropicAdaptiveSchedulerLearningWindowSeconds),
+		SettingKeyAnthropicAdaptiveSchedulerCooldownSeconds:            strconv.Itoa(settings.AnthropicAdaptiveSchedulerCooldownSeconds),
+		SettingKeyAnthropicAdaptiveSchedulerShrinkFactorSoft:           formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerShrinkFactorSoft),
+		SettingKeyAnthropicAdaptiveSchedulerExplorationRate:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerExplorationRate),
+		SettingKeyAnthropicAdaptiveSchedulerWeightCost:                 formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightCost),
+		SettingKeyAnthropicAdaptiveSchedulerLearningMinHealthSamples:   strconv.Itoa(settings.AnthropicAdaptiveSchedulerLearningMinHealthSamples),
+		SettingKeyAnthropicAdaptiveSchedulerHealthFailureThreshold:     strconv.Itoa(settings.AnthropicAdaptiveSchedulerHealthFailureThreshold),
+		SettingKeyAnthropicAdaptiveSchedulerCooldownMaxSeconds:         strconv.Itoa(settings.AnthropicAdaptiveSchedulerCooldownMaxSeconds),
+		SettingKeyAnthropicAdaptiveSchedulerHighErrorMinSamples:        strconv.Itoa(settings.AnthropicAdaptiveSchedulerHighErrorMinSamples),
+		SettingKeyAnthropicAdaptiveSchedulerHighErrorMaxSamples:        strconv.Itoa(settings.AnthropicAdaptiveSchedulerHighErrorMaxSamples),
+		SettingKeyAnthropicAdaptiveSchedulerHighErrorEnterRate:         formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerHighErrorEnterRate),
+		SettingKeyAnthropicAdaptiveSchedulerHighErrorExitRate:          formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerHighErrorExitRate),
+		SettingKeyAnthropicAdaptiveSchedulerCapacityRecoverySamples:    strconv.Itoa(settings.AnthropicAdaptiveSchedulerCapacityRecoverySamples),
+		SettingKeyAnthropicAdaptiveSchedulerCapacityGrowthFactor:       formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerCapacityGrowthFactor),
+		SettingKeyAnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds:  strconv.Itoa(settings.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds),
 	}
 }
 
@@ -267,24 +270,25 @@ func (s *SettingService) GetAnthropicAdaptiveSchedulerSettings(ctx context.Conte
 			SettingKeyAnthropicAdaptiveSchedulerWeightReliability,
 			SettingKeyAnthropicAdaptiveSchedulerWeightCapacity,
 			SettingKeyAnthropicAdaptiveSchedulerWeightLatency,
-			SettingKeyAnthropicAdaptiveSchedulerWeightExploration,
-			SettingKeyAnthropicAdaptiveSchedulerInitialReliability,
 			SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty,
-			SettingKeyAnthropicAdaptiveSchedulerNeutralLatencyScore,
 			SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha,
 			SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha,
-			SettingKeyAnthropicAdaptiveSchedulerCapacitySuccessThreshold,
 			SettingKeyAnthropicAdaptiveSchedulerCapacityProbeLoadThreshold,
-			SettingKeyAnthropicAdaptiveSchedulerCapacityFailureThreshold,
-			SettingKeyAnthropicAdaptiveSchedulerMinRecentSamplesForShrink,
-			SettingKeyAnthropicAdaptiveSchedulerShrinkErrorThreshold,
 			SettingKeyAnthropicAdaptiveSchedulerLearningWindowSeconds,
 			SettingKeyAnthropicAdaptiveSchedulerCooldownSeconds,
 			SettingKeyAnthropicAdaptiveSchedulerShrinkFactorSoft,
-			SettingKeyAnthropicAdaptiveSchedulerShrinkFactorHard,
-			SettingKeyAnthropicAdaptiveSchedulerCapacityIncreaseStep,
-			SettingKeyAnthropicAdaptiveSchedulerMinCapacity,
-			SettingKeyAnthropicAdaptiveSchedulerHardShrinkFailureMultiplier,
+			SettingKeyAnthropicAdaptiveSchedulerExplorationRate,
+			SettingKeyAnthropicAdaptiveSchedulerWeightCost,
+			SettingKeyAnthropicAdaptiveSchedulerLearningMinHealthSamples,
+			SettingKeyAnthropicAdaptiveSchedulerHealthFailureThreshold,
+			SettingKeyAnthropicAdaptiveSchedulerCooldownMaxSeconds,
+			SettingKeyAnthropicAdaptiveSchedulerHighErrorMinSamples,
+			SettingKeyAnthropicAdaptiveSchedulerHighErrorMaxSamples,
+			SettingKeyAnthropicAdaptiveSchedulerHighErrorEnterRate,
+			SettingKeyAnthropicAdaptiveSchedulerHighErrorExitRate,
+			SettingKeyAnthropicAdaptiveSchedulerCapacityRecoverySamples,
+			SettingKeyAnthropicAdaptiveSchedulerCapacityGrowthFactor,
+			SettingKeyAnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds,
 		})
 		if err != nil {
 			return defaults, err

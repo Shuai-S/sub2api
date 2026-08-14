@@ -249,30 +249,50 @@ export type OpsOpenAIAdaptiveLearningStatus =
   | 'unavailable'
   | 'cooldown'
   | 'half_open'
-  | 'insufficient_balance'
+  | 'quota_limited'
   | 'high_error'
   | 'saturated'
   | 'learning'
   | 'unlearned'
   | 'healthy'
 
+export type OpsAdaptiveLearningStatus = 'unlearned' | 'learning' | 'learned' | 'not_applicable'
+export type OpsAdaptiveRuntimeStatus =
+  | 'healthy'
+  | 'high_error'
+  | 'cooldown'
+  | 'half_open'
+  | 'quota_limited'
+  | 'saturated'
+  | 'unavailable'
+
 export interface OpsOpenAIAdaptiveLearningSettingsSnapshot {
+  diagnostic_log_enabled: boolean
+  diagnostic_log_sample_rate: number
   top_k: number
-  account_type_priority_mode: string
   exploration_rate: number
   softmax_temperature: number
-  initial_capacity_fraction: number
-  min_capacity: number
-  capacity_growth_factor: number
-  burst_probe_ratio: number
-  capacity_failure_threshold: number
-  min_recent_samples_for_shrink: number
-  shrink_error_threshold: number
-  shrink_factor_soft: number
-  shrink_factor_hard: number
-  half_open_failure_threshold: number
-  half_open_probe_capacity: number
+  consecutive_failure_penalty: number
   learning_window_seconds: number
+  learning_min_health_samples: number
+  success_ema_alpha: number
+  ttft_ema_alpha: number
+  health_failure_threshold: number
+  cooldown_seconds: number
+  cooldown_max_seconds: number
+  high_error_min_samples: number
+  high_error_max_samples: number
+  high_error_enter_rate: number
+  high_error_exit_rate: number
+  capacity_shrink_factor: number
+  capacity_growth_factor: number
+  capacity_recovery_samples: number
+  capacity_recovery_load: number
+  quota_probe_interval_seconds: number
+  weight_reliability: number
+  weight_capacity: number
+  weight_ttft: number
+  weight_cost: number
 }
 
 export interface OpsOpenAIAdaptiveLearningSummary {
@@ -283,9 +303,11 @@ export interface OpsOpenAIAdaptiveLearningSummary {
   high_error_accounts: number
   cooldown_accounts: number
   half_open_accounts: number
-  insufficient_balance_accounts: number
   saturated_accounts: number
   unavailable_accounts: number
+  learned_accounts: number
+  not_applicable_accounts: number
+  quota_limited_accounts: number
 }
 
 export interface OpsOpenAIAdaptiveLearningAccount {
@@ -295,12 +317,8 @@ export interface OpsOpenAIAdaptiveLearningAccount {
   type: string
   account_status: string
   schedulable: boolean
-  priority: number
-
   configured_concurrency: number
-  stable_capacity: number
   effective_capacity: number
-  burst_capacity: number
   rate_multiplier: number
 
   current_concurrency: number
@@ -310,37 +328,36 @@ export interface OpsOpenAIAdaptiveLearningAccount {
   scheduler_status: OpsOpenAIAdaptiveLearningStatus | string
   status_reason?: string
   learned: boolean
+  learning_status: OpsAdaptiveLearningStatus
+  runtime_status: OpsAdaptiveRuntimeStatus
+  runtime_flags: OpsAdaptiveRuntimeStatus[]
+  runtime_reason_code?: string
+  runtime_reason?: string
+  health_samples: number
+  capacity_generation: number
+  capacity_half_open: boolean
 
   scheduler_score: number
   success_score: number
   cost_score: number
   capacity_score: number
   latency_score: number
-  stability_score: number
-  exploration_score: number
-
   success_ema: number
-  error_ema: number
-  latency_ema: number
   ttft_ema: number
+  ttft_samples: number
 
   total_samples: number
-  recent_samples: number
-  recent_failures: number
-  recent_failure_rate: number
-  consecutive_success: number
   consecutive_failure: number
-  consecutive_capacity_failure: number
-
-  learning_window_started_at?: string
   last_success_at?: string
   last_failure_at?: string
-  last_capacity_failure_at?: string
   cooldown_until?: string
   cooldown_remaining_sec: number
-  balance_insufficient_at?: string
-  last_balance_probe_at?: string
-  balance_generation: number
+  circuit_open_count: number
+  capacity_cooldown_until?: string
+  capacity_recovery_successes: number
+  quota_limited: boolean
+  quota_reset_at?: string
+  quota_next_probe_at?: string
 }
 
 export interface OpsOpenAIAdaptiveLearningResponse {
@@ -380,7 +397,8 @@ export type OpsOpenAIAdaptiveLearningSortOrder = 'asc' | 'desc'
 export interface OpsOpenAIAdaptiveLearningParams {
   time_range?: OpsOpenAITokenStatsTimeRange
   group_id?: number | null
-  status?: OpsOpenAIAdaptiveLearningStatus | string
+  learning_status?: OpsAdaptiveLearningStatus | string
+  runtime_status?: OpsAdaptiveRuntimeStatus | string
   page?: number
   page_size?: number
   top_n?: number
@@ -404,32 +422,32 @@ export interface OpsAnthropicAdaptiveLearningSettingsSnapshot {
   diagnostic_log_sample_rate: number
   top_k: number
   softmax_temperature: number
+  exploration_rate: number
+  consecutive_failure_penalty: number
+  learning_window_seconds: number
+  learning_min_health_samples: number
+  success_ema_alpha: number
+  ttft_ema_alpha: number
+  health_failure_threshold: number
+  cooldown_seconds: number
+  cooldown_max_seconds: number
+  high_error_min_samples: number
+  high_error_max_samples: number
+  high_error_enter_rate: number
+  high_error_exit_rate: number
+  capacity_recovery_load: number
+  capacity_shrink_factor: number
+  capacity_growth_factor: number
+  capacity_recovery_samples: number
+  quota_probe_interval_seconds: number
   weight_reliability: number
   weight_capacity: number
-  weight_latency: number
-  weight_exploration: number
-  initial_reliability: number
-  consecutive_failure_penalty: number
-  neutral_latency_score: number
-  success_ema_alpha: number
-  latency_ema_alpha: number
-  capacity_success_threshold: number
-  capacity_probe_load_threshold: number
-  capacity_failure_threshold: number
-  min_recent_samples_for_shrink: number
-  shrink_error_threshold: number
-  learning_window_seconds: number
-  cooldown_seconds: number
-  shrink_factor_soft: number
-  shrink_factor_hard: number
-  capacity_increase_step: number
-  min_capacity: number
-  hard_shrink_failure_multiplier: number
+  weight_ttft: number
+  weight_cost: number
 }
 
 export interface OpsAnthropicAdaptiveLearningSummary {
   tracked_accounts: number
-  disabled_accounts: number
   unlearned_accounts: number
   learning_accounts: number
   healthy_accounts: number
@@ -437,13 +455,10 @@ export interface OpsAnthropicAdaptiveLearningSummary {
   cooldown_accounts: number
   saturated_accounts: number
   unavailable_accounts: number
-}
-
-export interface OpsAnthropicAdaptiveLatencyLearningSnapshot {
-  model_family: string
-  ttft_ema: number
-  latency_ema: number
-  samples: number
+  learned_accounts: number
+  not_applicable_accounts: number
+  half_open_accounts: number
+  quota_limited_accounts: number
 }
 
 export interface OpsAnthropicAdaptiveLearningAccount {
@@ -453,10 +468,7 @@ export interface OpsAnthropicAdaptiveLearningAccount {
   type: string
   account_status: string
   schedulable: boolean
-  priority: number
-
   configured_concurrency: number
-  estimated_capacity: number
   effective_capacity: number
   rate_multiplier: number
 
@@ -467,37 +479,37 @@ export interface OpsAnthropicAdaptiveLearningAccount {
   scheduler_status: OpsAnthropicAdaptiveLearningStatus | string
   status_reason?: string
   learned: boolean
+  learning_status: OpsAdaptiveLearningStatus
+  runtime_status: OpsAdaptiveRuntimeStatus
+  runtime_flags: OpsAdaptiveRuntimeStatus[]
+  runtime_reason_code?: string
+  runtime_reason?: string
+  health_samples: number
+  capacity_generation: number
+  capacity_half_open: boolean
 
   scheduler_score: number
   reliability_score: number
   capacity_score: number
   latency_score: number
-  exploration_score: number
+  cost_score: number
 
   success_ema: number
-  model_family: string
   ttft_ema: number
-  latency_ema: number
-  latency_samples: number
-  latency_by_model_family: OpsAnthropicAdaptiveLatencyLearningSnapshot[]
+  ttft_samples: number
 
   total_samples: number
-  recent_health_samples: number
-  recent_health_failures: number
-  recent_health_failure_rate: number
-  recent_capacity_samples: number
-  recent_capacity_failures: number
-  recent_capacity_failure_rate: number
-  consecutive_success: number
   consecutive_failure: number
-  consecutive_capacity_failure: number
-
-  learning_window_started_at?: string
   last_success_at?: string
   last_failure_at?: string
-  last_capacity_failure_at?: string
   cooldown_until?: string
   cooldown_remaining_sec: number
+  circuit_open_count: number
+  capacity_cooldown_until?: string
+  capacity_recovery_successes: number
+  quota_limited: boolean
+  quota_reset_at?: string
+  quota_next_probe_at?: string
 }
 
 export type OpsAnthropicAdaptiveLearningSortBy =
@@ -518,8 +530,6 @@ export interface OpsAnthropicAdaptiveLearningResponse {
   mode: string
   realtime_enabled: boolean
   generated_at: string
-  requested_model?: string
-  model_family: string
   time_range?: OpsOpenAITokenStatsTimeRange
   start_time?: string
   end_time?: string
@@ -540,8 +550,8 @@ export interface OpsAnthropicAdaptiveLearningResponse {
 export interface OpsAnthropicAdaptiveLearningParams {
   time_range?: OpsOpenAITokenStatsTimeRange
   group_id?: number | null
-  model?: string
-  status?: OpsAnthropicAdaptiveLearningStatus | string
+  learning_status?: OpsAdaptiveLearningStatus | string
+  runtime_status?: OpsAdaptiveRuntimeStatus | string
   page?: number
   page_size?: number
   top_n?: number
@@ -570,7 +580,6 @@ export type OpsGeminiAdaptiveLearningSortBy =
   | 'samples'
   | 'error'
   | 'latency'
-  | 'quota'
   | 'last_event'
 
 export type OpsGeminiAdaptiveLearningSortOrder = 'asc' | 'desc'
@@ -592,29 +601,30 @@ export interface OpsGeminiAdaptiveQuotaSnapshot {
 }
 
 export interface OpsGeminiAdaptiveLearningSettingsSnapshot {
-  sticky_escape_on_capacity_full: boolean
   top_k: number
   softmax_temperature: number
+  exploration_rate: number
+  consecutive_failure_penalty: number
   weight_reliability: number
-  weight_quota: number
   weight_capacity: number
-  weight_latency: number
+  weight_ttft: number
   weight_cost: number
-  weight_exploration: number
-  initial_reliability: number
-  neutral_latency_score: number
-  neutral_quota_score: number
-  capacity_failure_threshold: number
-  min_recent_samples_for_shrink: number
-  shrink_error_threshold: number
   learning_window_seconds: number
+  learning_min_health_samples: number
+  success_ema_alpha: number
+  ttft_ema_alpha: number
   cooldown_seconds: number
   cooldown_max_seconds: number
   account_failure_threshold: number
-  model_failure_threshold: number
-  half_open_probe_lease_seconds: number
-  capacity_increase_step: number
-  min_capacity: number
+  high_error_min_samples: number
+  high_error_max_samples: number
+  high_error_enter_rate: number
+  high_error_exit_rate: number
+  capacity_shrink_factor: number
+  capacity_growth_factor: number
+  capacity_recovery_samples: number
+  capacity_recovery_load: number
+  quota_probe_interval_seconds: number
   diagnostic_log_enabled: boolean
   diagnostic_log_sample_rate: number
 }
@@ -631,7 +641,6 @@ export interface OpsGeminiAdaptiveMetricsSnapshot {
 
 export interface OpsGeminiAdaptiveLearningSummary {
   tracked_accounts: number
-  disabled_accounts: number
   unavailable_accounts: number
   quota_limited_accounts: number
   cooldown_accounts: number
@@ -640,15 +649,9 @@ export interface OpsGeminiAdaptiveLearningSummary {
   learning_accounts: number
   unlearned_accounts: number
   healthy_accounts: number
-}
-
-export interface OpsGeminiAdaptiveModelLearningSnapshot {
-  model_family: string
-  success_ema: number
-  ttft_ema: number
-  latency_ema: number
-  samples: number
-  failures: number
+  learned_accounts: number
+  not_applicable_accounts: number
+  half_open_accounts: number
 }
 
 export interface OpsGeminiAdaptiveLearningAccount {
@@ -658,10 +661,7 @@ export interface OpsGeminiAdaptiveLearningAccount {
   type: string
   account_status: string
   schedulable: boolean
-  priority: number
-
   configured_concurrency: number
-  estimated_capacity: number
   effective_capacity: number
   rate_multiplier: number
   current_concurrency: number
@@ -671,49 +671,38 @@ export interface OpsGeminiAdaptiveLearningAccount {
   scheduler_status: OpsGeminiAdaptiveLearningStatus | string
   status_reason?: string
   learned: boolean
+  learning_status: OpsAdaptiveLearningStatus
+  runtime_status: OpsAdaptiveRuntimeStatus
+  runtime_flags: OpsAdaptiveRuntimeStatus[]
+  runtime_reason_code?: string
+  runtime_reason?: string
+  health_samples: number
+  capacity_generation: number
+  capacity_half_open: boolean
 
   scheduler_score: number
   reliability_score: number
-  quota_score: number
   capacity_score: number
   latency_score: number
   cost_score: number
-  exploration_score: number
 
   path_success_ema: number
-  model_family: string
-  model_success_ema: number
   ttft_ema: number
-  latency_ema: number
-  model_samples: number
-  model_failures: number
-  by_model_family: OpsGeminiAdaptiveModelLearningSnapshot[]
-  quota: OpsGeminiAdaptiveQuotaSnapshot
+  ttft_samples: number
+  quota?: OpsGeminiAdaptiveQuotaSnapshot
 
   total_samples: number
-  recent_health_samples: number
-  recent_health_failures: number
-  recent_health_failure_rate: number
-  recent_capacity_samples: number
-  recent_capacity_failures: number
-  recent_capacity_failure_rate: number
-  consecutive_success: number
   consecutive_failure: number
-  consecutive_capacity_failure: number
-
-  learning_window_started_at?: string
   last_success_at?: string
   last_failure_at?: string
-  last_capacity_failure_at?: string
   cooldown_until?: string
   cooldown_remaining_sec: number
-  canonical_model?: string
-  account_circuit_status: string
-  account_circuit_open_until?: string
-  account_circuit_failures: number
-  model_circuit_status: string
-  model_circuit_open_until?: string
-  model_circuit_failures: number
+  circuit_open_count: number
+  capacity_cooldown_until?: string
+  capacity_recovery_successes: number
+  quota_limited: boolean
+  quota_reset_at?: string
+  quota_next_probe_at?: string
 }
 
 export interface OpsGeminiAdaptiveLearningResponse {
@@ -721,8 +710,6 @@ export interface OpsGeminiAdaptiveLearningResponse {
   mode: string
   realtime_enabled: boolean
   generated_at: string
-  requested_model?: string
-  model_family: string
   time_range?: OpsOpenAITokenStatsTimeRange
   start_time?: string
   end_time?: string
@@ -744,8 +731,8 @@ export interface OpsGeminiAdaptiveLearningResponse {
 export interface OpsGeminiAdaptiveLearningParams {
   time_range?: OpsOpenAITokenStatsTimeRange
   group_id?: number | null
-  model?: string
-  status?: OpsGeminiAdaptiveLearningStatus | string
+  learning_status?: OpsAdaptiveLearningStatus | string
+  runtime_status?: OpsAdaptiveRuntimeStatus | string
   page?: number
   page_size?: number
   top_n?: number

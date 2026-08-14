@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -29,7 +28,7 @@ func TestParseOpsGeminiAdaptiveLearningFilter(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(
 		http.MethodGet,
-		"/?time_range=1h&group_id=12&model=gemini-2.5-pro&status=healthy&top_n=50&sort_by=score&sort_order=asc",
+		"/?time_range=1h&group_id=12&learning_status=learned&runtime_status=healthy&top_n=50&sort_by=score&sort_order=asc",
 		nil,
 	)
 
@@ -38,8 +37,8 @@ func TestParseOpsGeminiAdaptiveLearningFilter(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1h", filter.TimeRange)
 	require.Equal(t, int64(12), *filter.GroupID)
-	require.Equal(t, "gemini-2.5-pro", filter.RequestedModel)
-	require.Equal(t, "healthy", filter.Status)
+	require.Equal(t, "learned", filter.LearningStatus)
+	require.Equal(t, "healthy", filter.RuntimeStatus)
 	require.Equal(t, 50, filter.TopN)
 	require.Equal(t, "score", filter.SortBy)
 	require.Equal(t, "asc", filter.SortOrder)
@@ -57,7 +56,6 @@ func TestParseOpsGeminiAdaptiveLearningFilterInvalidParams(t *testing.T) {
 		"/?page=0",
 		"/?page_size=101",
 		"/?limit=501",
-		"/?model=" + strings.Repeat("a", 257),
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -91,7 +89,7 @@ func TestOpsGeminiAdaptiveLearningHandlerReturnsPagedSnapshot(t *testing.T) {
 	router.GET("/gemini-adaptive-learning", handler.GetDashboardGeminiAdaptiveLearning)
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/gemini-adaptive-learning?model=gemini-2.5-pro&page=2&page_size=1&sort_by=account&sort_order=asc", nil)
+	request := httptest.NewRequest(http.MethodGet, "/gemini-adaptive-learning?page=2&page_size=1&sort_by=account&sort_order=asc", nil)
 	router.ServeHTTP(recorder, request)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -105,7 +103,6 @@ func TestOpsGeminiAdaptiveLearningHandlerReturnsPagedSnapshot(t *testing.T) {
 	require.Equal(t, 1, envelope.Data.ReturnedAccounts)
 	require.Equal(t, 2, envelope.Data.Page)
 	require.Equal(t, 1, envelope.Data.PageSize)
-	require.Equal(t, "gemini-2.5-pro", envelope.Data.RequestedModel)
 	require.Len(t, envelope.Data.Accounts, 1)
 	require.Equal(t, int64(2), envelope.Data.Accounts[0].AccountID)
 }

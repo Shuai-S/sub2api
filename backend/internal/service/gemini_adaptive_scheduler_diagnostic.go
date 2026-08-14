@@ -15,47 +15,36 @@ import (
 const geminiAdaptiveDiagnosticCandidateLimit = 5
 
 type geminiAdaptiveDiagnosticCandidate struct {
-	AccountID                  int64                       `json:"account_id"`
-	Platform                   string                      `json:"platform"`
-	AccountType                string                      `json:"account_type"`
-	Priority                   int                         `json:"priority"`
-	ConfiguredCapacity         int                         `json:"configured_capacity"`
-	EffectiveCapacity          int                         `json:"effective_capacity"`
-	CurrentConcurrency         int                         `json:"current_concurrency"`
-	WaitingCount               int                         `json:"waiting_count"`
-	LoadRate                   int                         `json:"load_rate"`
-	Score                      float64                     `json:"score"`
-	ReliabilityScore           float64                     `json:"reliability_score"`
-	QuotaScore                 float64                     `json:"quota_score"`
-	CapacityScore              float64                     `json:"capacity_score"`
-	LatencyScore               float64                     `json:"latency_score"`
-	CostScore                  float64                     `json:"cost_score"`
-	ExplorationScore           float64                     `json:"exploration_score"`
-	Quota                      GeminiAdaptiveQuotaSnapshot `json:"quota"`
-	PathSuccessEMA             float64                     `json:"path_success_ema"`
-	ModelFamily                string                      `json:"model_family"`
-	ModelSuccessEMA            float64                     `json:"model_success_ema"`
-	ModelTTFTEMA               float64                     `json:"model_ttft_ema"`
-	ModelLatencyEMA            float64                     `json:"model_latency_ema"`
-	ModelSamples               int64                       `json:"model_samples"`
-	ModelFailures              int64                       `json:"model_failures"`
-	TotalSamples               int64                       `json:"total_samples"`
-	RecentHealthSamples        int                         `json:"recent_health_samples"`
-	RecentHealthFailures       int                         `json:"recent_health_failures"`
-	RecentCapacitySamples      int                         `json:"recent_capacity_samples"`
-	RecentCapacityFailures     int                         `json:"recent_capacity_failures"`
-	ConsecutiveFailure         int                         `json:"consecutive_failure"`
-	ConsecutiveCapacityFailure int                         `json:"consecutive_capacity_failure"`
-	CooldownUntil              time.Time                   `json:"cooldown_until"`
-	CooldownStatus             string                      `json:"cooldown_status"`
-	CanonicalModel             string                      `json:"canonical_model"`
-	CircuitStatus              string                      `json:"circuit_status"`
-	CircuitScope               string                      `json:"circuit_scope,omitempty"`
-	CircuitOpenUntil           time.Time                   `json:"circuit_open_until"`
-	AccountCircuitStatus       string                      `json:"account_circuit_status"`
-	AccountCircuitOpenUntil    time.Time                   `json:"account_circuit_open_until"`
-	AccountConsecutiveFailure  int                         `json:"account_consecutive_failure"`
-	ModelConsecutiveFailure    int                         `json:"model_consecutive_failure"`
+	AccountID                 int64                       `json:"account_id"`
+	Platform                  string                      `json:"platform"`
+	AccountType               string                      `json:"account_type"`
+	ConfiguredCapacity        int                         `json:"configured_capacity"`
+	EffectiveCapacity         int                         `json:"effective_capacity"`
+	CurrentConcurrency        int                         `json:"current_concurrency"`
+	WaitingCount              int                         `json:"waiting_count"`
+	LoadRate                  int                         `json:"load_rate"`
+	Score                     float64                     `json:"score"`
+	ReliabilityScore          float64                     `json:"reliability_score"`
+	CapacityScore             float64                     `json:"capacity_score"`
+	TTFTScore                 float64                     `json:"ttft_score"`
+	CostScore                 float64                     `json:"cost_score"`
+	Quota                     GeminiAdaptiveQuotaSnapshot `json:"quota"`
+	LearningStatus            string                      `json:"learning_status"`
+	HealthSamples             int                         `json:"health_samples"`
+	SuccessEMA                float64                     `json:"success_ema"`
+	TTFTEMA                   float64                     `json:"ttft_ema"`
+	TTFTSamples               int64                       `json:"ttft_samples"`
+	ConsecutiveFailure        int                         `json:"consecutive_failure"`
+	HighError                 bool                        `json:"high_error"`
+	CircuitStatus             string                      `json:"circuit_status"`
+	CircuitOpenUntil          time.Time                   `json:"circuit_open_until"`
+	CircuitOpenCount          int                         `json:"circuit_open_count"`
+	CapacityGeneration        uint64                      `json:"capacity_generation"`
+	CapacityCooldownUntil     time.Time                   `json:"capacity_cooldown_until"`
+	CapacityRecoverySuccesses int                         `json:"capacity_recovery_successes"`
+	QuotaLimited              bool                        `json:"quota_limited"`
+	QuotaResetAt              time.Time                   `json:"quota_reset_at"`
+	QuotaNextProbeAt          time.Time                   `json:"quota_next_probe_at"`
 }
 
 type geminiAdaptiveDecisionLog struct {
@@ -80,7 +69,7 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 	}
 
 	var plannedBaselineAccountID, baselineAccountID, adaptiveAccountID int64
-	var candidateCount, inputCandidateCount, hardRejectedCount, circuitRejectedCount, accountCircuitRejectedCount, modelCircuitRejectedCount, halfOpenCandidateCount, topK int
+	var candidateCount, inputCandidateCount, hardRejectedCount, circuitRejectedCount, halfOpenCandidateCount, topK int
 	var buildLatencyMs int64
 	var fallbackReason string
 	var candidates []geminiAdaptiveDiagnosticCandidate
@@ -92,13 +81,11 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 		inputCandidateCount = entry.Decision.InputCandidateCount
 		hardRejectedCount = entry.Decision.HardRejectedCount
 		circuitRejectedCount = entry.Decision.CircuitRejectedCount
-		accountCircuitRejectedCount = entry.Decision.AccountCircuitRejectedCount
-		modelCircuitRejectedCount = entry.Decision.ModelCircuitRejectedCount
 		halfOpenCandidateCount = entry.Decision.HalfOpenCandidateCount
 		topK = entry.Decision.TopK
 		buildLatencyMs = entry.Decision.BuildLatencyMs
 		fallbackReason = entry.Decision.FallbackReason
-		candidates = geminiAdaptiveDiagnosticCandidates(entry.Decision.Order, entry.RequestedModel, hint.Action, geminiAdaptiveDiagnosticCandidateLimit, time.Now())
+		candidates = geminiAdaptiveDiagnosticCandidates(entry.Decision.Order, entry.RequestedModel, hint.Action, geminiAdaptiveDiagnosticCandidateLimit, time.Now(), geminiAdaptiveCoreSettings(settings))
 	}
 
 	var selectedAccountID int64
@@ -119,7 +106,6 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 		"scope", entry.Scope,
 		"outcome", entry.Outcome,
 		"model", entry.RequestedModel,
-		"model_family", geminiAdaptiveModelFamily(entry.RequestedModel, hint.Action),
 		"action", hint.Action,
 		"stream", hint.Stream,
 		"group_id", derefGroupID(entry.GroupID),
@@ -140,8 +126,6 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticDecision(ctx context.Context
 		"native_candidate_count", candidateCount,
 		"hard_rejected_count", hardRejectedCount,
 		"circuit_rejected_count", circuitRejectedCount,
-		"account_circuit_rejected_count", accountCircuitRejectedCount,
-		"model_circuit_rejected_count", modelCircuitRejectedCount,
 		"half_open_candidate_count", halfOpenCandidateCount,
 		"top_k", topK,
 		"build_latency_ms", buildLatencyMs,
@@ -161,8 +145,8 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 	ctx context.Context,
 	settings GeminiAdaptiveSchedulerSettings,
 	report GeminiAdaptiveScheduleReport,
-	before geminiAdaptiveAccountState,
-	after geminiAdaptiveAccountState,
+	before adaptiveAccountState,
+	after adaptiveAccountState,
 	capacityIncreased bool,
 	capacityDecreased bool,
 	err error,
@@ -174,10 +158,6 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 	if !shouldLogGeminiAdaptiveDiagnostic(ctx, settings, report.RequestedModel, report.Action, force) {
 		return
 	}
-	family := geminiAdaptiveModelFamily(firstNonEmpty(report.MappedModel, report.RequestedModel), report.Action)
-	canonicalModel := geminiAdaptiveCanonicalModel(report.Account, report.RequestedModel, report.MappedModel, report.Action)
-	modelState := after.ByModelFamily[family]
-	modelCircuit := after.ModelCircuits[canonicalModel]
 	accountSwitchCount, _ := AccountSwitchCountFromContext(ctx)
 	fields := []any{
 		"request_id", contextStringValue(ctx, ctxkey.RequestID),
@@ -190,48 +170,35 @@ func (s *GatewayService) logGeminiAdaptiveDiagnosticResult(
 		"platform", report.Account.Platform,
 		"model", report.RequestedModel,
 		"mapped_model", report.MappedModel,
-		"model_family", family,
-		"canonical_model", canonicalModel,
 		"action", report.Action,
 		"stream", report.Stream,
 		"success", report.Success,
 		"terminal_reason", report.TerminalReason,
 		"path_sample", report.PathSample,
-		"model_sample", report.ModelSample,
-		"capacity_sample", report.CapacitySample,
-		"account_circuit_sample", report.AccountCircuitSample,
-		"model_circuit_sample", report.ModelCircuitSample,
 		"synthetic", report.Synthetic,
 		"first_token_ms", nullableIntForSlog(report.FirstTokenMs),
 		"first_token_status", geminiAdaptiveFirstTokenStatus(report),
 		"duration_ms", report.DurationMs,
 		"configured_capacity", report.Account.Concurrency,
-		"capacity_before", before.EstimatedCapacity,
-		"estimated_capacity", after.EstimatedCapacity,
+		"capacity_before", before.EffectiveCapacity,
+		"effective_capacity", after.EffectiveCapacity,
 		"capacity_increased", capacityIncreased,
 		"capacity_decreased", capacityDecreased,
-		"path_success_ema", after.PathSuccessEMA,
-		"model_success_ema", modelState.SuccessEMA,
-		"model_ttft_ema", modelState.TTFTEMA,
-		"model_latency_ema", modelState.LatencyEMA,
-		"model_samples", modelState.Samples,
-		"model_failures", modelState.Failures,
-		"total_samples", after.TotalSamples,
-		"recent_health_samples", after.RecentHealthSamples,
-		"recent_health_failures", after.RecentHealthFailures,
-		"recent_capacity_samples", after.RecentCapacitySamples,
-		"recent_capacity_failures", after.RecentCapacityFailures,
-		"consecutive_success", after.ConsecutiveSuccess,
-		"consecutive_failure", after.ConsecutiveFailure,
-		"consecutive_capacity_failure", after.ConsecutiveCapacityFailure,
-		"cooldown_until", after.CooldownUntil,
-		"cooldown_status", geminiAdaptiveCooldownStatus(after, time.Now()),
-		"account_circuit_status", geminiAdaptiveCircuitStatus(after.AccountCircuit, time.Now()),
-		"account_circuit_open_until", after.AccountCircuit.OpenUntil,
-		"account_circuit_consecutive_failure", after.AccountCircuit.ConsecutiveFailure,
-		"model_circuit_status", geminiAdaptiveCircuitStatus(modelCircuit, time.Now()),
-		"model_circuit_open_until", modelCircuit.OpenUntil,
-		"model_circuit_consecutive_failure", modelCircuit.ConsecutiveFailure,
+		"success_ema", after.SuccessEMA,
+		"ttft_ema", after.TTFTEMA,
+		"ttft_samples", after.TTFTSamples,
+		"health_samples", len(after.HealthObservations),
+		"consecutive_failure", after.ConsecutiveFailures,
+		"high_error", after.HighError,
+		"circuit_status", adaptiveDiagnosticCircuitStatus(after, time.Now()),
+		"circuit_open_until", after.CircuitOpenUntil,
+		"circuit_open_count", after.CircuitOpenCount,
+		"capacity_generation", after.CapacityGeneration,
+		"capacity_cooldown_until", after.CapacityCooldownUntil,
+		"capacity_recovery_successes", after.CapacityRecoverySuccesses,
+		"quota_limited", after.QuotaLimited,
+		"quota_reset_at", after.QuotaResetAt,
+		"quota_next_probe_at", after.QuotaNextProbeAt,
 		"diagnostic_sample_rate", settings.GeminiAdaptiveSchedulerDiagnosticLogSampleRate,
 	}
 	fields = append(fields, geminiAdaptiveErrorLogFields(err)...)
@@ -265,14 +232,14 @@ func shouldLogGeminiAdaptiveDiagnostic(ctx context.Context, settings GeminiAdapt
 	return float64(hashString64(seedText)%buckets)/float64(buckets) < rate
 }
 
-func geminiAdaptiveDiagnosticCandidates(candidates []GeminiAdaptiveCandidate, requestedModel, action string, limit int, now time.Time) []geminiAdaptiveDiagnosticCandidate {
+func geminiAdaptiveDiagnosticCandidates(candidates []GeminiAdaptiveCandidate, requestedModel, action string, limit int, now time.Time, settings adaptiveCoreSettings) []geminiAdaptiveDiagnosticCandidate {
+	_, _ = requestedModel, action
 	if limit <= 0 || len(candidates) == 0 {
 		return nil
 	}
 	if limit > len(candidates) {
 		limit = len(candidates)
 	}
-	family := geminiAdaptiveModelFamily(requestedModel, action)
 	out := make([]geminiAdaptiveDiagnosticCandidate, 0, limit)
 	for _, candidate := range candidates[:limit] {
 		if candidate.Account == nil {
@@ -284,51 +251,38 @@ func geminiAdaptiveDiagnosticCandidates(candidates []GeminiAdaptiveCandidate, re
 			waitingCount = candidate.Load.WaitingCount
 			loadRate = candidate.Load.LoadRate
 		}
-		modelState := candidate.state.ByModelFamily[family]
-		canonicalModel := geminiAdaptiveCanonicalModel(candidate.Account, requestedModel, "", action)
-		modelCircuit := candidate.state.ModelCircuits[canonicalModel]
+		learning, healthSamples := adaptiveLearningState(candidate.coreState, candidate.Account.IsOAuth(), now, settings)
 		out = append(out, geminiAdaptiveDiagnosticCandidate{
-			AccountID:                  candidate.Account.ID,
-			Platform:                   candidate.Account.Platform,
-			AccountType:                candidate.Account.Type,
-			Priority:                   candidate.Account.Priority,
-			ConfiguredCapacity:         candidate.Account.Concurrency,
-			EffectiveCapacity:          candidate.EffectiveCapacity,
-			CurrentConcurrency:         currentConcurrency,
-			WaitingCount:               waitingCount,
-			LoadRate:                   loadRate,
-			Score:                      candidate.Score,
-			ReliabilityScore:           candidate.ReliabilityScore,
-			QuotaScore:                 candidate.QuotaScore,
-			CapacityScore:              candidate.CapacityScore,
-			LatencyScore:               candidate.LatencyScore,
-			CostScore:                  candidate.CostScore,
-			ExplorationScore:           candidate.ExplorationScore,
-			Quota:                      candidate.Quota,
-			PathSuccessEMA:             candidate.state.PathSuccessEMA,
-			ModelFamily:                family,
-			ModelSuccessEMA:            modelState.SuccessEMA,
-			ModelTTFTEMA:               modelState.TTFTEMA,
-			ModelLatencyEMA:            modelState.LatencyEMA,
-			ModelSamples:               modelState.Samples,
-			ModelFailures:              modelState.Failures,
-			TotalSamples:               candidate.state.TotalSamples,
-			RecentHealthSamples:        candidate.state.RecentHealthSamples,
-			RecentHealthFailures:       candidate.state.RecentHealthFailures,
-			RecentCapacitySamples:      candidate.state.RecentCapacitySamples,
-			RecentCapacityFailures:     candidate.state.RecentCapacityFailures,
-			ConsecutiveFailure:         candidate.state.ConsecutiveFailure,
-			ConsecutiveCapacityFailure: candidate.state.ConsecutiveCapacityFailure,
-			CooldownUntil:              candidate.state.CooldownUntil,
-			CooldownStatus:             geminiAdaptiveCooldownStatus(candidate.state, now),
-			CanonicalModel:             canonicalModel,
-			CircuitStatus:              candidate.CircuitStatus,
-			CircuitScope:               candidate.CircuitScope,
-			CircuitOpenUntil:           candidate.CircuitOpenUntil,
-			AccountCircuitStatus:       geminiAdaptiveCircuitStatus(candidate.state.AccountCircuit, now),
-			AccountCircuitOpenUntil:    candidate.state.AccountCircuit.OpenUntil,
-			AccountConsecutiveFailure:  candidate.state.AccountCircuit.ConsecutiveFailure,
-			ModelConsecutiveFailure:    modelCircuit.ConsecutiveFailure,
+			AccountID:                 candidate.Account.ID,
+			Platform:                  candidate.Account.Platform,
+			AccountType:               candidate.Account.Type,
+			ConfiguredCapacity:        candidate.Account.Concurrency,
+			EffectiveCapacity:         candidate.EffectiveCapacity,
+			CurrentConcurrency:        currentConcurrency,
+			WaitingCount:              waitingCount,
+			LoadRate:                  loadRate,
+			Score:                     candidate.Score,
+			ReliabilityScore:          candidate.ReliabilityScore,
+			CapacityScore:             candidate.CapacityScore,
+			TTFTScore:                 candidate.LatencyScore,
+			CostScore:                 candidate.CostScore,
+			Quota:                     candidate.Quota,
+			LearningStatus:            string(learning),
+			HealthSamples:             healthSamples,
+			SuccessEMA:                candidate.coreState.SuccessEMA,
+			TTFTEMA:                   candidate.coreState.TTFTEMA,
+			TTFTSamples:               candidate.coreState.TTFTSamples,
+			ConsecutiveFailure:        candidate.coreState.ConsecutiveFailures,
+			HighError:                 candidate.coreState.HighError,
+			CircuitStatus:             adaptiveDiagnosticCircuitStatus(candidate.coreState, now),
+			CircuitOpenUntil:          candidate.coreState.CircuitOpenUntil,
+			CircuitOpenCount:          candidate.coreState.CircuitOpenCount,
+			CapacityGeneration:        candidate.coreState.CapacityGeneration,
+			CapacityCooldownUntil:     candidate.coreState.CapacityCooldownUntil,
+			CapacityRecoverySuccesses: candidate.coreState.CapacityRecoverySuccesses,
+			QuotaLimited:              candidate.coreState.QuotaLimited,
+			QuotaResetAt:              candidate.coreState.QuotaResetAt,
+			QuotaNextProbeAt:          candidate.coreState.QuotaNextProbeAt,
 		})
 	}
 	return out
@@ -348,21 +302,6 @@ func geminiAdaptiveFirstTokenStatus(report GeminiAdaptiveScheduleReport) string 
 		return "stream_first_token_missing"
 	}
 	return "stream_failed_before_first_token"
-}
-
-func geminiAdaptiveCooldownStatus(state geminiAdaptiveAccountState, now time.Time) string {
-	if state.CooldownUntil.IsZero() {
-		return "none"
-	}
-	if state.CooldownUntil.After(now) {
-		return "active"
-	}
-	return "expired"
-}
-
-func geminiAdaptiveCircuitStatus(circuit geminiAdaptiveCircuitState, now time.Time) string {
-	_, _, status := geminiAdaptiveCircuitAllows(circuit, now)
-	return status
 }
 
 func geminiAdaptiveErrorLogFields(err error) []any {

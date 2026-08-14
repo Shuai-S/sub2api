@@ -7,6 +7,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestOpenAIAdaptiveLearningSnapshotIncludesAccountLevelCoreState(t *testing.T) {
+	rate := 0.8
+	now := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	account := &Account{
+		ID:             42,
+		Name:           "openai-42",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		Status:         StatusActive,
+		Schedulable:    true,
+		Concurrency:    8,
+		RateMultiplier: &rate,
+	}
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
+	state.SuccessEMA = 0.9
+	state.TTFTEMA = 180
+	state.TTFTSamples = 12
+	for i := 0; i < settings.LearningMinHealthSamples; i++ {
+		state.HealthObservations = append(state.HealthObservations, adaptiveHealthObservation{At: now.Add(-time.Duration(i) * time.Second), Success: true})
+	}
+	load := &AccountLoadInfo{AccountID: account.ID, CurrentConcurrency: 2, WaitingCount: 1}
+
+	snapshot := buildOpenAIAdaptiveCoreLearningAccountSnapshot(account, *state, load, now, settings)
+
+	require.Equal(t, account.ID, snapshot.AccountID)
+	require.InDelta(t, rate, snapshot.RateMultiplier, 1e-12)
+	require.Equal(t, account.Concurrency, snapshot.EffectiveCapacity)
+	require.Equal(t, string(adaptiveLearningLearned), snapshot.LearningStatus)
+	require.Equal(t, string(adaptiveRuntimeHealthy), snapshot.RuntimeStatus)
+	require.Equal(t, settings.LearningMinHealthSamples, snapshot.HealthSamples)
+	require.Equal(t, 180.0, snapshot.TTFTEMA)
+	require.Equal(t, int64(12), snapshot.TTFTSamples)
+}
+
+func TestOpenAIAdaptiveLearningSnapshotMarksOAuthNotApplicable(t *testing.T) {
+	now := time.Now()
+	account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Concurrency: 10}
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
+
+	snapshot := buildOpenAIAdaptiveCoreLearningAccountSnapshot(account, *state, &AccountLoadInfo{}, now, defaultAdaptiveCoreSettings())
+
+	require.Equal(t, string(adaptiveLearningNotApplicable), snapshot.LearningStatus)
+	require.True(t, snapshot.Learned)
+}
+
 func TestFilterOpenAIAdaptiveLearningSchedulableAccountsHidesSchedulingDisabled(t *testing.T) {
 	accounts := []Account{
 		{
@@ -36,44 +82,39 @@ func TestFilterOpenAIAdaptiveLearningSchedulableAccountsHidesSchedulingDisabled(
 func TestOpenAIAdaptiveLearningUnlearnedRowsRemainSummarized(t *testing.T) {
 	rows := []OpenAIAdaptiveSchedulerAccountLearningSnapshot{
 		{
-			AccountID:       1,
-			SchedulerStatus: OpenAIAdaptiveLearningStatusUnlearned,
-			TotalSamples:    0,
+			AccountID:      1,
+			LearningStatus: string(adaptiveLearningUnlearned),
+			RuntimeStatus:  string(adaptiveRuntimeHealthy),
+			TotalSamples:   0,
 		},
 		{
-			AccountID:       2,
-			SchedulerStatus: OpenAIAdaptiveLearningStatusLearning,
-			Learned:         true,
-			TotalSamples:    3,
+			AccountID:      2,
+			LearningStatus: string(adaptiveLearningLearning),
+			RuntimeStatus:  string(adaptiveRuntimeCooldown),
+			TotalSamples:   3,
 		},
 		{
-			AccountID:       3,
-			SchedulerStatus: OpenAIAdaptiveLearningStatusHighError,
-			Learned:         true,
-			TotalSamples:    8,
+			AccountID:      3,
+			LearningStatus: string(adaptiveLearningLearned),
+			RuntimeStatus:  string(adaptiveRuntimeHighError),
+			Learned:        true,
+			TotalSamples:   8,
 		},
 	}
 
 	summary := summarizeOpenAIAdaptiveLearningRows(rows)
 
-	require.Equal(t, 2, summary.TrackedAccounts)
+	require.Equal(t, 3, summary.TrackedAccounts)
 	require.Equal(t, 1, summary.UnlearnedAccounts)
 	require.Equal(t, 1, summary.LearningAccounts)
+	require.Equal(t, 1, summary.LearnedAccounts)
+	require.Equal(t, 1, summary.CooldownAccounts)
 	require.Equal(t, 1, summary.HighErrorAccounts)
 }
 
-func TestOpenAIAdaptiveLearningReportsInsufficientBalance(t *testing.T) {
-	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
-	state := defaultOpenAIAdaptiveAccountState(1, cfg)
-	state.BalanceInsufficientAt = time.Now()
-	account := &Account{ID: 1, Status: StatusActive, Schedulable: true}
-
-	status, reason := openAIAdaptiveLearningAccountStatus(account, state, cfg, &AccountLoadInfo{}, 3, 0, time.Now(), true)
-	require.Equal(t, OpenAIAdaptiveLearningStatusInsufficientBalance, status)
-	require.Contains(t, reason, "insufficient balance")
-
+func TestOpenAIAdaptiveLearningReportsQuotaLimited(t *testing.T) {
 	summary := summarizeOpenAIAdaptiveLearningRows([]OpenAIAdaptiveSchedulerAccountLearningSnapshot{{
-		AccountID: 1, SchedulerStatus: status,
+		AccountID: 1, LearningStatus: string(adaptiveLearningLearned), RuntimeStatus: string(adaptiveRuntimeQuotaLimited),
 	}})
-	require.Equal(t, 1, summary.InsufficientBalanceAccounts)
+	require.Equal(t, 1, summary.QuotaLimitedAccounts)
 }

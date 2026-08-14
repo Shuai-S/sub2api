@@ -25,8 +25,8 @@ return removed
 
 func adaptiveSchedulerStateKeys(namespace string) (hashKey string, expiryKey string, err error) {
 	switch namespace {
-	case "openai", "anthropic", "gemini":
-		prefix := "scheduler:adaptive:" + namespace + ":v1:"
+	case "openai_v2", "anthropic_v2", "gemini_v2":
+		prefix := "scheduler:adaptive:" + namespace + ":"
 		return prefix + "states", prefix + "expires", nil
 	default:
 		return "", "", fmt.Errorf("unsupported adaptive scheduler namespace %q", namespace)
@@ -55,8 +55,8 @@ func (c *gatewayCache) ScanAdaptiveSchedulerStates(
 	}
 	records := make([]service.AdaptiveSchedulerStateCacheRecord, 0, len(values)/2)
 	for i := 0; i+1 < len(values); i += 2 {
-		accountID, err := strconv.ParseInt(values[i], 10, 64)
-		if err != nil || accountID <= 0 {
+		accountID, parseErr := strconv.ParseInt(values[i], 10, 64)
+		if parseErr != nil || accountID <= 0 {
 			continue
 		}
 		records = append(records, service.AdaptiveSchedulerStateCacheRecord{

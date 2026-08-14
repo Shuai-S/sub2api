@@ -15,44 +15,36 @@ import (
 const anthropicAdaptiveDiagnosticCandidateLimit = 5
 
 type anthropicAdaptiveDiagnosticCandidate struct {
-	AccountID                  int64     `json:"account_id"`
-	Platform                   string    `json:"platform"`
-	AccountType                string    `json:"account_type"`
-	Priority                   int       `json:"priority"`
-	ConfiguredCapacity         int       `json:"configured_capacity"`
-	EffectiveCapacity          int       `json:"effective_capacity"`
-	CurrentConcurrency         int       `json:"current_concurrency"`
-	WaitingCount               int       `json:"waiting_count"`
-	LoadRate                   int       `json:"load_rate"`
-	Score                      float64   `json:"score"`
-	ReliabilityScore           float64   `json:"reliability_score"`
-	CapacityScore              float64   `json:"capacity_score"`
-	LatencyScore               float64   `json:"latency_score"`
-	ExplorationScore           float64   `json:"exploration_score"`
-	ModelFamily                string    `json:"model_family"`
-	ModelTTFTEMA               float64   `json:"model_ttft_ema"`
-	ModelLatencyEMA            float64   `json:"model_latency_ema"`
-	ModelLatencySamples        int64     `json:"model_latency_samples"`
-	ModelSuccessEMA            float64   `json:"model_success_ema"`
-	ModelHealthSamples         int64     `json:"model_health_samples"`
-	ModelConsecutiveFailure    int       `json:"model_consecutive_failure"`
-	SuccessEMA                 float64   `json:"success_ema"`
-	TotalSamples               int64     `json:"total_samples"`
-	RecentHealthSamples        int       `json:"recent_health_samples"`
-	RecentHealthFailures       int       `json:"recent_health_failures"`
-	RecentCapacitySamples      int       `json:"recent_capacity_samples"`
-	RecentCapacityFailures     int       `json:"recent_capacity_failures"`
-	ConsecutiveSuccess         int       `json:"consecutive_success"`
-	ConsecutiveFailure         int       `json:"consecutive_failure"`
-	ConsecutiveCapacityFailure int       `json:"consecutive_capacity_failure"`
-	AccountHealthSamples       int       `json:"account_health_samples"`
-	AccountHealthFailures      int       `json:"account_health_failures"`
-	AccountConsecutiveFailure  int       `json:"account_consecutive_failure"`
-	CooldownUntil              time.Time `json:"cooldown_until"`
-	CooldownStatus             string    `json:"cooldown_status"`
-	CircuitOpenUntil           time.Time `json:"circuit_open_until"`
-	CircuitProbeUntil          time.Time `json:"circuit_probe_until"`
-	CircuitStatus              string    `json:"circuit_status"`
+	AccountID                 int64     `json:"account_id"`
+	Platform                  string    `json:"platform"`
+	AccountType               string    `json:"account_type"`
+	ConfiguredCapacity        int       `json:"configured_capacity"`
+	EffectiveCapacity         int       `json:"effective_capacity"`
+	CurrentConcurrency        int       `json:"current_concurrency"`
+	WaitingCount              int       `json:"waiting_count"`
+	LoadRate                  int       `json:"load_rate"`
+	Score                     float64   `json:"score"`
+	ReliabilityScore          float64   `json:"reliability_score"`
+	CapacityScore             float64   `json:"capacity_score"`
+	TTFTScore                 float64   `json:"ttft_score"`
+	CostScore                 float64   `json:"cost_score"`
+	LearningStatus            string    `json:"learning_status"`
+	HealthSamples             int       `json:"health_samples"`
+	SuccessEMA                float64   `json:"success_ema"`
+	TTFTEMA                   float64   `json:"ttft_ema"`
+	TTFTSamples               int64     `json:"ttft_samples"`
+	ConsecutiveFailure        int       `json:"consecutive_failure"`
+	HighError                 bool      `json:"high_error"`
+	CircuitOpenUntil          time.Time `json:"circuit_open_until"`
+	CircuitOpenCount          int       `json:"circuit_open_count"`
+	CircuitProbeUntil         time.Time `json:"circuit_probe_until"`
+	CircuitStatus             string    `json:"circuit_status"`
+	CapacityGeneration        uint64    `json:"capacity_generation"`
+	CapacityCooldownUntil     time.Time `json:"capacity_cooldown_until"`
+	CapacityRecoverySuccesses int       `json:"capacity_recovery_successes"`
+	QuotaLimited              bool      `json:"quota_limited"`
+	QuotaResetAt              time.Time `json:"quota_reset_at"`
+	QuotaNextProbeAt          time.Time `json:"quota_next_probe_at"`
 }
 
 type anthropicAdaptiveDecisionLog struct {
@@ -119,33 +111,32 @@ func (s *GatewayService) logAnthropicAdaptiveDiagnosticDecision(
 			entry.RequestedModel,
 			anthropicAdaptiveDiagnosticCandidateLimit,
 			time.Now(),
+			anthropicAdaptiveCoreSettings(settings),
 		)
 	}
 
 	var selectedAccountID int64
-	var selectedAccountType, selectedPlatform, selectedCooldownStatus, selectedCircuitStatus string
+	var selectedAccountType, selectedPlatform, selectedCircuitStatus string
 	var selectedEffectiveCapacity int
-	var selectedCooldownUntil, selectedCircuitOpenUntil, selectedCircuitProbeUntil time.Time
-	var selectedAccountHealthSamples, selectedAccountHealthFailures, selectedAccountConsecutiveFailure int
+	var selectedCircuitOpenUntil, selectedCircuitProbeUntil time.Time
+	var selectedHealthSamples, selectedConsecutiveFailure, selectedCircuitOpenCount int
+	var selectedQuotaLimited bool
 	if entry.SelectedAccount != nil {
 		selectedAccountID = entry.SelectedAccount.ID
 		selectedAccountType = entry.SelectedAccount.Type
 		selectedPlatform = entry.SelectedAccount.Platform
-		if s != nil && s.anthropicAdaptiveScheduler != nil && s.anthropicAdaptiveScheduler.state != nil && entry.SelectedAccount.Platform == PlatformAnthropic {
-			state := s.anthropicAdaptiveScheduler.state.snapshot(entry.SelectedAccount, settings)
-			selectedEffectiveCapacity = s.anthropicAdaptiveScheduler.state.effectiveCapacity(entry.SelectedAccount, settings)
-			selectedCooldownUntil = state.CooldownUntil
-			selectedCooldownStatus = anthropicAdaptiveCooldownStatus(state, time.Now())
-			selectedAccountHealthSamples = state.AccountHealthSamples
-			selectedAccountHealthFailures = state.AccountHealthFailures
-			selectedAccountConsecutiveFailure = state.AccountConsecutiveFailure
+		if s != nil && s.anthropicAdaptiveScheduler != nil && s.anthropicAdaptiveScheduler.core != nil && entry.SelectedAccount.Platform == PlatformAnthropic {
+			now := s.anthropicAdaptiveScheduler.now()
+			state := s.anthropicAdaptiveScheduler.core.snapshot(entry.SelectedAccount.ID, entry.SelectedAccount.Concurrency, now, anthropicAdaptiveCoreSettings(settings))
+			selectedEffectiveCapacity = state.EffectiveCapacity
+			selectedHealthSamples = len(state.HealthObservations)
+			selectedConsecutiveFailure = state.ConsecutiveFailures
 			selectedCircuitOpenUntil = state.CircuitOpenUntil
-			selectedCircuitProbeUntil = state.CircuitProbeUntil
-			selectedCircuitStatus = anthropicAdaptiveCircuitStatus(state, time.Now())
+			selectedCircuitOpenCount = state.CircuitOpenCount
+			selectedCircuitProbeUntil = state.HealthProbeUntil
+			selectedCircuitStatus = adaptiveDiagnosticCircuitStatus(state, now)
+			selectedQuotaLimited = state.QuotaLimited
 		}
-	}
-	if selectedCooldownStatus == "" {
-		selectedCooldownStatus = "none"
 	}
 	baselineAccountID := entry.BaselineAccountID
 	if baselineAccountID == 0 && selectedAccountID > 0 && (entry.Mode == AnthropicAdaptiveSchedulerModeShadow || entry.Sticky) {
@@ -167,7 +158,6 @@ func (s *GatewayService) logAnthropicAdaptiveDiagnosticDecision(
 		"scope", entry.Scope,
 		"outcome", entry.Outcome,
 		"model", entry.RequestedModel,
-		"model_family", anthropicAdaptiveModelFamily(entry.RequestedModel),
 		"platform", platform,
 		"group_id", derefGroupID(entry.GroupID),
 		"session_sticky", entry.SessionHash != "",
@@ -183,14 +173,13 @@ func (s *GatewayService) logAnthropicAdaptiveDiagnosticDecision(
 		"selection_matches_adaptive", selectedAccountID > 0 && selectedAccountID == adaptiveAccountID,
 		"selection_matches_sticky", selectedAccountID > 0 && selectedAccountID == entry.StickyAccountID,
 		"selected_effective_capacity", selectedEffectiveCapacity,
-		"selected_cooldown_until", selectedCooldownUntil,
-		"selected_cooldown_status", selectedCooldownStatus,
-		"selected_account_health_samples", selectedAccountHealthSamples,
-		"selected_account_health_failures", selectedAccountHealthFailures,
-		"selected_account_consecutive_failure", selectedAccountConsecutiveFailure,
+		"selected_health_samples", selectedHealthSamples,
+		"selected_consecutive_failure", selectedConsecutiveFailure,
 		"selected_circuit_open_until", selectedCircuitOpenUntil,
+		"selected_circuit_open_count", selectedCircuitOpenCount,
 		"selected_circuit_probe_until", selectedCircuitProbeUntil,
 		"selected_circuit_status", selectedCircuitStatus,
+		"selected_quota_limited", selectedQuotaLimited,
 		"candidate_count", candidateCount,
 		"top_k", topK,
 		"excluded_count", entry.ExcludedCount,
@@ -258,8 +247,8 @@ func (s *GatewayService) logAnthropicAdaptiveDiagnosticResult(
 	ctx context.Context,
 	settings AnthropicAdaptiveSchedulerSettings,
 	report AnthropicAdaptiveScheduleReport,
-	before anthropicAdaptiveAccountState,
-	after anthropicAdaptiveAccountState,
+	before adaptiveAccountState,
+	after adaptiveAccountState,
 	capacityDecreased bool,
 	err error,
 ) {
@@ -270,9 +259,6 @@ func (s *GatewayService) logAnthropicAdaptiveDiagnosticResult(
 	if !shouldLogAnthropicAdaptiveDiagnostic(ctx, settings, report.RequestedModel, force) {
 		return
 	}
-	family := anthropicAdaptiveModelFamily(report.RequestedModel)
-	latency := after.LatencyByModelFamily[family]
-	modelHealth := after.HealthByModelFamily[family]
 	accountSwitchCount, accountSwitchCountSource := anthropicAdaptiveAccountSwitchCount(ctx, 0)
 	fields := []any{
 		"request_id", contextStringValue(ctx, ctxkey.RequestID),
@@ -287,44 +273,35 @@ func (s *GatewayService) logAnthropicAdaptiveDiagnosticResult(
 		"platform", report.Account.Platform,
 		"model", report.RequestedModel,
 		"mapped_model", report.MappedModel,
-		"model_family", family,
 		"stream", report.Stream,
 		"success", report.Success,
 		"terminal_reason", report.TerminalReason,
 		"health_sample", report.HealthSample,
 		"health_scope", report.HealthScope,
-		"capacity_sample", report.CapacitySample,
 		"synthetic", report.Synthetic,
 		"first_token_ms", nullableIntForSlog(report.FirstTokenMs),
 		"first_token_status", anthropicAdaptiveFirstTokenStatus(report),
 		"duration_ms", report.DurationMs,
 		"configured_capacity", report.Account.Concurrency,
-		"capacity_before", before.EstimatedCapacity,
-		"estimated_capacity", after.EstimatedCapacity,
+		"capacity_before", before.EffectiveCapacity,
+		"effective_capacity", after.EffectiveCapacity,
 		"capacity_decreased", capacityDecreased,
 		"success_ema", after.SuccessEMA,
-		"model_success_ema", modelHealth.SuccessEMA,
-		"model_health_samples", modelHealth.TotalSamples,
-		"model_consecutive_failure", modelHealth.ConsecutiveFailure,
-		"model_ttft_ema", latency.TTFTEMA,
-		"model_latency_ema", latency.LatencyEMA,
-		"model_latency_samples", latency.Samples,
-		"total_samples", after.TotalSamples,
-		"recent_health_samples", after.RecentHealthSamples,
-		"recent_health_failures", after.RecentHealthFailures,
-		"recent_capacity_samples", after.RecentCapacitySamples,
-		"recent_capacity_failures", after.RecentCapacityFailures,
-		"consecutive_success", after.ConsecutiveSuccess,
-		"consecutive_failure", after.ConsecutiveFailure,
-		"consecutive_capacity_failure", after.ConsecutiveCapacityFailure,
-		"account_health_samples", after.AccountHealthSamples,
-		"account_health_failures", after.AccountHealthFailures,
-		"account_consecutive_failure", after.AccountConsecutiveFailure,
-		"cooldown_until", after.CooldownUntil,
-		"cooldown_status", anthropicAdaptiveCooldownStatus(after, time.Now()),
+		"ttft_ema", after.TTFTEMA,
+		"ttft_samples", after.TTFTSamples,
+		"health_samples", len(after.HealthObservations),
+		"consecutive_failure", after.ConsecutiveFailures,
+		"high_error", after.HighError,
 		"circuit_open_until", after.CircuitOpenUntil,
-		"circuit_probe_until", after.CircuitProbeUntil,
-		"circuit_status", anthropicAdaptiveCircuitStatus(after, time.Now()),
+		"circuit_open_count", after.CircuitOpenCount,
+		"circuit_probe_until", after.HealthProbeUntil,
+		"circuit_status", adaptiveDiagnosticCircuitStatus(after, time.Now()),
+		"capacity_generation", after.CapacityGeneration,
+		"capacity_cooldown_until", after.CapacityCooldownUntil,
+		"capacity_recovery_successes", after.CapacityRecoverySuccesses,
+		"quota_limited", after.QuotaLimited,
+		"quota_reset_at", after.QuotaResetAt,
+		"quota_next_probe_at", after.QuotaNextProbeAt,
 		"diagnostic_sample_rate", settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate,
 	}
 	fields = append(fields, anthropicAdaptiveErrorLogFields(err)...)
@@ -378,14 +355,15 @@ func anthropicAdaptiveDiagnosticCandidates(
 	requestedModel string,
 	limit int,
 	now time.Time,
+	settings adaptiveCoreSettings,
 ) []anthropicAdaptiveDiagnosticCandidate {
+	_ = requestedModel
 	if limit <= 0 || len(candidates) == 0 {
 		return nil
 	}
 	if limit > len(candidates) {
 		limit = len(candidates)
 	}
-	family := anthropicAdaptiveModelFamily(requestedModel)
 	out := make([]anthropicAdaptiveDiagnosticCandidate, 0, limit)
 	for _, candidate := range candidates[:limit] {
 		if candidate.Account == nil {
@@ -397,65 +375,46 @@ func anthropicAdaptiveDiagnosticCandidates(
 			waitingCount = candidate.LoadInfo.WaitingCount
 			loadRate = candidate.LoadInfo.LoadRate
 		}
-		latency := candidate.state.LatencyByModelFamily[family]
-		health := candidate.state.HealthByModelFamily[family]
+		learning, healthSamples := adaptiveLearningState(candidate.coreState, candidate.Account.IsOAuth(), now, settings)
 		out = append(out, anthropicAdaptiveDiagnosticCandidate{
-			AccountID:                  candidate.Account.ID,
-			Platform:                   candidate.Account.Platform,
-			AccountType:                candidate.Account.Type,
-			Priority:                   candidate.Account.Priority,
-			ConfiguredCapacity:         candidate.Account.Concurrency,
-			EffectiveCapacity:          candidate.EffectiveCapacity,
-			CurrentConcurrency:         currentConcurrency,
-			WaitingCount:               waitingCount,
-			LoadRate:                   loadRate,
-			Score:                      candidate.Score,
-			ReliabilityScore:           candidate.ReliabilityScore,
-			CapacityScore:              candidate.CapacityScore,
-			LatencyScore:               candidate.LatencyScore,
-			ExplorationScore:           candidate.ExplorationScore,
-			ModelFamily:                family,
-			ModelTTFTEMA:               latency.TTFTEMA,
-			ModelLatencyEMA:            latency.LatencyEMA,
-			ModelLatencySamples:        latency.Samples,
-			ModelSuccessEMA:            health.SuccessEMA,
-			ModelHealthSamples:         health.TotalSamples,
-			ModelConsecutiveFailure:    health.ConsecutiveFailure,
-			SuccessEMA:                 candidate.state.SuccessEMA,
-			TotalSamples:               candidate.state.TotalSamples,
-			RecentHealthSamples:        candidate.state.RecentHealthSamples,
-			RecentHealthFailures:       candidate.state.RecentHealthFailures,
-			RecentCapacitySamples:      candidate.state.RecentCapacitySamples,
-			RecentCapacityFailures:     candidate.state.RecentCapacityFailures,
-			ConsecutiveSuccess:         candidate.state.ConsecutiveSuccess,
-			ConsecutiveFailure:         candidate.state.ConsecutiveFailure,
-			ConsecutiveCapacityFailure: candidate.state.ConsecutiveCapacityFailure,
-			AccountHealthSamples:       candidate.state.AccountHealthSamples,
-			AccountHealthFailures:      candidate.state.AccountHealthFailures,
-			AccountConsecutiveFailure:  candidate.state.AccountConsecutiveFailure,
-			CooldownUntil:              candidate.state.CooldownUntil,
-			CooldownStatus:             anthropicAdaptiveCooldownStatus(candidate.state, now),
-			CircuitOpenUntil:           candidate.state.CircuitOpenUntil,
-			CircuitProbeUntil:          candidate.state.CircuitProbeUntil,
-			CircuitStatus:              anthropicAdaptiveCircuitStatus(candidate.state, now),
+			AccountID:                 candidate.Account.ID,
+			Platform:                  candidate.Account.Platform,
+			AccountType:               candidate.Account.Type,
+			ConfiguredCapacity:        candidate.Account.Concurrency,
+			EffectiveCapacity:         candidate.EffectiveCapacity,
+			CurrentConcurrency:        currentConcurrency,
+			WaitingCount:              waitingCount,
+			LoadRate:                  loadRate,
+			Score:                     candidate.Score,
+			ReliabilityScore:          candidate.ReliabilityScore,
+			CapacityScore:             candidate.CapacityScore,
+			TTFTScore:                 candidate.LatencyScore,
+			CostScore:                 candidate.CostScore,
+			LearningStatus:            string(learning),
+			HealthSamples:             healthSamples,
+			SuccessEMA:                candidate.coreState.SuccessEMA,
+			TTFTEMA:                   candidate.coreState.TTFTEMA,
+			TTFTSamples:               candidate.coreState.TTFTSamples,
+			ConsecutiveFailure:        candidate.coreState.ConsecutiveFailures,
+			HighError:                 candidate.coreState.HighError,
+			CircuitOpenUntil:          candidate.coreState.CircuitOpenUntil,
+			CircuitOpenCount:          candidate.coreState.CircuitOpenCount,
+			CircuitProbeUntil:         candidate.coreState.HealthProbeUntil,
+			CircuitStatus:             adaptiveDiagnosticCircuitStatus(candidate.coreState, now),
+			CapacityGeneration:        candidate.coreState.CapacityGeneration,
+			CapacityCooldownUntil:     candidate.coreState.CapacityCooldownUntil,
+			CapacityRecoverySuccesses: candidate.coreState.CapacityRecoverySuccesses,
+			QuotaLimited:              candidate.coreState.QuotaLimited,
+			QuotaResetAt:              candidate.coreState.QuotaResetAt,
+			QuotaNextProbeAt:          candidate.coreState.QuotaNextProbeAt,
 		})
 	}
 	return out
 }
 
-func anthropicAdaptiveCooldownStatus(state anthropicAdaptiveAccountState, now time.Time) string {
-	if state.CooldownUntil.IsZero() {
-		return "none"
-	}
-	if state.CooldownUntil.After(now) {
-		return "active"
-	}
-	return "expired"
-}
-
-func anthropicAdaptiveCircuitStatus(state anthropicAdaptiveAccountState, now time.Time) string {
+func adaptiveDiagnosticCircuitStatus(state adaptiveAccountState, now time.Time) string {
 	if state.CircuitOpenUntil.After(now) {
-		if state.CircuitProbeInFlight && state.CircuitProbeUntil.After(now) {
+		if state.HealthProbeInFlight && state.HealthProbeUntil.After(now) {
 			return "half_open_probe_in_flight"
 		}
 		return "open"

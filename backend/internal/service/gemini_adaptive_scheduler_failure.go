@@ -31,13 +31,40 @@ func (s *GatewayService) ReportGeminiAdaptiveResult(ctx context.Context, account
 		return
 	}
 	report := classifyGeminiAdaptiveResult(ctx, account, requestedModel, action, result, err)
-	before := s.geminiAdaptiveScheduler.state.snapshot(account, settings)
-	increased, decreased := s.geminiAdaptiveScheduler.state.report(report, s.geminiAdaptiveScheduler.now(), settings)
+	now := s.geminiAdaptiveScheduler.now()
+	coreSettings := geminiAdaptiveCoreSettings(settings)
+	beforeCore := s.geminiAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
+	observationType, authentication := geminiAdaptiveObservation(report)
+	observation := adaptiveObservation{
+		AccountID:           account.ID,
+		RequestID:           report.RequestID,
+		Type:                observationType,
+		ReasonCode:          report.TerminalReason,
+		Authentication:      authentication,
+		FirstTokenMs:        report.FirstTokenMs,
+		ConfiguredCapacity:  account.Concurrency,
+		ObservedConcurrency: -1,
+	}
+	if observationType == adaptiveObservationQuotaLimit {
+		observation.QuotaResetAt = account.RateLimitResetAt
+	}
+	increased, decreased := s.geminiAdaptiveScheduler.core.observe(observation, now, coreSettings)
 	if decreased {
 		s.geminiAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}
-	after := s.geminiAdaptiveScheduler.state.snapshot(account, settings)
-	s.logGeminiAdaptiveDiagnosticResult(ctx, settings, report, before, after, increased, decreased, err)
+	afterCore := s.geminiAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
+	s.logGeminiAdaptiveDiagnosticResult(ctx, settings, report, beforeCore, afterCore, increased, decreased, err)
+}
+
+func geminiAdaptiveObservation(report GeminiAdaptiveScheduleReport) (adaptiveObservationType, bool) {
+	observationType, authentication := classifyAdaptiveTerminalReason(report.Success, report.TerminalReason)
+	if report.Synthetic {
+		return adaptiveObservationIgnored, false
+	}
+	if !report.PathSample && (observationType == adaptiveObservationHealthSuccess || observationType == adaptiveObservationAccountFailure) {
+		return adaptiveObservationProviderOverload, false
+	}
+	return observationType, authentication
 }
 
 func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, requestedModel, action string, result *ForwardResult, err error) GeminiAdaptiveScheduleReport {
@@ -73,10 +100,6 @@ func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, request
 		}
 		report.Success = true
 		report.PathSample = true
-		report.ModelSample = true
-		report.CapacitySample = account != nil && account.Concurrency > 0
-		report.AccountCircuitSample = true
-		report.ModelCircuitSample = true
 		report.TerminalReason = "success"
 		return report
 	}
@@ -111,8 +134,6 @@ func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, request
 			if !hasPathOverride {
 				report.PathSample = true
 			}
-			report.ModelSample = true
-			report.CapacitySample = account != nil && account.Concurrency > 0
 			report.TerminalReason = "concurrency_limit"
 			return report
 		}
@@ -122,24 +143,16 @@ func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, request
 				report.PathSample = true
 			}
 			report.TerminalReason = "account_auth"
-			report.AccountCircuitSample = true
 		case http.StatusTooManyRequests:
 			if isGeminiAdaptiveExplicitQuotaFailure(failoverErr.ResponseBody) {
 				report.TerminalReason = "quota_rate_limit"
 			} else {
-				report.ModelSample = true
-				report.ModelCircuitSample = true
 				report.TerminalReason = "generic_rate_limit"
 			}
 		default:
 			if failoverErr.StatusCode >= 500 {
-				report.ModelSample = true
-				report.ModelCircuitSample = true
 				if !hasPathOverride && failoverErr.Scope == GatewayFailureScopeAccount {
 					report.PathSample = true
-				}
-				if report.PathSample && failoverErr.Scope == GatewayFailureScopeAccount {
-					report.AccountCircuitSample = true
 				}
 				report.TerminalReason = "upstream_5xx"
 			} else {
@@ -155,13 +168,10 @@ func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, request
 		return report
 	}
 	if strings.Contains(message, "gemini upstream error: 5") || strings.Contains(message, "upstream status 5") {
-		report.ModelSample = true
-		report.ModelCircuitSample = true
 		report.TerminalReason = "upstream_5xx"
 		return report
 	}
 	report.PathSample = true
-	report.AccountCircuitSample = true
 	report.TerminalReason = "transport_error"
 	return report
 }

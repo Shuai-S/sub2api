@@ -9,7 +9,8 @@ import {
   type OpsAnthropicAdaptiveLearningResponse,
   type OpsAnthropicAdaptiveLearningSortBy,
   type OpsAnthropicAdaptiveLearningSortOrder,
-  type OpsAnthropicAdaptiveLearningStatus
+  type OpsAdaptiveLearningStatus,
+  type OpsAdaptiveRuntimeStatus
 } from '@/api/admin/ops'
 import { formatNumber } from '@/utils/format'
 
@@ -32,11 +33,11 @@ const response = ref<OpsAnthropicAdaptiveLearningResponse | null>(null)
 let loadSeq = 0
 
 type ViewMode = 'topn' | 'pagination'
-type StatusFilter = '' | OpsAnthropicAdaptiveLearningStatus
-type ModelFamily = 'sonnet' | 'opus' | 'haiku' | 'other'
+type LearningStatusFilter = '' | OpsAdaptiveLearningStatus
+type RuntimeStatusFilter = '' | OpsAdaptiveRuntimeStatus
 
-const statusFilter = ref<StatusFilter>('')
-const modelFamily = ref<ModelFamily>('sonnet')
+const learningStatusFilter = ref<LearningStatusFilter>('')
+const runtimeStatusFilter = ref<RuntimeStatusFilter>('')
 const viewMode = ref<ViewMode>('topn')
 const topN = ref<number>(20)
 const page = ref<number>(1)
@@ -58,23 +59,23 @@ const totalPages = computed(() => {
   return Math.max(1, Math.ceil(total.value / size))
 })
 
-const statusFilterOptions = computed(() => [
+const learningStatusFilterOptions = computed(() => [
   { value: '', label: t('admin.ops.anthropicAdaptiveLearning.statusFilter.all') },
-  { value: 'healthy', label: t('admin.ops.anthropicAdaptiveLearning.status.healthy') },
-  { value: 'learning', label: t('admin.ops.anthropicAdaptiveLearning.status.learning') },
   { value: 'unlearned', label: t('admin.ops.anthropicAdaptiveLearning.status.unlearned') },
-  { value: 'high_error', label: t('admin.ops.anthropicAdaptiveLearning.status.highError') },
-  { value: 'cooldown', label: t('admin.ops.anthropicAdaptiveLearning.status.cooldown') },
-  { value: 'saturated', label: t('admin.ops.anthropicAdaptiveLearning.status.saturated') },
-  { value: 'unavailable', label: t('admin.ops.anthropicAdaptiveLearning.status.unavailable') },
-  { value: 'disabled', label: t('admin.ops.anthropicAdaptiveLearning.status.disabled') }
+  { value: 'learning', label: t('admin.ops.anthropicAdaptiveLearning.status.learning') },
+  { value: 'learned', label: t('admin.ops.anthropicAdaptiveLearning.status.learned') },
+  { value: 'not_applicable', label: t('admin.ops.anthropicAdaptiveLearning.status.notApplicable') }
 ])
 
-const modelFamilyOptions = computed(() => [
-  { value: 'sonnet', label: t('admin.ops.anthropicAdaptiveLearning.modelFamily.sonnet') },
-  { value: 'opus', label: t('admin.ops.anthropicAdaptiveLearning.modelFamily.opus') },
-  { value: 'haiku', label: t('admin.ops.anthropicAdaptiveLearning.modelFamily.haiku') },
-  { value: 'other', label: t('admin.ops.anthropicAdaptiveLearning.modelFamily.other') }
+const runtimeStatusFilterOptions = computed(() => [
+  { value: '', label: t('admin.ops.anthropicAdaptiveLearning.runtimeFilter.all') },
+  { value: 'healthy', label: t('admin.ops.anthropicAdaptiveLearning.status.healthy') },
+  { value: 'high_error', label: t('admin.ops.anthropicAdaptiveLearning.status.highError') },
+  { value: 'cooldown', label: t('admin.ops.anthropicAdaptiveLearning.status.cooldown') },
+  { value: 'half_open', label: t('admin.ops.anthropicAdaptiveLearning.status.halfOpen') },
+  { value: 'quota_limited', label: t('admin.ops.anthropicAdaptiveLearning.status.quotaLimited') },
+  { value: 'saturated', label: t('admin.ops.anthropicAdaptiveLearning.status.saturated') },
+  { value: 'unavailable', label: t('admin.ops.anthropicAdaptiveLearning.status.unavailable') }
 ])
 
 const viewModeOptions = computed(() => [
@@ -100,10 +101,14 @@ const statusKeyMap: Record<string, string> = {
   disabled: 'admin.ops.anthropicAdaptiveLearning.status.disabled',
   unavailable: 'admin.ops.anthropicAdaptiveLearning.status.unavailable',
   cooldown: 'admin.ops.anthropicAdaptiveLearning.status.cooldown',
+  half_open: 'admin.ops.anthropicAdaptiveLearning.status.halfOpen',
+  quota_limited: 'admin.ops.anthropicAdaptiveLearning.status.quotaLimited',
   high_error: 'admin.ops.anthropicAdaptiveLearning.status.highError',
   saturated: 'admin.ops.anthropicAdaptiveLearning.status.saturated',
   learning: 'admin.ops.anthropicAdaptiveLearning.status.learning',
   unlearned: 'admin.ops.anthropicAdaptiveLearning.status.unlearned',
+  learned: 'admin.ops.anthropicAdaptiveLearning.status.learned',
+  not_applicable: 'admin.ops.anthropicAdaptiveLearning.status.notApplicable',
   healthy: 'admin.ops.anthropicAdaptiveLearning.status.healthy'
 }
 
@@ -116,10 +121,14 @@ const statusClassMap: Record<string, string> = {
   disabled: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   unavailable: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   cooldown: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  half_open: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  quota_limited: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   high_error: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   saturated: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300',
   learning: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
   unlearned: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300',
+  learned: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  not_applicable: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300',
   healthy: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 }
 
@@ -142,7 +151,7 @@ const summaryItems = computed(() => {
     {
       key: 'risk',
       label: t('admin.ops.anthropicAdaptiveLearning.summary.risk'),
-      value: formatNumber(current.high_error_accounts + current.cooldown_accounts + current.saturated_accounts),
+      value: formatNumber(current.high_error_accounts + current.cooldown_accounts + current.half_open_accounts + current.quota_limited_accounts + current.saturated_accounts),
       tone: 'text-orange-600 dark:text-orange-400'
     },
     {
@@ -171,7 +180,7 @@ const settingsItems = computed(() => {
     {
       key: 'weights',
       label: t('admin.ops.anthropicAdaptiveLearning.settings.weights'),
-      value: `${settings.weight_reliability}/${settings.weight_capacity}/${settings.weight_latency}/${settings.weight_exploration}`
+      value: `${settings.weight_reliability}/${settings.weight_capacity}/${settings.weight_ttft}/${settings.weight_cost}`
     },
     {
       key: 'window',
@@ -181,22 +190,7 @@ const settingsItems = computed(() => {
     {
       key: 'samples',
       label: t('admin.ops.anthropicAdaptiveLearning.settings.minSamples'),
-      value: formatNumber(settings.min_recent_samples_for_shrink)
-    },
-    {
-      key: 'failures',
-      label: t('admin.ops.anthropicAdaptiveLearning.settings.capacityFailures'),
-      value: formatNumber(settings.capacity_failure_threshold)
-    },
-    {
-      key: 'shrink',
-      label: t('admin.ops.anthropicAdaptiveLearning.settings.shrinkThreshold'),
-      value: formatPercent(settings.shrink_error_threshold, 1)
-    },
-    {
-      key: 'factors',
-      label: t('admin.ops.anthropicAdaptiveLearning.settings.shrinkFactors'),
-      value: `${settings.shrink_factor_soft.toFixed(2)}/${settings.shrink_factor_hard.toFixed(2)}`
+      value: formatNumber(settings.learning_min_health_samples)
     }
   ]
 })
@@ -204,8 +198,8 @@ const settingsItems = computed(() => {
 function buildParams() {
   const params: Record<string, any> = {
     group_id: typeof props.groupIdFilter === 'number' && props.groupIdFilter > 0 ? props.groupIdFilter : undefined,
-    model: modelFamily.value,
-    status: statusFilter.value || undefined,
+    learning_status: learningStatusFilter.value || undefined,
+    runtime_status: runtimeStatusFilter.value || undefined,
     sort_by: sortBy.value,
     sort_order: sortOrder.value
   }
@@ -250,8 +244,8 @@ watch(
     platform: props.platformFilter,
     groupId: props.groupIdFilter,
     refreshToken: props.refreshToken,
-    statusFilter: statusFilter.value,
-    modelFamily: modelFamily.value,
+    learningStatus: learningStatusFilter.value,
+    runtimeStatus: runtimeStatusFilter.value,
     viewMode: viewMode.value,
     topN: topN.value,
     page: page.value,
@@ -263,8 +257,8 @@ watch(
     const filtersChanged = !prev ||
       next.platform !== prev.platform ||
       next.groupId !== prev.groupId ||
-      next.statusFilter !== prev.statusFilter ||
-      next.modelFamily !== prev.modelFamily ||
+      next.learningStatus !== prev.learningStatus ||
+      next.runtimeStatus !== prev.runtimeStatus ||
       next.viewMode !== prev.viewMode ||
       next.pageSize !== prev.pageSize ||
       next.sortBy !== prev.sortBy ||
@@ -340,7 +334,7 @@ function formatTime(value?: string | null): string {
 }
 
 function latestEvent(row: OpsAnthropicAdaptiveLearningAccount): string | undefined {
-  return [row.last_success_at, row.last_failure_at, row.last_capacity_failure_at]
+  return [row.last_success_at, row.last_failure_at, row.capacity_cooldown_until, row.quota_next_probe_at]
     .filter((value): value is string => Boolean(value))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
 }
@@ -353,8 +347,8 @@ function loadBarStyle(row: OpsAnthropicAdaptiveLearningAccount): string {
 }
 
 function loadBarClass(row: OpsAnthropicAdaptiveLearningAccount): string {
-  if (row.scheduler_status === 'cooldown' || row.scheduler_status === 'high_error') return 'bg-red-500'
-  if (row.load_percentage >= 90 || row.scheduler_status === 'saturated') return 'bg-orange-500'
+  if (row.runtime_status === 'cooldown' || row.runtime_status === 'high_error' || row.runtime_status === 'quota_limited') return 'bg-red-500'
+  if (row.load_percentage >= 90 || row.runtime_status === 'saturated') return 'bg-orange-500'
   if (row.load_percentage >= 70 || row.waiting_count > 0) return 'bg-amber-500'
   return 'bg-green-500'
 }
@@ -414,11 +408,11 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
       </div>
 
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <div class="w-32" :title="t('admin.ops.anthropicAdaptiveLearning.modelFamily.tooltip')">
-          <Select v-model="modelFamily" :options="modelFamilyOptions" />
+        <div class="w-36">
+          <Select v-model="learningStatusFilter" :options="learningStatusFilterOptions" />
         </div>
         <div class="w-36">
-          <Select v-model="statusFilter" :options="statusFilterOptions" />
+          <Select v-model="runtimeStatusFilter" :options="runtimeStatusFilterOptions" />
         </div>
         <div class="w-36">
           <Select v-model="viewMode" :options="viewModeOptions" />
@@ -561,21 +555,25 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
                   <div class="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
                     <span>#{{ row.account_id }}</span>
                     <span>{{ row.type || '-' }}</span>
-                    <span>P{{ row.priority }}</span>
                     <span>{{ t('admin.ops.anthropicAdaptiveLearning.rateMultiplier', { value: formatRate(row.rate_multiplier) }) }}</span>
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.scheduler_status)]">
-                    {{ statusLabel(row.scheduler_status) }}
-                  </span>
-                  <div v-if="row.status_reason" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.status_reason">
-                    {{ row.status_reason }}
+                  <div class="flex flex-wrap gap-1">
+                    <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.learning_status)]">
+                      {{ statusLabel(row.learning_status) }}
+                    </span>
+                    <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.runtime_status)]">
+                      {{ statusLabel(row.runtime_status) }}<template v-if="row.runtime_flags.length > 1"> +{{ row.runtime_flags.length - 1 }}</template>
+                    </span>
+                  </div>
+                  <div v-if="row.runtime_reason" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.runtime_reason">
+                    {{ row.runtime_reason }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">
-                    {{ formatInt(row.estimated_capacity) }}/{{ formatInt(row.configured_concurrency) }}
+					{{ formatInt(row.effective_capacity) }}/{{ formatInt(row.configured_concurrency) }}
                   </div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.anthropicAdaptiveLearning.table.capacityHint') }}
@@ -598,28 +596,24 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatScore(row.scheduler_score) }}</div>
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
-                    R {{ formatScore(row.reliability_score) }} / C {{ formatScore(row.capacity_score) }} / L {{ formatScore(row.latency_score) }} / E {{ formatScore(row.exploration_score) }}
+                    R {{ formatScore(row.reliability_score) }} / C {{ formatScore(row.capacity_score) }} / T {{ formatScore(row.latency_score) }} / $ {{ formatScore(row.cost_score) }}
                   </div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.anthropicAdaptiveLearning.successEma') }} {{ formatPercent(row.success_ema, 1) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.total_samples) }}</div>
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.health_samples) }}</div>
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
-                    H {{ formatInt(row.recent_health_samples) }}/{{ formatInt(row.recent_health_failures) }}
-                    · C {{ formatInt(row.recent_capacity_samples) }}/{{ formatInt(row.recent_capacity_failures) }}
+					{{ t('admin.ops.anthropicAdaptiveLearning.successEma') }} {{ formatPercent(row.success_ema, 1) }}
                   </div>
-                  <div v-if="row.consecutive_failure > 0 || row.consecutive_capacity_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
-                    {{ t('admin.ops.anthropicAdaptiveLearning.failureStreaks', { health: row.consecutive_failure, capacity: row.consecutive_capacity_failure }) }}
+				  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+					{{ t('admin.ops.anthropicAdaptiveLearning.failureStreaks', { count: row.consecutive_failure }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
-                    {{ formatLatency(row.ttft_ema) }} / {{ formatLatency(row.latency_ema) }}
-                  </div>
-                  <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                    {{ row.model_family }} · n={{ formatInt(row.latency_samples) }}
+                    {{ formatLatency(row.ttft_ema) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
@@ -627,9 +621,6 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
                     {{ row.cooldown_remaining_sec > 0
                       ? t('admin.ops.anthropicAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
                       : formatTime(latestEvent(row)) }}
-                  </div>
-                  <div v-if="row.last_capacity_failure_at" class="mt-0.5 whitespace-nowrap text-[11px] text-orange-600 dark:text-orange-400">
-                    {{ t('admin.ops.anthropicAdaptiveLearning.capacityFailureRate') }} {{ formatPercent(row.recent_capacity_failure_rate, 1) }}
                   </div>
                 </td>
               </tr>

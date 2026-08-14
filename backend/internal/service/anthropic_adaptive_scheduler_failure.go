@@ -18,28 +18,44 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 		return
 	}
 	report := classifyAnthropicAdaptiveResult(ctx, account, requestedModel, result, err)
-	report.RequestID = contextStringValue(ctx, ctxkey.RequestID)
-	before := s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
-	after := before
-	decreased := false
-	if report.HealthSample || report.CapacitySample || report.Success {
-		learningReport := report
-		now := s.anthropicAdaptiveScheduler.now()
-		if report.HealthSample && !report.Success && !s.anthropicAdaptiveScheduler.state.claimFailureSample(report.Account.ID, report.RequestID, report.RequestedModel, now) {
-			// Same-account retries are correlated observations of one client
-			// request. Keep the diagnostic event, but apply health/capacity once.
-			learningReport.HealthSample = false
-			learningReport.CapacitySample = false
-		}
-		if learningReport.HealthSample || learningReport.CapacitySample || learningReport.Success {
-			_, decreased = s.anthropicAdaptiveScheduler.state.report(learningReport, now, settings)
-			after = s.anthropicAdaptiveScheduler.state.snapshot(account, settings)
-		}
+	report.RequestID = firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
+	now := s.anthropicAdaptiveScheduler.now()
+	coreSettings := anthropicAdaptiveCoreSettings(settings)
+	beforeCore := s.anthropicAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
+	observationType, authentication := anthropicAdaptiveObservation(report)
+	observation := adaptiveObservation{
+		AccountID:           account.ID,
+		RequestID:           report.RequestID,
+		Type:                observationType,
+		ReasonCode:          report.TerminalReason,
+		Authentication:      authentication,
+		FirstTokenMs:        report.FirstTokenMs,
+		ConfiguredCapacity:  account.Concurrency,
+		ObservedConcurrency: -1,
 	}
+	if observationType == adaptiveObservationQuotaLimit {
+		observation.QuotaResetAt = account.RateLimitResetAt
+	}
+	_, decreased := s.anthropicAdaptiveScheduler.core.observe(observation, now, coreSettings)
+	afterCore := s.anthropicAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
 	if decreased {
 		s.anthropicAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}
-	s.logAnthropicAdaptiveDiagnosticResult(ctx, settings, report, before, after, decreased, err)
+	s.logAnthropicAdaptiveDiagnosticResult(ctx, settings, report, beforeCore, afterCore, decreased, err)
+}
+
+func anthropicAdaptiveObservation(report AnthropicAdaptiveScheduleReport) (adaptiveObservationType, bool) {
+	observationType, authentication := classifyAdaptiveTerminalReason(report.Success, report.TerminalReason)
+	if report.Synthetic {
+		return adaptiveObservationIgnored, false
+	}
+	if report.HealthScope == "model" && observationType == adaptiveObservationAccountFailure {
+		return adaptiveObservationProviderOverload, false
+	}
+	if !report.HealthSample && (observationType == adaptiveObservationHealthSuccess || observationType == adaptiveObservationAccountFailure) {
+		return adaptiveObservationIgnored, false
+	}
+	return observationType, authentication
 }
 
 func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requestedModel string, result *ForwardResult, err error) AnthropicAdaptiveScheduleReport {
@@ -71,7 +87,6 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 		}
 		report.Success = true
 		report.HealthSample = true
-		report.CapacitySample = account != nil && account.Concurrency > 0
 		report.TerminalReason = "success"
 		return report
 	}
@@ -137,7 +152,6 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 			if !hasHealthSampleOverride {
 				report.HealthSample = true
 			}
-			report.CapacitySample = account != nil && account.Concurrency > 0
 			report.TerminalReason = "concurrency_limit"
 		case statusCode == http.StatusTooManyRequests:
 			if isAnthropicAdaptiveWindowRateLimit(failoverErr.ResponseHeaders) {

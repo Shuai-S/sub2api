@@ -9,7 +9,8 @@ import {
   type OpsOpenAIAdaptiveLearningResponse,
   type OpsOpenAIAdaptiveLearningSortBy,
   type OpsOpenAIAdaptiveLearningSortOrder,
-  type OpsOpenAIAdaptiveLearningStatus
+  type OpsAdaptiveLearningStatus,
+  type OpsAdaptiveRuntimeStatus
 } from '@/api/admin/ops'
 import { formatNumber } from '@/utils/format'
 
@@ -32,9 +33,11 @@ const response = ref<OpsOpenAIAdaptiveLearningResponse | null>(null)
 let loadSeq = 0
 
 type ViewMode = 'topn' | 'pagination'
-type StatusFilter = '' | OpsOpenAIAdaptiveLearningStatus
+type LearningStatusFilter = '' | OpsAdaptiveLearningStatus
+type RuntimeStatusFilter = '' | OpsAdaptiveRuntimeStatus
 
-const statusFilter = ref<StatusFilter>('')
+const learningStatusFilter = ref<LearningStatusFilter>('')
+const runtimeStatusFilter = ref<RuntimeStatusFilter>('')
 const viewMode = ref<ViewMode>('topn')
 const topN = ref<number>(20)
 const page = ref<number>(1)
@@ -56,18 +59,23 @@ const totalPages = computed(() => {
   return Math.max(1, Math.ceil(total.value / size))
 })
 
-const statusFilterOptions = computed(() => [
+const learningStatusFilterOptions = computed(() => [
   { value: '', label: t('admin.ops.openaiAdaptiveLearning.statusFilter.all') },
-  { value: 'healthy', label: t('admin.ops.openaiAdaptiveLearning.status.healthy') },
-  { value: 'learning', label: t('admin.ops.openaiAdaptiveLearning.status.learning') },
   { value: 'unlearned', label: t('admin.ops.openaiAdaptiveLearning.status.unlearned') },
+  { value: 'learning', label: t('admin.ops.openaiAdaptiveLearning.status.learning') },
+  { value: 'learned', label: t('admin.ops.openaiAdaptiveLearning.status.learned') },
+  { value: 'not_applicable', label: t('admin.ops.openaiAdaptiveLearning.status.notApplicable') }
+])
+
+const runtimeStatusFilterOptions = computed(() => [
+  { value: '', label: t('admin.ops.openaiAdaptiveLearning.runtimeFilter.all') },
+  { value: 'healthy', label: t('admin.ops.openaiAdaptiveLearning.status.healthy') },
   { value: 'high_error', label: t('admin.ops.openaiAdaptiveLearning.status.highError') },
   { value: 'cooldown', label: t('admin.ops.openaiAdaptiveLearning.status.cooldown') },
   { value: 'half_open', label: t('admin.ops.openaiAdaptiveLearning.status.halfOpen') },
-  { value: 'insufficient_balance', label: t('admin.ops.openaiAdaptiveLearning.status.insufficientBalance') },
+  { value: 'quota_limited', label: t('admin.ops.openaiAdaptiveLearning.status.quotaLimited') },
   { value: 'saturated', label: t('admin.ops.openaiAdaptiveLearning.status.saturated') },
-  { value: 'unavailable', label: t('admin.ops.openaiAdaptiveLearning.status.unavailable') },
-  { value: 'disabled', label: t('admin.ops.openaiAdaptiveLearning.status.disabled') }
+  { value: 'unavailable', label: t('admin.ops.openaiAdaptiveLearning.status.unavailable') }
 ])
 
 const viewModeOptions = computed(() => [
@@ -94,11 +102,13 @@ const statusKeyMap: Record<string, string> = {
   unavailable: 'admin.ops.openaiAdaptiveLearning.status.unavailable',
   cooldown: 'admin.ops.openaiAdaptiveLearning.status.cooldown',
   half_open: 'admin.ops.openaiAdaptiveLearning.status.halfOpen',
-  insufficient_balance: 'admin.ops.openaiAdaptiveLearning.status.insufficientBalance',
+  quota_limited: 'admin.ops.openaiAdaptiveLearning.status.quotaLimited',
   high_error: 'admin.ops.openaiAdaptiveLearning.status.highError',
   saturated: 'admin.ops.openaiAdaptiveLearning.status.saturated',
   learning: 'admin.ops.openaiAdaptiveLearning.status.learning',
   unlearned: 'admin.ops.openaiAdaptiveLearning.status.unlearned',
+  learned: 'admin.ops.openaiAdaptiveLearning.status.learned',
+  not_applicable: 'admin.ops.openaiAdaptiveLearning.status.notApplicable',
   healthy: 'admin.ops.openaiAdaptiveLearning.status.healthy'
 }
 
@@ -107,22 +117,18 @@ const modeKeyMap: Record<string, string> = {
   shadow: 'admin.ops.openaiAdaptiveLearning.mode.shadow'
 }
 
-const accountTypePriorityKeyMap: Record<string, string> = {
-  mixed: 'admin.ops.openaiAdaptiveLearning.accountTypePriorityModes.mixed',
-  oauth_first: 'admin.ops.openaiAdaptiveLearning.accountTypePriorityModes.oauthFirst',
-  apikey_first: 'admin.ops.openaiAdaptiveLearning.accountTypePriorityModes.apiKeyFirst'
-}
-
 const statusClassMap: Record<string, string> = {
   disabled: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   unavailable: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   cooldown: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   half_open: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
-  insufficient_balance: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  quota_limited: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   high_error: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   saturated: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
   learning: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
   unlearned: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300',
+  learned: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+  not_applicable: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300',
   healthy: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 }
 
@@ -145,7 +151,7 @@ const summaryItems = computed(() => {
     {
       key: 'risk',
       label: t('admin.ops.openaiAdaptiveLearning.summary.risk'),
-      value: formatNumber(s.high_error_accounts + s.cooldown_accounts + s.half_open_accounts + s.insufficient_balance_accounts + s.saturated_accounts),
+      value: formatNumber(s.high_error_accounts + s.cooldown_accounts + s.half_open_accounts + s.quota_limited_accounts + s.saturated_accounts),
       tone: 'text-orange-600 dark:text-orange-400'
     },
     {
@@ -169,34 +175,24 @@ const settingsItems = computed(() => {
         : t('admin.ops.openaiAdaptiveLearning.settings.noReset')
     },
     {
-      key: 'samples',
-      label: t('admin.ops.openaiAdaptiveLearning.settings.minSamples'),
-      value: formatNumber(settings.min_recent_samples_for_shrink)
-    },
-    {
-      key: 'shrink',
-      label: t('admin.ops.openaiAdaptiveLearning.settings.shrinkThreshold'),
-      value: formatPercent(settings.shrink_error_threshold, 1)
-    },
-    {
-      key: 'halfOpenFailures',
-      label: t('admin.ops.openaiAdaptiveLearning.settings.halfOpenFailures'),
-      value: formatNumber(settings.half_open_failure_threshold)
-    },
-    {
-      key: 'burst',
-      label: t('admin.ops.openaiAdaptiveLearning.settings.burstRatio'),
-      value: formatPercent(settings.burst_probe_ratio, 1)
-    },
-    {
       key: 'topK',
       label: t('admin.ops.openaiAdaptiveLearning.settings.topK'),
       value: formatNumber(settings.top_k)
     },
     {
-      key: 'accountTypePriority',
-      label: t('admin.ops.openaiAdaptiveLearning.settings.accountTypePriority'),
-      value: t(accountTypePriorityKeyMap[settings.account_type_priority_mode] ?? accountTypePriorityKeyMap.mixed)
+      key: 'temperature',
+      label: t('admin.ops.openaiAdaptiveLearning.settings.temperature'),
+      value: settings.softmax_temperature.toFixed(2)
+    },
+    {
+      key: 'samples',
+      label: t('admin.ops.openaiAdaptiveLearning.settings.minSamples'),
+      value: formatNumber(settings.learning_min_health_samples)
+    },
+    {
+      key: 'weights',
+      label: t('admin.ops.openaiAdaptiveLearning.settings.weights'),
+      value: `${settings.weight_reliability}/${settings.weight_capacity}/${settings.weight_ttft}/${settings.weight_cost}`
     }
   ]
 })
@@ -204,7 +200,8 @@ const settingsItems = computed(() => {
 function buildParams() {
   const params: Record<string, any> = {
     group_id: typeof props.groupIdFilter === 'number' && props.groupIdFilter > 0 ? props.groupIdFilter : undefined,
-    status: statusFilter.value || undefined,
+    learning_status: learningStatusFilter.value || undefined,
+    runtime_status: runtimeStatusFilter.value || undefined,
     sort_by: sortBy.value,
     sort_order: sortOrder.value
   }
@@ -251,7 +248,8 @@ watch(
     platform: props.platformFilter,
     groupId: props.groupIdFilter,
     refreshToken: props.refreshToken,
-    statusFilter: statusFilter.value,
+    learningStatusFilter: learningStatusFilter.value,
+    runtimeStatusFilter: runtimeStatusFilter.value,
     viewMode: viewMode.value,
     topN: topN.value,
     page: page.value,
@@ -263,7 +261,8 @@ watch(
     const filtersChanged = !prev ||
       next.platform !== prev.platform ||
       next.groupId !== prev.groupId ||
-      next.statusFilter !== prev.statusFilter ||
+      next.learningStatusFilter !== prev.learningStatusFilter ||
+      next.runtimeStatusFilter !== prev.runtimeStatusFilter ||
       next.viewMode !== prev.viewMode ||
       next.pageSize !== prev.pageSize ||
       next.sortBy !== prev.sortBy ||
@@ -341,8 +340,8 @@ function loadBarStyle(row: OpsOpenAIAdaptiveLearningAccount): string {
 }
 
 function loadBarClass(row: OpsOpenAIAdaptiveLearningAccount): string {
-  if (row.scheduler_status === 'cooldown' || row.scheduler_status === 'high_error' || row.scheduler_status === 'insufficient_balance') return 'bg-red-500'
-  if (row.load_percentage >= 90 || row.scheduler_status === 'saturated') return 'bg-orange-500'
+  if (row.runtime_status === 'cooldown' || row.runtime_status === 'high_error' || row.runtime_status === 'quota_limited') return 'bg-red-500'
+  if (row.load_percentage >= 90 || row.runtime_status === 'saturated') return 'bg-orange-500'
   if (row.load_percentage >= 70 || row.waiting_count > 0) return 'bg-amber-500'
   return 'bg-green-500'
 }
@@ -409,7 +408,10 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
 
       <div class="flex flex-wrap items-center justify-end gap-2">
         <div class="w-36">
-          <Select v-model="statusFilter" :options="statusFilterOptions" />
+          <Select v-model="learningStatusFilter" :options="learningStatusFilterOptions" />
+        </div>
+        <div class="w-36">
+          <Select v-model="runtimeStatusFilter" :options="runtimeStatusFilterOptions" />
         </div>
         <div class="w-36">
           <Select v-model="viewMode" :options="viewModeOptions" />
@@ -560,27 +562,28 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   <div class="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
                     <span>#{{ row.account_id }}</span>
                     <span>{{ row.type || '-' }}</span>
-                    <span>P{{ row.priority }}</span>
                     <span>{{ t('admin.ops.openaiAdaptiveLearning.rateMultiplier', { value: formatRate(row.rate_multiplier) }) }}</span>
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.scheduler_status)]">
-                    {{ statusLabel(row.scheduler_status) }}
-                  </span>
-                  <div v-if="row.status_reason" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.status_reason">
-                    {{ row.status_reason }}
+                  <div class="flex flex-wrap gap-1">
+                    <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.learning_status)]">
+                      {{ statusLabel(row.learning_status) }}
+                    </span>
+                    <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.runtime_status)]">
+                      {{ statusLabel(row.runtime_status) }}<template v-if="row.runtime_flags.length > 1"> +{{ row.runtime_flags.length - 1 }}</template>
+                    </span>
+                  </div>
+                  <div v-if="row.runtime_reason" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.runtime_reason">
+                    {{ row.runtime_reason }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">
-                    {{ formatInt(row.stable_capacity) }}/{{ formatInt(row.effective_capacity) }}/{{ formatInt(row.configured_concurrency) }}
+					{{ formatInt(row.effective_capacity) }}/{{ formatInt(row.configured_concurrency) }}
                   </div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.openaiAdaptiveLearning.table.capacityHint') }}
-                    <span v-if="row.burst_capacity > 0" class="text-amber-600 dark:text-amber-400">
-                      +{{ formatInt(row.burst_capacity) }}
-                    </span>
                   </div>
                 </td>
                 <td class="px-3 py-2">
@@ -600,30 +603,30 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatScore(row.scheduler_score) }}</div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                    S {{ formatScore(row.success_score) }} / C {{ formatScore(row.cost_score) }} / L {{ formatScore(row.capacity_score) }}
+                    R {{ formatScore(row.success_score) }} / C {{ formatScore(row.capacity_score) }} / T {{ formatScore(row.latency_score) }} / $ {{ formatScore(row.cost_score) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.total_samples) }}</div>
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.health_samples) }}</div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                    {{ formatInt(row.recent_samples) }} / {{ formatInt(row.recent_failures) }}
+					{{ t('admin.ops.openaiAdaptiveLearning.successEma') }} {{ formatPercent(row.success_ema, 1) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatPercent(row.error_ema, 1) }}</div>
-                  <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.openaiAdaptiveLearning.recentFailureRate') }} {{ formatPercent(row.recent_failure_rate, 1) }}
+				  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatPercent(1 - row.success_ema, 1) }}</div>
+				  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+					{{ t('admin.ops.openaiAdaptiveLearning.consecutiveFailures', { count: row.consecutive_failure }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(row.last_balance_probe_at || row.balance_insufficient_at || row.last_failure_at || row.last_success_at)">
+				  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(row.quota_next_probe_at || row.quota_reset_at || row.last_failure_at || row.last_success_at)">
                     {{ row.cooldown_remaining_sec > 0
                       ? t('admin.ops.openaiAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
-                      : row.scheduler_status === 'insufficient_balance'
-                        ? t('admin.ops.openaiAdaptiveLearning.balanceProbeAt', { value: formatTime(row.last_balance_probe_at || row.balance_insufficient_at) })
+                      : row.runtime_status === 'quota_limited'
+                        ? (row.runtime_reason || statusLabel(row.runtime_status))
                         : formatTime(row.last_failure_at || row.last_success_at) }}
                   </div>
-                  <div v-if="row.consecutive_failure > 0 && row.scheduler_status !== 'insufficient_balance'" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+                  <div v-if="row.consecutive_failure > 0 && row.runtime_status !== 'quota_limited'" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
                     {{ t('admin.ops.openaiAdaptiveLearning.consecutiveFailures', { count: row.consecutive_failure }) }}
                   </div>
                 </td>

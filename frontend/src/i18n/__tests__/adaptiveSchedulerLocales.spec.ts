@@ -10,10 +10,8 @@ const schedulerKeys = [
 ] as const
 
 const geminiParameterKeys = [
-  'accountFailureThreshold',
-  'modelFailureThreshold',
-  'cooldownMaxSeconds',
-  'halfOpenProbeLeaseSeconds'
+  'healthFailureThreshold',
+  'cooldownMaxSeconds'
 ] as const
 
 describe.each([

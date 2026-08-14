@@ -154,6 +154,24 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 	if isOpenAIAdaptiveInsufficientBalanceError(err) {
 		return "insufficient_balance"
 	}
+	if openAIAdaptiveFailureCooldownReason(err) == "concurrency_limit" {
+		return "concurrency_limit"
+	}
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) {
+		if failoverErr.Scope == GatewayFailureScopeProvider || failoverErr.StatusCode == 529 {
+			return "provider_overloaded"
+		}
+		if failoverErr.IsCredentialFailure() || failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden {
+			return "account_auth"
+		}
+		if failoverErr.StatusCode == http.StatusTooManyRequests {
+			return "generic_rate_limit"
+		}
+		if failoverErr.StatusCode >= 500 {
+			return "upstream_5xx"
+		}
+	}
 	if !healthSample {
 		return "non_account_health_error"
 	}

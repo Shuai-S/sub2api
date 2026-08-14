@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,7 +19,7 @@ type AnthropicAdaptiveMetricsSnapshot struct {
 }
 
 type anthropicAdaptiveScheduler struct {
-	state                 *anthropicAdaptiveStateStore
+	core                  *adaptiveStateStore
 	now                   func() time.Time
 	selectTotal           atomic.Uint64
 	shadowDivergeTotal    atomic.Uint64
@@ -38,8 +39,8 @@ type anthropicAdaptiveModeResolution struct {
 
 func newAnthropicAdaptiveScheduler() *anthropicAdaptiveScheduler {
 	return &anthropicAdaptiveScheduler{
-		state: newAnthropicAdaptiveStateStore(),
-		now:   time.Now,
+		core: newAdaptiveStateStore(),
+		now:  time.Now,
 	}
 }
 
@@ -104,7 +105,8 @@ func (s *GatewayService) anthropicAdaptiveCapacity(mode string, settings Anthrop
 		}
 		return account.Concurrency
 	}
-	return s.anthropicAdaptiveScheduler.state.effectiveCapacity(account, settings)
+	now := s.anthropicAdaptiveScheduler.now()
+	return s.anthropicAdaptiveScheduler.core.effectiveCapacity(account.ID, account.Concurrency, now, anthropicAdaptiveCoreSettings(settings))
 }
 
 func (s *GatewayService) anthropicAdaptiveCircuitAllowed(mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) bool {
@@ -115,14 +117,47 @@ func (s *GatewayService) anthropicAdaptiveCircuitAllowed(mode string, settings A
 	if s.anthropicAdaptiveScheduler.now != nil {
 		now = s.anthropicAdaptiveScheduler.now()
 	}
-	return s.anthropicAdaptiveScheduler.state.claimCircuitProbe(account, now, settings)
+	return s.anthropicAdaptiveScheduler.core.allowedForSelection(account.ID, account.Concurrency, now, anthropicAdaptiveCoreSettings(settings))
 }
 
 func (s *GatewayService) anthropicAdaptiveStickyAllowed(mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) bool {
 	return s.anthropicAdaptiveCircuitAllowed(mode, settings, account)
 }
 
-func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicAdaptiveSchedulerSettings, requestedModel string, candidates []accountWithLoad) ([]accountWithLoad, map[int64]int, *AnthropicAdaptiveDecision) {
+func (s *GatewayService) claimAnthropicAdaptiveProbes(ctx context.Context, mode string, settings AnthropicAdaptiveSchedulerSettings, account *Account) (bool, func()) {
+	noop := func() {}
+	if mode != AnthropicAdaptiveSchedulerModeEnforce || s == nil || s.anthropicAdaptiveScheduler == nil || account == nil || account.Platform != PlatformAnthropic {
+		return true, noop
+	}
+	owner := firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
+	now := s.anthropicAdaptiveScheduler.now()
+	coreSettings := anthropicAdaptiveCoreSettings(settings)
+	if !s.anthropicAdaptiveScheduler.core.claimHealthProbe(account.ID, owner, account.Concurrency, now, coreSettings) {
+		return false, noop
+	}
+	quotaAllowed, quotaClaimed := s.anthropicAdaptiveScheduler.core.claimQuotaProbe(account.ID, owner, account.Concurrency, now, coreSettings)
+	if !quotaAllowed {
+		s.anthropicAdaptiveScheduler.core.releaseHealthProbe(account.ID, owner, now)
+		return false, noop
+	}
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			releasedAt := s.anthropicAdaptiveScheduler.now()
+			s.anthropicAdaptiveScheduler.core.releaseHealthProbe(account.ID, owner, releasedAt)
+			if quotaClaimed {
+				s.anthropicAdaptiveScheduler.core.releaseQuotaProbe(account.ID, owner, releasedAt)
+			}
+		})
+	}
+	stop := context.AfterFunc(ctx, release)
+	return true, func() {
+		_ = stop()
+		release()
+	}
+}
+
+func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicAdaptiveSchedulerSettings, requestedModel string, newSession bool, candidates []accountWithLoad) ([]accountWithLoad, map[int64]int, *AnthropicAdaptiveDecision) {
 	if mode == "" || s == nil || s.anthropicAdaptiveScheduler == nil || len(candidates) == 0 {
 		return candidates, nil, nil
 	}
@@ -130,6 +165,7 @@ func (s *GatewayService) anthropicAdaptiveOrder(mode string, settings AnthropicA
 		RequestedModel: requestedModel,
 		Candidates:     candidates,
 		Settings:       &settings,
+		NewSession:     newSession,
 	})
 	if len(decision.Order) == 0 {
 		s.anthropicAdaptiveScheduler.fallbackTotal.Add(1)

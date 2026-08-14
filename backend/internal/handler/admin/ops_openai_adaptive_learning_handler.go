@@ -43,9 +43,10 @@ func parseOpsOpenAIAdaptiveLearningFilter(c *gin.Context) (*service.OpenAIAdapti
 		return nil, fmt.Errorf("invalid request")
 	}
 	filter := &service.OpenAIAdaptiveSchedulerLearningFilter{
-		Status:    strings.TrimSpace(c.Query("status")),
-		SortBy:    strings.TrimSpace(c.Query("sort_by")),
-		SortOrder: strings.TrimSpace(c.Query("sort_order")),
+		LearningStatus: strings.TrimSpace(c.Query("learning_status")),
+		RuntimeStatus:  strings.TrimSpace(c.Query("runtime_status")),
+		SortBy:         strings.TrimSpace(c.Query("sort_by")),
+		SortOrder:      strings.TrimSpace(c.Query("sort_order")),
 	}
 	if timeRange := strings.TrimSpace(c.Query("time_range")); timeRange != "" {
 		dur, ok := parseOpsOpenAITokenStatsDuration(timeRange)

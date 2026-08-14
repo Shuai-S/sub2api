@@ -41,13 +41,10 @@ func parseOpsGeminiAdaptiveLearningFilter(c *gin.Context) (*service.GeminiAdapti
 		return nil, fmt.Errorf("invalid request")
 	}
 	filter := &service.GeminiAdaptiveSchedulerLearningFilter{
-		RequestedModel: strings.TrimSpace(c.Query("model")),
-		Status:         strings.TrimSpace(c.Query("status")),
+		LearningStatus: strings.TrimSpace(c.Query("learning_status")),
+		RuntimeStatus:  strings.TrimSpace(c.Query("runtime_status")),
 		SortBy:         strings.TrimSpace(c.Query("sort_by")),
 		SortOrder:      strings.TrimSpace(c.Query("sort_order")),
-	}
-	if len(filter.RequestedModel) > 256 {
-		return nil, fmt.Errorf("invalid model")
 	}
 	if timeRange := strings.TrimSpace(c.Query("time_range")); timeRange != "" {
 		duration, ok := parseOpsOpenAITokenStatsDuration(timeRange)

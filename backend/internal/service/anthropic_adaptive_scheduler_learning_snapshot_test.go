@@ -7,24 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAnthropicAdaptiveLearningSnapshotReadDoesNotCreateState(t *testing.T) {
-	store := newAnthropicAdaptiveStateStore()
-	account := &Account{ID: 42, Concurrency: 8}
-
-	snapshot := store.snapshot(account, DefaultAnthropicAdaptiveSchedulerSettings())
-
-	require.Equal(t, 8, snapshot.EstimatedCapacity)
-	store.mu.RLock()
-	defer store.mu.RUnlock()
-	require.Empty(t, store.accounts)
-}
-
-func TestAnthropicAdaptiveLearningSnapshotIncludesRateMultiplier(t *testing.T) {
+func TestAnthropicAdaptiveLearningSnapshotIncludesAccountLevelCoreState(t *testing.T) {
 	rate := 0.8
-	now := time.Now()
-	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	now := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
 	account := &Account{
 		ID:             42,
+		Name:           "anthropic-42",
 		Platform:       PlatformAnthropic,
 		Type:           AccountTypeAPIKey,
 		Status:         StatusActive,
@@ -32,155 +21,54 @@ func TestAnthropicAdaptiveLearningSnapshotIncludesRateMultiplier(t *testing.T) {
 		Concurrency:    8,
 		RateMultiplier: &rate,
 	}
-	state := defaultAnthropicAdaptiveAccountState(account, now, settings)
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
+	state.SuccessEMA = 0.9
+	state.TTFTEMA = 180
+	state.TTFTSamples = 12
+	for i := 0; i < settings.LearningMinHealthSamples; i++ {
+		state.HealthObservations = append(state.HealthObservations, adaptiveHealthObservation{At: now.Add(-time.Duration(i) * time.Second), Success: true})
+	}
+	load := &AccountLoadInfo{AccountID: account.ID, CurrentConcurrency: 2, WaitingCount: 1}
 
-	snapshot := buildAnthropicAdaptiveLearningAccountSnapshot(
-		account, state, settings, &AccountLoadInfo{}, "claude-sonnet-4", now, true,
-	)
+	snapshot := buildAnthropicAdaptiveCoreLearningAccountSnapshot(account, *state, load, now, settings)
 
+	require.Equal(t, account.ID, snapshot.AccountID)
 	require.InDelta(t, rate, snapshot.RateMultiplier, 1e-12)
+	require.Equal(t, account.Concurrency, snapshot.EffectiveCapacity)
+	require.Equal(t, string(adaptiveLearningLearned), snapshot.LearningStatus)
+	require.Equal(t, string(adaptiveRuntimeHealthy), snapshot.RuntimeStatus)
+	require.Equal(t, settings.LearningMinHealthSamples, snapshot.HealthSamples)
+	require.Equal(t, 180.0, snapshot.TTFTEMA)
+	require.Equal(t, int64(12), snapshot.LatencySamples)
 }
 
-func TestAnthropicAdaptiveLearningAccountStatuses(t *testing.T) {
+func TestAnthropicAdaptiveLearningSnapshotMarksOAuthNotApplicable(t *testing.T) {
 	now := time.Now()
-	settings := DefaultAnthropicAdaptiveSchedulerSettings()
-	settings.AnthropicAdaptiveSchedulerEnabled = true
-	settings.AnthropicAdaptiveSchedulerMinRecentSamplesForShrink = 10
-	settings.AnthropicAdaptiveSchedulerCapacityFailureThreshold = 3
-	settings.AnthropicAdaptiveSchedulerShrinkErrorThreshold = 0.25
-	account := &Account{
-		ID:          1,
-		Platform:    PlatformAnthropic,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 10,
-	}
-	baseState := defaultAnthropicAdaptiveAccountState(account, now, settings)
+	account := &Account{ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Concurrency: 10}
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
 
-	tests := []struct {
-		name             string
-		enabled          bool
-		account          *Account
-		state            anthropicAdaptiveAccountState
-		load             *AccountLoadInfo
-		capacityFailRate float64
-		want             string
-	}{
-		{
-			name:    "disabled",
-			enabled: false,
-			account: account,
-			state:   baseState,
-			load:    &AccountLoadInfo{},
-			want:    AnthropicAdaptiveLearningStatusDisabled,
-		},
-		{
-			name:    "unavailable",
-			enabled: true,
-			account: &Account{ID: 1, Status: StatusDisabled, Schedulable: true, Concurrency: 10},
-			state:   baseState,
-			load:    &AccountLoadInfo{},
-			want:    AnthropicAdaptiveLearningStatusUnavailable,
-		},
-		{
-			name:    "cooldown",
-			enabled: true,
-			account: account,
-			state: func() anthropicAdaptiveAccountState {
-				state := baseState
-				state.CooldownUntil = now.Add(time.Minute)
-				return state
-			}(),
-			load: &AccountLoadInfo{},
-			want: AnthropicAdaptiveLearningStatusCooldown,
-		},
-		{
-			name:    "high error",
-			enabled: true,
-			account: account,
-			state: func() anthropicAdaptiveAccountState {
-				state := baseState
-				state.RecentCapacitySamples = 10
-				state.RecentCapacityFailures = 4
-				return state
-			}(),
-			load:             &AccountLoadInfo{},
-			capacityFailRate: 0.4,
-			want:             AnthropicAdaptiveLearningStatusHighError,
-		},
-		{
-			name:    "saturated",
-			enabled: true,
-			account: account,
-			state:   baseState,
-			load:    &AccountLoadInfo{CurrentConcurrency: 10},
-			want:    AnthropicAdaptiveLearningStatusSaturated,
-		},
-		{
-			name:    "unlearned",
-			enabled: true,
-			account: account,
-			state:   baseState,
-			load:    &AccountLoadInfo{},
-			want:    AnthropicAdaptiveLearningStatusUnlearned,
-		},
-		{
-			name:    "learning",
-			enabled: true,
-			account: account,
-			state: func() anthropicAdaptiveAccountState {
-				state := baseState
-				state.TotalSamples = 9
-				return state
-			}(),
-			load: &AccountLoadInfo{},
-			want: AnthropicAdaptiveLearningStatusLearning,
-		},
-		{
-			name:    "healthy",
-			enabled: true,
-			account: account,
-			state: func() anthropicAdaptiveAccountState {
-				state := baseState
-				state.TotalSamples = 10
-				return state
-			}(),
-			load: &AccountLoadInfo{},
-			want: AnthropicAdaptiveLearningStatusHealthy,
-		},
-	}
+	snapshot := buildAnthropicAdaptiveCoreLearningAccountSnapshot(account, *state, &AccountLoadInfo{}, now, defaultAdaptiveCoreSettings())
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, _ := anthropicAdaptiveLearningAccountStatus(
-				tt.account,
-				tt.state,
-				settings,
-				tt.load,
-				10,
-				tt.capacityFailRate,
-				now,
-				tt.enabled,
-			)
-			require.Equal(t, tt.want, got)
-		})
-	}
+	require.Equal(t, string(adaptiveLearningNotApplicable), snapshot.LearningStatus)
+	require.True(t, snapshot.Learned)
 }
 
 func TestAnthropicAdaptiveLearningFilterSortAndSummary(t *testing.T) {
 	rows := []AnthropicAdaptiveSchedulerAccountLearningSnapshot{
-		{AccountID: 1, AccountName: "alpha", SchedulerStatus: AnthropicAdaptiveLearningStatusHealthy, Learned: true, SchedulerScore: 0.9},
-		{AccountID: 2, AccountName: "beta", SchedulerStatus: AnthropicAdaptiveLearningStatusCooldown, Learned: true, SchedulerScore: 0.2},
-		{AccountID: 3, AccountName: "gamma", SchedulerStatus: AnthropicAdaptiveLearningStatusUnlearned, SchedulerScore: 0.5},
+		{AccountID: 1, AccountName: "alpha", LearningStatus: string(adaptiveLearningLearned), RuntimeStatus: string(adaptiveRuntimeHealthy), SchedulerStatus: string(adaptiveRuntimeHealthy), Learned: true, SchedulerScore: 0.9},
+		{AccountID: 2, AccountName: "beta", LearningStatus: string(adaptiveLearningLearned), RuntimeStatus: string(adaptiveRuntimeCooldown), SchedulerStatus: string(adaptiveRuntimeCooldown), Learned: true, SchedulerScore: 0.2},
+		{AccountID: 3, AccountName: "gamma", LearningStatus: string(adaptiveLearningUnlearned), RuntimeStatus: string(adaptiveRuntimeQuotaLimited), SchedulerStatus: string(adaptiveRuntimeQuotaLimited), SchedulerScore: 0.5},
 	}
 
 	summary := summarizeAnthropicAdaptiveLearningRows(rows)
-	require.Equal(t, 2, summary.TrackedAccounts)
+	require.Equal(t, 3, summary.TrackedAccounts)
+	require.Equal(t, 2, summary.LearnedAccounts)
 	require.Equal(t, 1, summary.HealthyAccounts)
 	require.Equal(t, 1, summary.CooldownAccounts)
 	require.Equal(t, 1, summary.UnlearnedAccounts)
+	require.Equal(t, 1, summary.QuotaLimitedAccounts)
 
-	filtered := filterAnthropicAdaptiveLearningRowsByStatus(rows, AnthropicAdaptiveLearningStatusHealthy)
+	filtered := filterAnthropicAdaptiveLearningRowsByDualStatus(rows, string(adaptiveLearningLearned), string(adaptiveRuntimeHealthy))
 	require.Len(t, filtered, 1)
 	require.Equal(t, int64(1), filtered[0].AccountID)
 
@@ -193,14 +81,8 @@ func TestAnthropicAdaptiveLearningFilterSortAndSummary(t *testing.T) {
 	require.Equal(t, []int64{2, 3, 1}, []int64{rows[0].AccountID, rows[1].AccountID, rows[2].AccountID})
 }
 
-func TestAnthropicAdaptiveLatencySnapshotsAreStableAndComplete(t *testing.T) {
-	got := anthropicAdaptiveLatencySnapshots(map[string]anthropicAdaptiveLatencyState{
-		"sonnet": {TTFTEMA: 120, LatencyEMA: 700, Samples: 4},
-		"opus":   {TTFTEMA: 300, LatencyEMA: 1200, Samples: 2},
-	})
-
-	require.Equal(t, []AnthropicAdaptiveLatencyLearningSnapshot{
-		{ModelFamily: "opus", TTFTEMA: 300, LatencyEMA: 1200, Samples: 2},
-		{ModelFamily: "sonnet", TTFTEMA: 120, LatencyEMA: 700, Samples: 4},
-	}, got)
+func TestFilterAnthropicAdaptiveLearningSchedulableAccounts(t *testing.T) {
+	accounts := []Account{{ID: 1, Schedulable: false}, {ID: 2, Schedulable: true}, {ID: 3, Status: StatusDisabled, Schedulable: true}}
+	got := filterAnthropicAdaptiveLearningSchedulableAccounts(accounts)
+	require.Equal(t, []int64{2, 3}, []int64{got[0].ID, got[1].ID})
 }

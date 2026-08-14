@@ -180,9 +180,7 @@ export default {
         empty: '当前筛选条件下暂无 OpenAI 账号',
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
-        recentFailureRate: '近期失败率',
         cooldownRemaining: '冷却剩余 {value}',
-        balanceProbeAt: '余额探测 {value}',
         consecutiveFailures: '连续失败 {count}',
         totalAccounts: '账号总数：{total}',
         scoreNote: '当前分值为 0-100 的参考分，用于观察当前账号池的自适应计算效果；真实调度还会受模型能力、会话粘滞、排除账号和请求上下文影响。',
@@ -195,15 +193,20 @@ export default {
           unavailable: '不可调度',
           cooldown: '冷却中',
           halfOpen: '半开探测',
-          insufficientBalance: '余额不足',
+          quotaLimited: '配额受限',
           highError: '错误偏高',
           saturated: '容量打满',
           learning: '学习中',
           unlearned: '未学习',
+          learned: '已学习',
+          notApplicable: '无需学习',
           healthy: '健康'
         },
         statusFilter: {
-          all: '全部状态'
+          all: '全部学习状态'
+        },
+        runtimeFilter: {
+          all: '全部运行状态'
         },
         summary: {
           tracked: '已学习账号',
@@ -214,23 +217,16 @@ export default {
         settings: {
           window: '学习窗口',
           noReset: '不重置',
-          minSamples: '缩容样本',
-          shrinkThreshold: '缩容阈值',
-          halfOpenFailures: '半开失败阈值',
-          burstRatio: '高峰探测',
+          minSamples: '学习样本',
           topK: 'TopK',
-          accountTypePriority: '类型优先级'
-        },
-        accountTypePriorityModes: {
-          mixed: '混合',
-          oauthFirst: 'OAuth 优先',
-          apiKeyFirst: 'API Key 优先'
+          temperature: 'Softmax 温度',
+          weights: 'R/C/T/$ 权重'
         },
         table: {
           account: '账号',
           status: '状态',
           capacity: '容量',
-          capacityHint: '稳定/有效/配置',
+          capacityHint: '有效/配置',
           load: '负载',
           score: '当前分值',
           samples: '样本',
@@ -240,7 +236,7 @@ export default {
       },
       anthropicAdaptiveLearning: {
         title: 'Anthropic 自适应调度学习',
-        description: '展示观察/执行模式下的 Anthropic 账号学习状态、容量估算和模型族延迟。',
+        description: '展示 Anthropic 账号级学习状态、运行约束、容量与统一评分。',
         disabled: '已关闭',
         realtimeOff: '实时并发关闭',
         openSettings: '调度设置',
@@ -250,34 +246,33 @@ export default {
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
         successEma: '成功 EMA',
-        failureStreaks: '连续失败 H {health} / C {capacity}',
-        capacityFailureRate: '容量失败率',
+        failureStreaks: '连续失败 {count}',
         cooldownRemaining: '冷却剩余 {value}',
         totalAccounts: '账号总数：{total}',
-        scoreNote: '当前分值为 0-100 的参考分，R/C/L/E 分别表示可靠性、剩余容量、所选模型族延迟和探索分；真实调度仍优先命中可用粘性账号，并受模型能力、排除账号和请求上下文影响。',
+        scoreNote: '当前分值为 0-100，R/C/T/$ 分别表示可靠性、可用容量、首字延迟和当前候选层动态成本；OAuth/Setup Token 账号优先进入独立候选层。',
         mode: {
           enforce: '执行模式',
           shadow: '观察模式'
-        },
-        modelFamily: {
-          sonnet: 'Sonnet',
-          opus: 'Opus',
-          haiku: 'Haiku',
-          other: '其他模型',
-          tooltip: '选择用于延迟 EMA 和调度分值计算的 Anthropic 模型族'
         },
         status: {
           disabled: '已关闭',
           unavailable: '不可调度',
           cooldown: '冷却中',
-          highError: '容量错误偏高',
+          halfOpen: '半开探测',
+          quotaLimited: '配额受限',
+          highError: '错误偏高',
           saturated: '容量打满',
           learning: '学习中',
           unlearned: '未学习',
+          learned: '已学习',
+          notApplicable: '无需学习',
           healthy: '健康'
         },
         statusFilter: {
-          all: '全部状态'
+          all: '全部学习状态'
+        },
+        runtimeFilter: {
+          all: '全部运行状态'
         },
         summary: {
           tracked: '已学习账号',
@@ -288,28 +283,25 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax 温度',
-          weights: 'R/C/L/E 权重',
+          weights: 'R/C/T/$ 权重',
           window: '学习窗口',
-          minSamples: '缩容样本',
-          capacityFailures: '容量失败阈值',
-          shrinkThreshold: '缩容错误阈值',
-          shrinkFactors: '软/硬缩容'
+          minSamples: '学习样本'
         },
         table: {
           account: '账号',
           status: '状态',
-          capacity: '学习容量',
-          capacityHint: '估算/配置',
+          capacity: '有效容量',
+          capacityHint: '有效/配置',
           load: '负载',
           score: '当前分值',
           samples: '样本',
-          latency: '首包/总延迟',
+          latency: '首字延迟',
           lastEvent: '最近事件'
         }
       },
       geminiAdaptiveLearning: {
         title: 'Gemini 自适应调度学习',
-        description: '展示 Gemini 与 Antigravity 混合池的动态容量、六维评分、模型族 EMA、配额节奏和 Sticky 迁移指标。',
+        description: '展示 Gemini 账号级学习状态、运行约束、动态容量、统一评分和配额资格。',
         disabled: '已关闭',
         realtimeOff: '实时并发关闭',
         openSettings: '调度设置',
@@ -319,32 +311,33 @@ export default {
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
         successEma: '成功 EMA',
-        failureStreaks: '连续失败 H {health} / C {capacity}',
-        capacityFailureRate: '容量失败率',
+        failureStreaks: '连续失败 {count}',
         cooldownRemaining: '冷却剩余 {value}',
         totalAccounts: '账号总数：{total}',
-        scoreNote: '当前分值为 0-100 的参考分；R/Q/C/L/$/E 分别表示可靠性、配额节奏、剩余容量、模型族延迟、成本和探索。真实调度仍受 Priority 硬分层、模型能力、Sticky、排除账号和请求上下文约束。',
+        scoreNote: '当前分值为 0-100，R/C/T/$ 分别表示可靠性、可用容量、首字延迟和当前候选层动态成本；配额只做硬过滤，不参与评分。',
         mode: {
           enforce: '执行模式',
           shadow: '观察模式'
-        },
-        model: {
-          placeholder: '请求模型',
-          tooltip: '输入实际请求模型，用于模型族 EMA、模型映射和 Pro/Flash 配额快照计算'
         },
         status: {
           disabled: '已关闭',
           unavailable: '不可调度',
           quotaLimited: '配额耗尽',
           cooldown: '冷却中',
-          highError: '容量错误偏高',
+          halfOpen: '半开探测',
+          highError: '错误偏高',
           saturated: '容量打满',
           learning: '学习中',
           unlearned: '未学习',
+          learned: '已学习',
+          notApplicable: '无需学习',
           healthy: '健康'
         },
         statusFilter: {
-          all: '全部状态'
+          all: '全部学习状态'
+        },
+        runtimeFilter: {
+          all: '全部运行状态'
         },
         summary: {
           tracked: '已跟踪账号',
@@ -355,8 +348,7 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax 温度',
-          weights: 'R/Q/C/L/$/E 权重',
-          stickyEscape: 'Sticky 满载迁移',
+          weights: 'R/C/T/$ 权重',
           window: '学习窗口'
         },
         metrics: {
