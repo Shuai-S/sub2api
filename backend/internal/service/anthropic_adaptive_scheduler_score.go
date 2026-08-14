@@ -1,8 +1,6 @@
 package service
 
 import (
-	"math"
-	"math/rand/v2"
 	"time"
 )
 
@@ -135,39 +133,4 @@ func buildAnthropicAdaptiveOrder(candidates []AnthropicAdaptiveCandidate, settin
 		result = append(result, byID[candidate.AccountID])
 	}
 	return result
-}
-
-func appendAnthropicAdaptiveSoftmaxOrder(order, candidates []AnthropicAdaptiveCandidate, temperature float64) []AnthropicAdaptiveCandidate {
-	pool := append([]AnthropicAdaptiveCandidate(nil), candidates...)
-	for len(pool) > 0 {
-		maxScore := pool[0].Score
-		for _, candidate := range pool[1:] {
-			maxScore = math.Max(maxScore, candidate.Score)
-		}
-		weights := make([]float64, len(pool))
-		total := 0.0
-		for i, candidate := range pool {
-			weight := math.Exp((candidate.Score - maxScore) / temperature)
-			if math.IsNaN(weight) || math.IsInf(weight, 0) || weight <= 0 {
-				weight = 1
-			}
-			weights[i] = weight
-			total += weight
-		}
-		selected := 0
-		if total > 0 {
-			pick := rand.Float64() * total
-			accumulated := 0.0
-			for i, weight := range weights {
-				accumulated += weight
-				if pick <= accumulated {
-					selected = i
-					break
-				}
-			}
-		}
-		order = append(order, pool[selected])
-		pool = append(pool[:selected], pool[selected+1:]...)
-	}
-	return order
 }

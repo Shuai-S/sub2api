@@ -1406,11 +1406,6 @@ func (s *GatewayService) selectAccountWithLoadAwareness(ctx context.Context, gro
 	return nil, ErrNoAvailableAccounts
 }
 
-func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool, bindSticky bool, capacityFor func(*Account) int) (*AccountSelectionResult, bool, error) {
-	result, acquired, _, err := s.tryAcquireByLegacyOrderWithGate(ctx, candidates, groupID, sessionHash, preferOAuth, bindSticky, capacityFor, nil)
-	return result, acquired, err
-}
-
 func (s *GatewayService) tryAcquireByLegacyOrderWithGate(ctx context.Context, candidates []*Account, groupID *int64, sessionHash string, preferOAuth bool, bindSticky bool, capacityFor func(*Account) int, gate func(*Account) (bool, func())) (*AccountSelectionResult, bool, func(), error) {
 	noop := func() {}
 	ordered := append([]*Account(nil), candidates...)
