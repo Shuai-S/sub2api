@@ -9,9 +9,14 @@ export default {
         security: 'Security',
         users: 'Users',
         gateway: 'Gateway',
+        adaptive: 'Adaptive Scheduling',
         email: 'Email',
         backup: 'Backup',
         payment: 'Payment',
+      },
+      adaptiveScheduling: {
+        title: 'Adaptive Scheduling',
+        description: 'Configure account-level adaptive scheduling for OpenAI, Anthropic, and Gemini',
       },
       features: {
         channelMonitor: {

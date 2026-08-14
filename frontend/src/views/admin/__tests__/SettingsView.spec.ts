@@ -617,6 +617,17 @@ async function openGatewayTab(wrapper: ReturnType<typeof mountView>) {
   await flushPromises();
 }
 
+async function openAdaptiveTab(wrapper: ReturnType<typeof mountView>) {
+  const adaptiveTabButton = wrapper
+    .findAll("button")
+    .find((node) => node.text().includes("admin.settings.tabs.adaptive"));
+
+  expect(adaptiveTabButton).toBeDefined();
+  await adaptiveTabButton?.trigger("click");
+  await flushPromises();
+  expect(wrapper.get("#settings-tab-adaptive").attributes("aria-selected")).toBe("true");
+}
+
 async function openPaymentTab(wrapper: ReturnType<typeof mountView>) {
   const paymentTabButton = wrapper
     .findAll("button")
@@ -1235,7 +1246,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     const wrapper = mountView();
     await flushPromises();
-    await openGatewayTab(wrapper);
+    await openAdaptiveTab(wrapper);
 
     const toggle = wrapper.get(
       '[data-testid="anthropic-adaptive-scheduler-toggle"]',
@@ -1301,7 +1312,7 @@ describe("admin SettingsView payment visible method controls", () => {
 
     const wrapper = mountView();
     await flushPromises();
-    await openGatewayTab(wrapper);
+    await openAdaptiveTab(wrapper);
 
     expect(
       (
@@ -1501,6 +1512,37 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).not.toContain("OpenAI 高级调度器");
   });
 
+  it("shows provider adaptive schedulers only in the adaptive scheduling tab", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+
+    const schedulerPanels = [
+      "anthropic-adaptive-scheduler-settings",
+      "gemini-adaptive-scheduler-settings",
+      "openai-adaptive-scheduler-settings",
+    ];
+
+    await openGatewayTab(wrapper);
+    for (const testId of schedulerPanels) {
+      expect(
+        wrapper.get(`[data-testid="${testId}"]`).attributes("style"),
+      ).toContain("display: none");
+    }
+
+    await openAdaptiveTab(wrapper);
+    for (const testId of schedulerPanels) {
+      expect(
+        wrapper.get(`[data-testid="${testId}"]`).attributes("style") ?? "",
+        `${testId} should be visible in the adaptive tab`,
+      ).not.toContain("display: none");
+    }
+    expect(
+      wrapper
+        .get('[data-testid="upstream-billing-probe-settings"]')
+        .attributes("style"),
+    ).toContain("display: none");
+  });
+
   it("fills OpenAI adaptive scheduler inputs with defaults and saves defaults when cleared", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
@@ -1519,7 +1561,7 @@ describe("admin SettingsView payment visible method controls", () => {
       expect(Number(form?.[key as OpenAIAdaptiveSchedulerDefaultKey])).toBe(value);
     }
 
-    await openGatewayTab(wrapper);
+    await openAdaptiveTab(wrapper);
     const inputForLabel = (labelKey: string): HTMLInputElement => {
       const labels = Array.from(wrapper.element.querySelectorAll("label"));
       const label = labels.find((node) => node.textContent?.includes(labelKey));
@@ -1693,6 +1735,7 @@ describe("admin SettingsView payment visible method controls", () => {
     const wrapper = mountView();
 
     await flushPromises();
+    await openGatewayTab(wrapper);
     expect(
       wrapper.find('[data-testid="openai-oauth-scheduling-rate-multiplier"]').exists(),
     ).toBe(false);

@@ -9,9 +9,14 @@ export default {
         security: '安全与认证',
         users: '用户默认值',
         gateway: '网关服务',
+        adaptive: '自适应调度',
         email: '邮件设置',
         backup: '数据备份',
         payment: '支付设置',
+      },
+      adaptiveScheduling: {
+        title: '自适应调度',
+        description: '统一配置 OpenAI、Anthropic 和 Gemini 的账号级自适应调度策略',
       },
       features: {
         channelMonitor: {

@@ -4484,10 +4484,13 @@
         </div>
         <!-- /Tab: Users -->
 
-        <!-- Tab: Gateway — Claude Code, Scheduling -->
-        <div v-show="activeTab === 'gateway'" class="space-y-6">
+        <!-- Tabs: Gateway / Adaptive Scheduling -->
+        <div
+          v-show="activeTab === 'gateway' || activeTab === 'adaptive'"
+          class="space-y-6"
+        >
           <!-- Claude Code Settings -->
-          <div class="card">
+          <div v-show="activeTab === 'gateway'" class="card">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -4539,7 +4542,7 @@
           </div>
 
           <!-- Codex Settings -->
-          <div class="card">
+          <div v-show="activeTab === 'gateway'" class="card">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -4787,7 +4790,11 @@
           </div>
 
           <!-- Upstream Billing Probe Settings -->
-          <div class="card" data-testid="upstream-billing-probe-settings">
+          <div
+            v-show="activeTab === 'gateway'"
+            class="card"
+            data-testid="upstream-billing-probe-settings"
+          >
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -4873,7 +4880,11 @@
           </div>
 
           <!-- Ollama Cloud Usage Settings -->
-          <div class="card" data-testid="ollama-cloud-usage-global-settings">
+          <div
+            v-show="activeTab === 'gateway'"
+            class="card"
+            data-testid="ollama-cloud-usage-global-settings"
+          >
             <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
                 {{ t("admin.settings.ollamaCloudUsage.title") }}
@@ -4962,14 +4973,25 @@
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-                {{ t("admin.settings.scheduling.title") }}
+                {{
+                  activeTab === "adaptive"
+                    ? t("admin.settings.adaptiveScheduling.title")
+                    : t("admin.settings.scheduling.title")
+                }}
               </h2>
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {{ t("admin.settings.scheduling.description") }}
+                {{
+                  activeTab === "adaptive"
+                    ? t("admin.settings.adaptiveScheduling.description")
+                    : t("admin.settings.scheduling.description")
+                }}
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between">
+              <div
+                v-show="activeTab === 'gateway'"
+                class="flex items-center justify-between"
+              >
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -4983,7 +5005,10 @@
                 <Toggle v-model="form.allow_ungrouped_key_scheduling" />
               </div>
 
-              <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
+              <div
+                v-show="activeTab === 'gateway'"
+                class="border-t border-gray-100 pt-4 dark:border-dark-700"
+              >
                 <div class="mb-3">
                   <label class="font-medium text-gray-900 dark:text-white">
                     {{
@@ -5056,6 +5081,7 @@
               </div>
 
               <div
+                v-show="activeTab === 'adaptive'"
                 class="space-y-4 border-t border-gray-100 pt-5 dark:border-dark-700"
                 data-testid="anthropic-adaptive-scheduler-settings"
               >
@@ -5193,6 +5219,7 @@
               </div>
 
               <div
+                v-show="activeTab === 'adaptive'"
                 class="space-y-4 border-t border-gray-100 pt-5 dark:border-dark-700"
                 data-testid="gemini-adaptive-scheduler-settings"
               >
@@ -5312,7 +5339,7 @@
               </div>
 
               <div
-                v-if="!form.openai_advanced_scheduler_enabled"
+                v-if="activeTab === 'gateway' && !form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
               >
                 <div>
@@ -5334,7 +5361,7 @@
               </div>
 
               <div
-                v-if="!form.openai_advanced_scheduler_enabled && form.openai_low_upstream_rate_priority_enabled"
+                v-if="activeTab === 'gateway' && !form.openai_advanced_scheduler_enabled && form.openai_low_upstream_rate_priority_enabled"
                 class="flex flex-col items-stretch gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 dark:border-dark-700"
               >
                 <div class="min-w-0">
@@ -5365,7 +5392,10 @@
                 </div>
               </div>
 
-              <div class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700">
+              <div
+                v-show="activeTab === 'gateway'"
+                class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
+              >
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5385,7 +5415,9 @@
               </div>
 
               <div
+                v-show="activeTab === 'adaptive'"
                 class="space-y-4 border-t border-gray-200 pt-5 dark:border-dark-700"
+                data-testid="openai-adaptive-scheduler-settings"
               >
                 <div class="flex items-center justify-between gap-4">
                   <div>
@@ -5396,7 +5428,10 @@
                       {{ t("admin.settings.openaiAdaptiveScheduler.description") }}
                     </p>
                   </div>
-                  <Toggle v-model="form.openai_adaptive_scheduler_enabled" />
+                  <Toggle
+                    v-model="form.openai_adaptive_scheduler_enabled"
+                    data-testid="openai-adaptive-scheduler-toggle"
+                  />
                 </div>
 
                 <div
@@ -5455,7 +5490,7 @@
               </div>
 
               <div
-                v-if="form.openai_advanced_scheduler_enabled"
+                v-if="activeTab === 'gateway' && form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
               >
                 <div>
@@ -5474,7 +5509,7 @@
               </div>
 
               <div
-                v-if="form.openai_advanced_scheduler_enabled"
+                v-if="activeTab === 'gateway' && form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
               >
                 <div>
@@ -5493,7 +5528,7 @@
               </div>
 
               <div
-                v-if="form.openai_advanced_scheduler_enabled"
+                v-if="activeTab === 'gateway' && form.openai_advanced_scheduler_enabled"
                 class="flex flex-col items-stretch gap-3 border-t border-gray-100 pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 dark:border-dark-700"
               >
                 <div class="min-w-0">
@@ -5525,7 +5560,7 @@
               </div>
 
               <div
-                v-if="form.openai_advanced_scheduler_enabled"
+                v-if="activeTab === 'gateway' && form.openai_advanced_scheduler_enabled"
                 class="border-t border-gray-100 pt-5 dark:border-dark-700"
               >
                 <div>
@@ -5564,7 +5599,7 @@
           </div>
 
           <!-- Gateway Forwarding Behavior -->
-          <div class="card">
+          <div v-show="activeTab === 'gateway'" class="card">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -6127,7 +6162,7 @@
           </div>
 
           <!-- Web Search Emulation -->
-          <div class="card">
+          <div v-show="activeTab === 'gateway'" class="card">
             <div
               class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
             >
@@ -6481,7 +6516,7 @@
 
           <!-- Web Search Test Dialog -->
           <div
-            v-if="wsTestDialogOpen"
+            v-if="activeTab === 'gateway' && wsTestDialogOpen"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="wsTestDialogOpen = false"
           >
@@ -6563,7 +6598,7 @@
           </div>
 
         <!-- Usage Records Settings -->
-        <div class="card">
+        <div v-show="activeTab === 'gateway'" class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.usageRecords.title') }}
@@ -6591,7 +6626,7 @@
           </div>
         </div>
         </div>
-        <!-- /Tab: Gateway — Claude Code, Scheduling -->
+        <!-- /Tabs: Gateway / Adaptive Scheduling -->
 
         <!-- Tab: General -->
         <div v-show="activeTab === 'general'" class="space-y-6">
@@ -9197,6 +9232,7 @@ type SettingsTab =
   | "security"
   | "users"
   | "gateway"
+  | "adaptive"
   | "payment"
   | "email"
   | "backup";
@@ -9208,6 +9244,7 @@ const settingsTabs = [
   { key: "security" as SettingsTab, icon: "shield" as const },
   { key: "users" as SettingsTab, icon: "user" as const },
   { key: "gateway" as SettingsTab, icon: "server" as const },
+  { key: "adaptive" as SettingsTab, icon: "chart" as const },
   { key: "payment" as SettingsTab, icon: "creditCard" as const },
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },

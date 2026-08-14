@@ -18,7 +18,11 @@ describe.each([
   ['zh', zhSettings],
   ['en', enSettings]
 ] as const)('%s adaptive scheduler locale messages', (locale, messages) => {
-  it('defines every scheduler section used by Gateway settings', () => {
+  it('defines the adaptive scheduling tab and every provider section', () => {
+    expect(messages.settings.tabs.adaptive, `${locale}.tabs.adaptive is missing`).toBeTypeOf('string')
+    expect(messages.settings.adaptiveScheduling.title, `${locale}.adaptiveScheduling.title is missing`).toBeTypeOf('string')
+    expect(messages.settings.adaptiveScheduling.description, `${locale}.adaptiveScheduling.description is missing`).toBeTypeOf('string')
+
     for (const key of schedulerKeys) {
       const section = messages.settings[key]
       expect(section, `${locale}.${key} is missing`).toBeDefined()
