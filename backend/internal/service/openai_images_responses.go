@@ -1051,6 +1051,23 @@ func buildOpenAIImagesStreamErrorBodyFromUpstream(err *OpenAIImagesUpstreamError
 	return body
 }
 
+func buildOpenAIImagesStreamReadErrorBody(err error) []byte {
+	code, message, ok := OpenAIUpstreamStreamReadErrorDetails(err)
+	if !ok && shouldClassifyOpenAIUpstreamStreamReadError(err) {
+		code, message = classifyOpenAIUpstreamStreamReadError(err)
+		ok = true
+	}
+	if !ok {
+		code = OpenAIUpstreamStreamReadErrorCode
+		if err != nil {
+			message = err.Error()
+		}
+	}
+	body := buildOpenAIImagesStreamErrorBody(message)
+	body, _ = sjson.SetBytes(body, "error.code", code)
+	return body
+}
+
 func writeOpenAIImagesUpstreamErrorResponse(c *gin.Context, err *OpenAIImagesUpstreamError) bool {
 	if c == nil || c.Writer == nil || err == nil {
 		return false
@@ -1607,7 +1624,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 					err = newOpenAIUpstreamStreamReadError(err)
 				}
 				if responseCommitted {
-					writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(err.Error()))
+					writeStreamEvent("error", buildOpenAIImagesStreamReadErrorBody(err))
 				}
 				return usage, imageCount, imageOutputSizes, firstTokenMs, err
 			}
@@ -1705,7 +1722,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 					ev.err = newOpenAIUpstreamStreamReadError(ev.err)
 				}
 				if responseCommitted {
-					writeStreamEvent("error", buildOpenAIImagesStreamErrorBody(ev.err.Error()))
+					writeStreamEvent("error", buildOpenAIImagesStreamReadErrorBody(ev.err))
 				}
 				return usage, imageCount, imageOutputSizes, firstTokenMs, ev.err
 			}

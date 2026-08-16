@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -286,6 +287,37 @@ func TestOpenAIResponseFlush_PreambleWithoutTerminalRemainsBufferedForFailover(t
 	gotBody, flushes := recorder.snapshot()
 	require.Empty(t, gotBody)
 	require.Empty(t, flushes)
+}
+
+func TestOpenAIResponseFlush_LargePreambleWithoutTimeoutRemainsBufferedForFailover(t *testing.T) {
+	body := "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_large\",\"padding\":\"" + strings.Repeat("x", 5*1024) + "\"}}\n\n"
+	recorder := newOpenAIResponseFlushRecorder()
+
+	result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(body)), config.GatewayConfig{})
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.SafeToFailoverAfterWrite)
+	require.NotNil(t, result)
+	gotBody, flushes := recorder.snapshot()
+	require.Empty(t, gotBody)
+	require.Empty(t, flushes)
+}
+
+func TestOpenAIResponseFlush_StructuralOutputDisarmsOversizedLineFailover(t *testing.T) {
+	structural := `data: {"type":"response.output_item.added","item":{"type":"function_call","id":"fc_1","name":"lookup","arguments":""}}` + "\n\n"
+	overlong := "data: " + strings.Repeat("x", 65*1024) + "\n"
+	recorder := newOpenAIResponseFlushRecorder()
+
+	result, err := runOpenAIResponseFlushTest(recorder, io.NopCloser(strings.NewReader(structural+overlong)), config.GatewayConfig{MaxLineSize: 64 * 1024})
+
+	require.ErrorIs(t, err, bufio.ErrTooLong)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.NotNil(t, result)
+	gotBody, _ := recorder.snapshot()
+	require.Contains(t, gotBody, structural)
+	require.Contains(t, gotBody, `"code":"response_too_large"`)
 }
 
 func TestOpenAIResponseFlush_CanceledAfterOutputFlushesResidualWithoutErrorEvent(t *testing.T) {

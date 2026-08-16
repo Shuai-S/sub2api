@@ -53,16 +53,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if account != nil && account.Platform == PlatformOpenAI {
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
 	}
-	guardFirstOutput := firstOutputTimeout > 0
 	var attemptResponseHeaders http.Header
-	if guardFirstOutput {
-		if s.responseHeaderFilter != nil {
-			attemptResponseHeaders = responseheaders.FilterHeaders(resp.Header, s.responseHeaderFilter)
-		} else if requestID := strings.TrimSpace(resp.Header.Get("x-request-id")); requestID != "" {
-			attemptResponseHeaders = http.Header{"X-Request-Id": []string{requestID}}
-		}
-	} else if s.responseHeaderFilter != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	if s.responseHeaderFilter != nil {
+		attemptResponseHeaders = responseheaders.FilterHeaders(resp.Header, s.responseHeaderFilter)
+	} else if requestID := strings.TrimSpace(resp.Header.Get("x-request-id")); requestID != "" {
+		attemptResponseHeaders = http.Header{"X-Request-Id": []string{requestID}}
 	}
 
 	// Set SSE response headers
@@ -70,12 +65,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
-	if !guardFirstOutput && resp.Header.Get("x-request-id") != "" {
-		c.Header("x-request-id", resp.Header.Get("x-request-id"))
-	}
 
 	applyAttemptResponseHeaders := func() {
-		if !guardFirstOutput || len(attemptResponseHeaders) == 0 || c.Writer.Written() {
+		if len(attemptResponseHeaders) == 0 || c.Writer.Written() {
 			return
 		}
 		for key, values := range attemptResponseHeaders {
@@ -103,15 +95,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	var firstTokenMs *int
 	firstOutputProgressObserved := false
 	bufferedWriter := bufio.NewWriterSize(w, 4*1024)
-	var firstOutputStage *openAIFirstOutputStage
-	if guardFirstOutput {
-		firstOutputStage = newDefaultOpenAIFirstOutputStage()
-		defer func() {
-			if err := firstOutputStage.Close(); err != nil {
-				logger.LegacyPrintf("service.openai_gateway", "OpenAI first-output staging cleanup failed: account=%d model=%s error=%v", account.ID, originalModel, err)
-			}
-		}()
-	}
+	firstOutputStage := newDefaultOpenAIFirstOutputStage()
+	defer func() {
+		if err := firstOutputStage.Close(); err != nil {
+			logger.LegacyPrintf("service.openai_gateway", "OpenAI first-output staging cleanup failed: account=%d model=%s error=%v", account.ID, originalModel, err)
+		}
+	}()
 	writePendingString := func(value string) (int, error) {
 		if firstOutputStage != nil && !firstOutputProgressObserved && !firstOutputStage.closed {
 			return firstOutputStage.WriteString(value)
@@ -142,13 +131,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	imageCounter := newOpenAIImageOutputCounter()
 	responseID := ""
 	var firstOutputScanGuard atomic.Bool
-	firstOutputScanGuard.Store(guardFirstOutput)
+	firstOutputScanGuard.Store(true)
 	scanner := bufio.NewScanner(resp.Body)
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
-	if guardFirstOutput {
-		scanner.Split(openAIFirstOutputDynamicScanLines(&firstOutputScanGuard))
-	}
+	scanner.Split(openAIFirstOutputDynamicScanLines(&firstOutputScanGuard))
 	documentScanner := newOpenAISSEJSONDocumentScanner(scanner)
 
 	streamInterval := time.Duration(0)
@@ -254,8 +241,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming, continuing to drain upstream for billing")
 	}
 	completeStagedEvent := func(queueDrained bool) {
-		completedProgressEvent := guardFirstOutput && eventStartsClientOutput
-		completedVisibleEvent := guardFirstOutput && eventStartsVisibleOutput
+		completedProgressEvent := eventStartsClientOutput
+		completedVisibleEvent := eventStartsVisibleOutput
 		shouldFlush := eventShouldFlush || (queueDrained && semanticOutputStarted)
 		eventInProgress = false
 		if !clientDisconnected {
@@ -341,7 +328,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		lastDownstreamWriteAt = time.Now()
 	}
 	finalizeStream := func() (*openaiStreamingResult, error) {
-		if guardFirstOutput && eventInProgress {
+		if eventInProgress {
 			// EOF dispatches the final SSE event even without a trailing blank line.
 			completeStagedEvent(true)
 		}
@@ -385,10 +372,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), failoverErr, true
 		}
 		// Keep the pre-semantic-output protection for streams without the
-		// configurable first-output timer as well. Once visible output has
+		// configurable first-output timer as well. Once semantic output has
 		// started, an oversized line is a normal response-too-large error.
-		firstOutputNotObserved := (!guardFirstOutput && firstTokenMs == nil) ||
-			(guardFirstOutput && !firstOutputProgressObserved)
+		firstOutputNotObserved := !openAIStreamSemanticOutputStarted(c, semanticOutputStarted) && !sawTerminalEvent
 		if errors.Is(scanErr, bufio.ErrTooLong) && firstOutputNotObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE line too long before first output: account=%d max_size=%d error=%v", account.ID, maxLineSize, scanErr)
 			failoverErr := s.newOpenAIStreamFailoverError(
@@ -559,10 +545,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
-			if guardFirstOutput {
-				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
-				eventStartsVisibleOutput = eventStartsVisibleOutput || startsVisibleOutput
-			}
+			eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
+			eventStartsVisibleOutput = eventStartsVisibleOutput || startsVisibleOutput
 			if startsClientOutput && !openAIStreamEventTypeIsTerminal(eventType) {
 				responsesSemanticOutputSeen = true
 			}
@@ -595,18 +579,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					eventInProgress = true
 				}
 			}
-			// Record first token time
-			if !guardFirstOutput && firstTokenMs == nil && startsVisibleOutput {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-				stopFirstOutputTimer()
-			}
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return
 		}
 
 		// A blank line dispatches a guarded event from the attempt-local stage.
-		if guardFirstOutput && line == "" {
+		if line == "" {
 			if !clientDisconnected {
 				if _, err := writePendingString("\n"); err != nil {
 					handlePendingWriteError(err)
@@ -617,28 +595,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			return
 		}
-		shouldFlush := false
-		if line == "" {
-			shouldFlush = eventShouldFlush || (queueDrained && semanticOutputStarted)
-			eventShouldFlush = false
-		}
 		if !clientDisconnected {
 			if _, err := writePendingString(line); err != nil {
 				handlePendingWriteError(err)
 			} else if _, err := writePendingString("\n"); err != nil {
 				handlePendingWriteError(err)
 			} else {
-				eventInProgress = line != ""
-				if shouldFlush {
-					if err := flushBuffered(); err != nil {
-						clientDisconnected = true
-						logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
-					} else {
-						semanticOutputStarted = true
-						markOpenAIStreamSemanticOutputStarted(c)
-						lastDownstreamWriteAt = time.Now()
-					}
-				}
+				eventInProgress = true
 			}
 		}
 	}
@@ -714,7 +677,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		select {
 		case ev, ok := <-events:
 			if !ok {
-				if guardFirstOutput && eventInProgress {
+				if eventInProgress {
 					// EOF dispatches the final SSE event even without a trailing blank
 					// line. Do not synthesize extra bytes on the downstream wire.
 					completeStagedEvent(true)

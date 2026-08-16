@@ -12,6 +12,7 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,22 @@ type openAIImagesReadErrorBody struct {
 
 func (b *openAIImagesReadErrorBody) Read([]byte) (int, error) { return 0, b.err }
 func (b *openAIImagesReadErrorBody) Close() error             { return nil }
+
+type openAIImagesPartialReadErrorBody struct {
+	payload []byte
+	err     error
+	sent    bool
+}
+
+func (b *openAIImagesPartialReadErrorBody) Read(p []byte) (int, error) {
+	if !b.sent {
+		b.sent = true
+		return copy(p, b.payload), nil
+	}
+	return 0, b.err
+}
+
+func (b *openAIImagesPartialReadErrorBody) Close() error { return nil }
 
 func (w *failingOpenAIImageWriter) Write(p []byte) (int, error) {
 	if w.writes >= w.failAfter {
@@ -1130,6 +1147,40 @@ func TestOpenAIImagesOAuthTransportErrorAfterDownstreamWriteDoesNotFailover(t *t
 	require.True(t, ok)
 	require.Len(t, events, 1)
 	require.Equal(t, "retry_exhausted_failover", events[0].Kind)
+}
+
+func TestOpenAIImagesOAuthStreamTransportErrorAfterPartialOutputUsesStableError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	partial := "data: {\"type\":\"response.image_generation_call.partial_image\",\"partial_image_b64\":\"cGFydGlhbA==\",\"partial_image_index\":0,\"output_format\":\"png\"}\n\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: &openAIImagesPartialReadErrorBody{
+			payload: []byte(partial),
+			err:     errors.New("stream error: stream ID 11; INTERNAL_ERROR; received from peer"),
+		},
+	}
+
+	_, _, _, _, err := (&OpenAIGatewayService{}).handleOpenAIImagesOAuthStreamingResponse(
+		resp, c, time.Now(), "b64_json", "image_generation", "gpt-image-2",
+	)
+	require.Error(t, err)
+	body := rec.Body.String()
+	require.Contains(t, body, "event: image_generation.partial_image")
+	require.Contains(t, body, `"code":"upstream_http2_stream_error"`)
+	require.Contains(t, body, `"message":"Upstream HTTP/2 stream failed"`)
+	require.NotContains(t, body, "stream ID")
+}
+
+func TestBuildOpenAIImagesStreamReadErrorBodySanitizesRawTransportError(t *testing.T) {
+	body := buildOpenAIImagesStreamReadErrorBody(errors.New("read tcp 10.0.0.5:42000->52.1.2.3:443: stream error: stream ID 13; INTERNAL_ERROR"))
+
+	require.JSONEq(t, `{"type":"error","error":{"type":"upstream_error","code":"upstream_http2_stream_error","message":"Upstream HTTP/2 stream failed"}}`, string(body))
+	require.NotContains(t, string(body), "10.0.0.5")
+	require.NotContains(t, string(body), "stream ID")
 }
 
 func TestShouldClassifyOpenAIUpstreamStreamReadErrorTransportStrings(t *testing.T) {
