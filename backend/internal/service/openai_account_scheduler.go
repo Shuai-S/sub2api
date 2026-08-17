@@ -103,17 +103,25 @@ type OpenAIAccountScheduleDecision struct {
 }
 
 type OpenAIAccountScheduleReport struct {
-	AccountID           int64
-	Success             bool
-	FirstTokenMs        *int
-	DurationMs          int64
-	Stream              bool
-	HealthSample        bool
-	BalanceInsufficient bool
-	Cooldown            bool
-	CooldownReason      string
-	TerminalReason      string
-	Err                 error
+	AccountID                   int64
+	Success                     bool
+	FirstTokenMs                *int
+	DurationMs                  int64
+	Stream                      bool
+	HealthSample                bool
+	BalanceInsufficient         bool
+	Cooldown                    bool
+	CooldownReason              string
+	TerminalReason              string
+	FailoverOutcome             string
+	FailoverSuppressedReason    string
+	SemanticOutputStarted       bool
+	ResponseAlreadyCommunicated bool
+	AccountSwitchCount          int
+	MaxAccountSwitches          int
+	SameAccountRetryCount       int
+	SameAccountRetryLimit       int
+	Err                         error
 }
 
 type OpenAIAccountSchedulerMetricsSnapshot struct {

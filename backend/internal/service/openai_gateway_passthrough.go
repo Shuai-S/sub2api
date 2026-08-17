@@ -812,6 +812,40 @@ type openaiNonStreamingResultPassthrough struct {
 	imageOutputSizes []string
 }
 
+// openAIUpstreamResponseFailedError preserves stable metadata from a
+// response.failed event after the event has already been communicated to the
+// client. It remains a normal error for failover purposes.
+type openAIUpstreamResponseFailedError struct {
+	StatusCode int
+	Code       string
+	Type       string
+	Message    string
+}
+
+func (e *openAIUpstreamResponseFailedError) Error() string {
+	if e == nil {
+		return "upstream response failed"
+	}
+	return "upstream response failed: " + e.Message
+}
+
+func newOpenAIUpstreamResponseFailedError(payload []byte, message string) error {
+	code := strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String())
+	if code == "" {
+		code = extractUpstreamErrorCode(payload)
+	}
+	errType := strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String())
+	if errType == "" {
+		errType = strings.TrimSpace(gjson.GetBytes(payload, "error.type").String())
+	}
+	return &openAIUpstreamResponseFailedError{
+		StatusCode: openAIStreamFailureStatus(payload, message),
+		Code:       code,
+		Type:       errType,
+		Message:    message,
+	}
+}
+
 const openAIStreamSemanticOutputStartedKey = "openai_stream_semantic_output_started"
 
 func markOpenAIStreamSemanticOutputStarted(c *gin.Context) {
@@ -829,6 +863,12 @@ func openAIStreamSemanticOutputStarted(c *gin.Context, localStarted bool) bool {
 	}
 	started, ok := c.Get(openAIStreamSemanticOutputStartedKey)
 	return ok && started == true
+}
+
+// OpenAIStreamSemanticOutputStarted reports whether an OpenAI stream has
+// committed account-specific semantic output to the downstream client.
+func OpenAIStreamSemanticOutputStarted(c *gin.Context) bool {
+	return openAIStreamSemanticOutputStarted(c, false)
 }
 
 // Keep the upstream helper name available for compact keepalive tests and
@@ -1235,6 +1275,14 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	if statusCode == http.StatusTooManyRequests {
 		errType = "rate_limit_error"
 	}
+	upstreamErrorCode := strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String())
+	if upstreamErrorCode == "" {
+		upstreamErrorCode = extractUpstreamErrorCode(payload)
+	}
+	upstreamErrorType := strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String())
+	if upstreamErrorType == "" {
+		upstreamErrorType = strings.TrimSpace(gjson.GetBytes(payload, "error.type").String())
+	}
 	body, _ := json.Marshal(gin.H{
 		"error": gin.H{
 			"type":    errType,
@@ -1245,6 +1293,8 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		StatusCode:             statusCode,
 		ResponseBody:           body,
 		ResponseHeaders:        headers,
+		UpstreamErrorCode:      upstreamErrorCode,
+		UpstreamErrorType:      upstreamErrorType,
 		RetryableOnSameAccount: openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
 		RequestScopedTransient: isOpenAIUpstreamCapacityShedEvent(payload),
 	}
@@ -1290,6 +1340,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawFailedEvent := false
 	semanticOutputSeen := false
 	failedMessage := ""
+	var failedPayload []byte
 	semanticOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
@@ -1377,6 +1428,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				failedPayload = dataBytes
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
@@ -1405,7 +1457,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 									"message": errMsg,
 								},
 							})
-							return resultWithUsage(), fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+							return resultWithUsage(), newOpenAIUpstreamResponseFailedError(dataBytes, "passthrough rule matched message="+errMsg)
 						}
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
@@ -1484,7 +1536,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			return resultWithUsage(), nil
 		}
 		if sawFailedEvent {
-			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
+			return resultWithUsage(), newOpenAIUpstreamResponseFailedError(failedPayload, failedMessage)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
@@ -1515,7 +1567,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", err)
 	}
 	if sawFailedEvent {
-		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
+		return resultWithUsage(), newOpenAIUpstreamResponseFailedError(failedPayload, failedMessage)
 	}
 	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {
 		logger.FromContext(ctx).With(

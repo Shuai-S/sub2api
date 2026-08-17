@@ -8,29 +8,182 @@ import (
 	"strings"
 
 	coderws "github.com/coder/websocket"
+	"github.com/tidwall/gjson"
 )
+
+const (
+	OpenAIAdaptiveFailoverOutcomeEligible      = "eligible"
+	OpenAIAdaptiveFailoverOutcomeSwitchAccount = "switch_account"
+	OpenAIAdaptiveFailoverOutcomeSuppressed    = "suppressed"
+
+	OpenAIAdaptiveFailoverSuppressedPlainError         = "plain_error_not_failover"
+	OpenAIAdaptiveFailoverSuppressedNonRetryable       = "non_retryable_upstream_error"
+	OpenAIAdaptiveFailoverSuppressedSemanticOutput     = "semantic_output_started"
+	OpenAIAdaptiveFailoverSuppressedNextAccountStopped = "next_account_stopped"
+	OpenAIAdaptiveFailoverSuppressedSwitchLimit        = "switch_limit_reached"
+	OpenAIAdaptiveFailoverSuppressedFirstOutputLimit   = "first_output_switch_limit_reached"
+	OpenAIAdaptiveFailoverSuppressedOAuth429Policy     = "oauth_429_failover_stopped"
+	OpenAIAdaptiveFailoverSuppressedClientDisconnected = "client_disconnected"
+)
+
+// OpenAIAdaptiveFailureReportOptions describes the handler decision made after
+// an upstream failure. It is diagnostic-only and must not affect scheduling.
+type OpenAIAdaptiveFailureReportOptions struct {
+	FailoverOutcome             string
+	FailoverSuppressedReason    string
+	SemanticOutputStarted       bool
+	ResponseAlreadyCommunicated bool
+	AccountSwitchCount          int
+	MaxAccountSwitches          int
+	SameAccountRetryCount       int
+	SameAccountRetryLimit       int
+}
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureWithContext(ctx context.Context, accountID int64, err error, firstTokenMs *int) {
 	s.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx, accountID, err, firstTokenMs, 0, false)
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureTerminalWithContext(ctx context.Context, accountID int64, err error, firstTokenMs *int, durationMs int64, stream bool) {
+	s.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(ctx, accountID, err, firstTokenMs, durationMs, stream, OpenAIAdaptiveFailureReportOptions{})
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+	ctx context.Context,
+	accountID int64,
+	err error,
+	firstTokenMs *int,
+	durationMs int64,
+	stream bool,
+	options OpenAIAdaptiveFailureReportOptions,
+) {
 	balanceInsufficient := isOpenAIAdaptiveInsufficientBalanceError(err)
 	healthSample := openAIAdaptiveFailureHealthSample(err)
 	cooldownReason := openAIAdaptiveFailureCooldownReason(err)
+	failoverOutcome, suppressedReason := openAIAdaptiveFailoverDecision(err, options)
 	s.ReportOpenAIAccountScheduleReportWithContext(ctx, OpenAIAccountScheduleReport{
-		AccountID:           accountID,
-		Success:             false,
-		FirstTokenMs:        firstTokenMs,
-		DurationMs:          durationMs,
-		Stream:              stream,
-		HealthSample:        healthSample,
-		BalanceInsufficient: balanceInsufficient,
-		Cooldown:            cooldownReason != "",
-		CooldownReason:      cooldownReason,
-		TerminalReason:      classifyOpenAIAdaptiveTerminalReason(err, healthSample),
-		Err:                 err,
+		AccountID:                   accountID,
+		Success:                     false,
+		FirstTokenMs:                firstTokenMs,
+		DurationMs:                  durationMs,
+		Stream:                      stream,
+		HealthSample:                healthSample,
+		BalanceInsufficient:         balanceInsufficient,
+		Cooldown:                    cooldownReason != "",
+		CooldownReason:              cooldownReason,
+		TerminalReason:              classifyOpenAIAdaptiveTerminalReason(err, healthSample),
+		FailoverOutcome:             failoverOutcome,
+		FailoverSuppressedReason:    suppressedReason,
+		SemanticOutputStarted:       options.SemanticOutputStarted,
+		ResponseAlreadyCommunicated: options.ResponseAlreadyCommunicated,
+		AccountSwitchCount:          options.AccountSwitchCount,
+		MaxAccountSwitches:          options.MaxAccountSwitches,
+		SameAccountRetryCount:       options.SameAccountRetryCount,
+		SameAccountRetryLimit:       options.SameAccountRetryLimit,
+		Err:                         err,
 	})
+}
+
+func openAIAdaptiveFailoverDecision(err error, options OpenAIAdaptiveFailureReportOptions) (string, string) {
+	if options.FailoverOutcome != "" || options.FailoverSuppressedReason != "" {
+		return options.FailoverOutcome, options.FailoverSuppressedReason
+	}
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) {
+		return OpenAIAdaptiveFailoverOutcomeSuppressed, OpenAIAdaptiveFailoverSuppressedPlainError
+	}
+	if shouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
+		return OpenAIAdaptiveFailoverOutcomeSuppressed, OpenAIAdaptiveFailoverSuppressedNonRetryable
+	}
+	if !failoverErr.ShouldRetryNextAccount() {
+		return OpenAIAdaptiveFailoverOutcomeSuppressed, OpenAIAdaptiveFailoverSuppressedNextAccountStopped
+	}
+	return OpenAIAdaptiveFailoverOutcomeEligible, ""
+}
+
+type openAIAdaptiveFailureLogMetadata struct {
+	FailureClass             string
+	UpstreamStatus           int
+	UpstreamErrorCode        string
+	UpstreamErrorType        string
+	FailureStage             string
+	FailureScope             string
+	FailureReason            string
+	FailureKind              string
+	RetryableSameAccount     bool
+	RetryNextAccount         bool
+	RequestScopedTransient   bool
+	SafeToFailoverAfterWrite bool
+	FirstOutputGuardFailure  bool
+}
+
+func openAIAdaptiveFailureLogMetadataFromError(err error) openAIAdaptiveFailureLogMetadata {
+	if err == nil {
+		return openAIAdaptiveFailureLogMetadata{}
+	}
+	metadata := openAIAdaptiveFailureLogMetadata{FailureClass: "plain_error"}
+	var responseFailedErr *openAIUpstreamResponseFailedError
+	if errors.As(err, &responseFailedErr) && responseFailedErr != nil {
+		return openAIAdaptiveFailureLogMetadata{
+			FailureClass:             "upstream_response_failed",
+			UpstreamStatus:           responseFailedErr.StatusCode,
+			UpstreamErrorCode:        stableOpenAIAdaptiveDiagnosticValue(responseFailedErr.Code),
+			UpstreamErrorType:        stableOpenAIAdaptiveDiagnosticValue(responseFailedErr.Type),
+			FailureStage:             string(GatewayFailureStageInference),
+			RetryNextAccount:         false,
+			SafeToFailoverAfterWrite: false,
+		}
+	}
+	var failoverErr *UpstreamFailoverError
+	if !errors.As(err, &failoverErr) || failoverErr == nil {
+		return metadata
+	}
+	stage := failoverErr.Stage
+	if stage == "" {
+		stage = GatewayFailureStageInference
+	}
+	metadata = openAIAdaptiveFailureLogMetadata{
+		FailureClass:             "upstream_failover",
+		UpstreamStatus:           failoverErr.StatusCode,
+		UpstreamErrorCode:        stableOpenAIAdaptiveDiagnosticValue(firstNonEmptyOpenAIAdaptiveDiagnosticValue(failoverErr.UpstreamErrorCode, openAIAdaptiveUpstreamErrorCode(failoverErr.ResponseBody))),
+		UpstreamErrorType:        stableOpenAIAdaptiveDiagnosticValue(firstNonEmptyOpenAIAdaptiveDiagnosticValue(failoverErr.UpstreamErrorType, openAIAdaptiveUpstreamErrorType(failoverErr.ResponseBody))),
+		FailureStage:             string(stage),
+		FailureScope:             string(failoverErr.Scope),
+		FailureReason:            stableOpenAIAdaptiveDiagnosticValue(string(failoverErr.Reason)),
+		FailureKind:              string(failoverErr.FailureKind),
+		RetryableSameAccount:     failoverErr.RetryableOnSameAccount,
+		RetryNextAccount:         failoverErr.ShouldRetryNextAccount(),
+		RequestScopedTransient:   failoverErr.RequestScopedTransient,
+		SafeToFailoverAfterWrite: failoverErr.SafeToFailoverAfterWrite,
+		FirstOutputGuardFailure:  failoverErr.FirstOutputGuardFailure,
+	}
+	return metadata
+}
+
+func openAIAdaptiveUpstreamErrorCode(body []byte) string {
+	if code := strings.TrimSpace(gjson.GetBytes(body, "response.error.code").String()); code != "" {
+		return code
+	}
+	return extractUpstreamErrorCode(body)
+}
+
+func openAIAdaptiveUpstreamErrorType(body []byte) string {
+	if errType := strings.TrimSpace(gjson.GetBytes(body, "response.error.type").String()); errType != "" {
+		return errType
+	}
+	return strings.TrimSpace(gjson.GetBytes(body, "error.type").String())
+}
+
+func stableOpenAIAdaptiveDiagnosticValue(value string) string {
+	return truncateString(strings.TrimSpace(value), 128)
+}
+
+func firstNonEmptyOpenAIAdaptiveDiagnosticValue(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func openAIAdaptiveFailureHealthSample(err error) bool {

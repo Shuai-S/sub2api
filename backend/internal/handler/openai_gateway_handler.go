@@ -149,6 +149,30 @@ func claimOpenAISameAccountRetry(account *service.Account, failoverErr *service.
 	return retryLimit, retryCounts[account.ID], true
 }
 
+func openAIAdaptiveFailureOptions(
+	c *gin.Context,
+	account *service.Account,
+	failoverErr *service.UpstreamFailoverError,
+	outcome string,
+	suppressedReason string,
+	switchCount int,
+	maxAccountSwitches int,
+	retryCounts map[int64]int,
+) service.OpenAIAdaptiveFailureReportOptions {
+	options := service.OpenAIAdaptiveFailureReportOptions{
+		FailoverOutcome:          outcome,
+		FailoverSuppressedReason: suppressedReason,
+		SemanticOutputStarted:    service.OpenAIStreamSemanticOutputStarted(c),
+		AccountSwitchCount:       switchCount,
+		MaxAccountSwitches:       maxAccountSwitches,
+	}
+	if account != nil && failoverErr != nil && failoverErr.RetryableOnSameAccount {
+		options.SameAccountRetryCount = retryCounts[account.ID]
+		options.SameAccountRetryLimit = account.GetPoolModeRetryCount()
+	}
+	return options
+}
+
 func usageRecordContext(parent context.Context, base context.Context) context.Context {
 	if base == nil {
 		base = context.Background()
@@ -627,14 +651,30 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						reqLog.Info("openai.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.String("upstream_error_code", failoverErr.UpstreamErrorCode),
+							zap.String("upstream_error_type", failoverErr.UpstreamErrorType),
+							zap.String("failure_stage", string(failoverErr.Stage)),
+							zap.String("failure_scope", string(failoverErr.Scope)),
+							zap.String("failover_outcome", service.OpenAIAdaptiveFailoverOutcomeSuppressed),
+							zap.String("failover_suppressed_reason", service.OpenAIAdaptiveFailoverSuppressedClientDisconnected),
 						)
 						return
 					}
 					if h.gatewayService.ShouldIgnoreOpenAIAdaptiveFailoverError(failoverErr) {
-						if failoverErr.ShouldReportAccountScheduleFailure() {
-							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
-						}
 						upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
+						if failoverErr.ShouldReportAccountScheduleFailure() {
+							options := openAIAdaptiveFailureOptions(
+								c, account, failoverErr,
+								service.OpenAIAdaptiveFailoverOutcomeSuppressed,
+								service.OpenAIAdaptiveFailoverSuppressedNonRetryable,
+								switchCount, maxAccountSwitches, sameAccountRetryCount,
+							)
+							options.ResponseAlreadyCommunicated = upstreamErrorAlreadyCommunicated
+							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+								c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+								options,
+							)
+						}
 						wroteFallback := false
 						if !upstreamErrorAlreadyCommunicated {
 							wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
@@ -643,6 +683,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							zap.Int64("account_id", account.ID),
 							zap.Bool("fallback_error_response_written", wroteFallback),
 							zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
+							zap.String("failover_outcome", service.OpenAIAdaptiveFailoverOutcomeSuppressed),
+							zap.String("failover_suppressed_reason", service.OpenAIAdaptiveFailoverSuppressedNonRetryable),
+							zap.Bool("semantic_output_started", service.OpenAIStreamSemanticOutputStarted(c)),
 							zap.Error(err),
 						}
 						if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
@@ -653,6 +696,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
+						reqLog.Warn("openai.failover_suppressed",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.String("upstream_error_code", failoverErr.UpstreamErrorCode),
+							zap.String("upstream_error_type", failoverErr.UpstreamErrorType),
+							zap.String("failure_stage", string(failoverErr.Stage)),
+							zap.String("failure_scope", string(failoverErr.Scope)),
+							zap.String("failover_outcome", service.OpenAIAdaptiveFailoverOutcomeSuppressed),
+							zap.String("failover_suppressed_reason", service.OpenAIAdaptiveFailoverSuppressedSemanticOutput),
+							zap.Bool("semantic_output_started", true),
+							zap.Bool("safe_to_failover_after_write", failoverErr.SafeToFailoverAfterWrite),
+						)
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
@@ -661,14 +716,30 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						if failoverErr.ShouldReportAccountScheduleFailure() {
-							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
+							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+								c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+								openAIAdaptiveFailureOptions(
+									c, account, failoverErr,
+									service.OpenAIAdaptiveFailoverOutcomeSuppressed,
+									service.OpenAIAdaptiveFailoverSuppressedNextAccountStopped,
+									switchCount, maxAccountSwitches, sameAccountRetryCount,
+								),
+							)
 						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
 					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
 						if failoverErr.ShouldReportAccountScheduleFailure() {
-							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
+							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+								c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+								openAIAdaptiveFailureOptions(
+									c, account, failoverErr,
+									service.OpenAIAdaptiveFailoverOutcomeSuppressed,
+									service.OpenAIAdaptiveFailoverSuppressedFirstOutputLimit,
+									switchCount, maxAccountSwitches, sameAccountRetryCount,
+								),
+							)
 						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
@@ -690,20 +761,50 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						}
 						continue
 					}
-					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
-					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					if switchCount >= maxAccountSwitches {
+						if failoverErr.ShouldReportAccountScheduleFailure() {
+							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+								c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+								openAIAdaptiveFailureOptions(
+									c, account, failoverErr,
+									service.OpenAIAdaptiveFailoverOutcomeSuppressed,
+									service.OpenAIAdaptiveFailoverSuppressedSwitchLimit,
+									switchCount, maxAccountSwitches, sameAccountRetryCount,
+								),
+							)
+						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					failedAttemptSwitchCount := switchCount
 					switchCount++
 					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
+						if failoverErr.ShouldReportAccountScheduleFailure() {
+							h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+								c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+								openAIAdaptiveFailureOptions(
+									c, account, failoverErr,
+									service.OpenAIAdaptiveFailoverOutcomeSuppressed,
+									service.OpenAIAdaptiveFailoverSuppressedOAuth429Policy,
+									failedAttemptSwitchCount, maxAccountSwitches, sameAccountRetryCount,
+								),
+							)
+						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
+					}
+					if failoverErr.ShouldReportAccountScheduleFailure() {
+						h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+							c.Request.Context(), account.ID, failoverErr, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+							openAIAdaptiveFailureOptions(
+								c, account, failoverErr,
+								service.OpenAIAdaptiveFailoverOutcomeSwitchAccount, "",
+								failedAttemptSwitchCount, maxAccountSwitches, sameAccountRetryCount,
+							),
+						)
 					}
 					failoverSwitchFields := []zap.Field{
 						zap.Int64("account_id", account.ID),
@@ -724,8 +825,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					reqLog.Warn("openai.upstream_failover_switching", failoverSwitchFields...)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithContext(c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
+				plainErrorOptions := openAIAdaptiveFailureOptions(
+					c, account, nil,
+					service.OpenAIAdaptiveFailoverOutcomeSuppressed,
+					service.OpenAIAdaptiveFailoverSuppressedPlainError,
+					switchCount, maxAccountSwitches, sameAccountRetryCount,
+				)
+				plainErrorOptions.ResponseAlreadyCommunicated = upstreamErrorAlreadyCommunicated
+				h.gatewayService.ReportOpenAIAccountAdaptiveFailureTerminalWithOptions(
+					c.Request.Context(), account.ID, err, openAIForwardFirstTokenMs(result), forwardDurationMs, reqStream,
+					plainErrorOptions,
+				)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
 					wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
@@ -734,6 +845,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
+					zap.String("failover_outcome", service.OpenAIAdaptiveFailoverOutcomeSuppressed),
+					zap.String("failover_suppressed_reason", service.OpenAIAdaptiveFailoverSuppressedPlainError),
+					zap.Bool("semantic_output_started", service.OpenAIStreamSemanticOutputStarted(c)),
 					zap.Error(err),
 				}
 				if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {

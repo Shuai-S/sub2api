@@ -991,29 +991,64 @@ func (s *adaptiveOpenAIAccountScheduler) logDiagnosticResult(
 	cfg OpenAIAdaptiveSchedulerSettings,
 	report OpenAIAccountScheduleReport,
 ) {
-	if !shouldLogOpenAIAdaptiveDiagnostic(ctx, OpenAIAccountScheduleRequest{
+	force := !report.Success && report.Err != nil
+	if !cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled || (!force && !shouldLogOpenAIAdaptiveDiagnostic(ctx, OpenAIAccountScheduleRequest{
 		StickyAccountID: report.AccountID,
-	}, cfg) {
+	}, cfg)) {
 		return
 	}
 	account := s.reportAccountSnapshot(report.AccountID)
 	configuredCapacity := 0
+	accountType := ""
+	platform := ""
 	if account != nil {
 		configuredCapacity = account.Concurrency
+		accountType = account.Type
+		platform = account.Platform
 	}
 	state := s.core.snapshot(report.AccountID, configuredCapacity, time.Now(), openAIAdaptiveCoreSettings(cfg))
 	firstTokenStatus := openAIAdaptiveFirstTokenStatus(report)
+	failure := openAIAdaptiveFailureLogMetadataFromError(report.Err)
+	accountSwitchCount := report.AccountSwitchCount
+	if contextSwitchCount, ok := AccountSwitchCountFromContext(ctx); ok && contextSwitchCount > accountSwitchCount {
+		accountSwitchCount = contextSwitchCount
+	}
 	fields := []any{
 		"request_id", contextStringValue(ctx, ctxkey.RequestID),
 		"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
 		"account_id", report.AccountID,
+		"account_type", accountType,
+		"platform", platform,
+		"account_switch_count", accountSwitchCount,
+		"attempt_number", accountSwitchCount + 1,
+		"max_account_switches", report.MaxAccountSwitches,
 		"success", report.Success,
 		"health_sample", report.HealthSample,
 		"terminal_reason", report.TerminalReason,
+		"failover_outcome", report.FailoverOutcome,
+		"failover_suppressed_reason", report.FailoverSuppressedReason,
+		"failure_class", failure.FailureClass,
+		"upstream_status", failure.UpstreamStatus,
+		"upstream_error_code", failure.UpstreamErrorCode,
+		"upstream_error_type", failure.UpstreamErrorType,
+		"failure_stage", failure.FailureStage,
+		"failure_scope", failure.FailureScope,
+		"failure_reason", failure.FailureReason,
+		"failure_kind", failure.FailureKind,
+		"retryable_same_account", failure.RetryableSameAccount,
+		"retry_next_account", failure.RetryNextAccount,
+		"request_scoped_transient", failure.RequestScopedTransient,
+		"safe_to_failover_after_write", failure.SafeToFailoverAfterWrite,
+		"first_output_guard_failure", failure.FirstOutputGuardFailure,
+		"semantic_output_started", report.SemanticOutputStarted,
+		"response_already_communicated", report.ResponseAlreadyCommunicated,
+		"same_account_retry_count", report.SameAccountRetryCount,
+		"same_account_retry_limit", report.SameAccountRetryLimit,
 		"stream", report.Stream,
 		"first_token_ms", nullableIntForSlog(report.FirstTokenMs),
 		"first_token_status", firstTokenStatus,
 		"duration_ms", report.DurationMs,
+		"configured_capacity", configuredCapacity,
 		"health_samples", len(state.HealthObservations),
 		"success_ema", state.SuccessEMA,
 		"ttft_ema", state.TTFTEMA,
@@ -1032,6 +1067,7 @@ func (s *adaptiveOpenAIAccountScheduler) logDiagnosticResult(
 		"quota_next_probe_at", state.QuotaNextProbeAt,
 		"cooldown_applied", report.Cooldown,
 		"cooldown_reason", report.CooldownReason,
+		"diagnostic_sample_rate", cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate,
 	}
 	if report.Err != nil {
 		fields = append(fields, "error", report.Err.Error())

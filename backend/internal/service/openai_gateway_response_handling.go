@@ -223,6 +223,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	sawFailedEvent := false
 	responsesSemanticOutputSeen := false
 	failedMessage := ""
+	var failedPayload []byte
 	semanticOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamEarlyErr error
@@ -360,7 +361,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
-			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
+			return resultWithUsage(), newOpenAIUpstreamResponseFailedError(failedPayload, failedMessage)
 		}
 		return resultWithUsage(), nil
 	}
@@ -448,6 +449,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			forceFlushFailedEvent := false
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				failedPayload = dataBytes
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
@@ -477,7 +479,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 									"message": errMsg,
 								},
 							})
-							streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+							streamEarlyErr = newOpenAIUpstreamResponseFailedError(dataBytes, "passthrough rule matched message="+errMsg)
 							return
 						}
 					}

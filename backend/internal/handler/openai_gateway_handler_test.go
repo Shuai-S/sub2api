@@ -139,6 +139,32 @@ func TestClaimOpenAISameAccountRetryRejectsNonRetryable(t *testing.T) {
 	require.Empty(t, retryCounts)
 }
 
+func TestOpenAIAdaptiveFailureOptionsIncludesRetryProgress(t *testing.T) {
+	account := &service.Account{
+		ID:          42,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"pool_mode": true, "pool_mode_retry_count": 2},
+	}
+	failoverErr := &service.UpstreamFailoverError{RetryableOnSameAccount: true}
+
+	options := openAIAdaptiveFailureOptions(
+		nil,
+		account,
+		failoverErr,
+		service.OpenAIAdaptiveFailoverOutcomeSwitchAccount,
+		"",
+		1,
+		3,
+		map[int64]int{account.ID: 2},
+	)
+
+	require.Equal(t, service.OpenAIAdaptiveFailoverOutcomeSwitchAccount, options.FailoverOutcome)
+	require.Equal(t, 1, options.AccountSwitchCount)
+	require.Equal(t, 3, options.MaxAccountSwitches)
+	require.Equal(t, 2, options.SameAccountRetryCount)
+	require.Equal(t, 2, options.SameAccountRetryLimit)
+}
+
 func TestOpenAIHandleStreamingAwareErrorWithCode_EmitsStableClassification(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

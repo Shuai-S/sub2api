@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -51,5 +50,5 @@ func (s *OpenAIGatewayService) newOpenAIWSResponseFailedError(
 	}
 
 	s.recordOpenAIStreamUpstreamError(c, account, passthrough, upstreamRequestID, "http_error", payload, message)
-	return fmt.Errorf("upstream response failed: %s", message)
+	return newOpenAIUpstreamResponseFailedError(payload, message)
 }

@@ -464,6 +464,149 @@ func TestOpenAIAdaptiveDiagnosticDecisionLogsMeasuredLatency(t *testing.T) {
 	require.Regexp(t, `latency_ms=[1-9][0-9]*`, output.String())
 }
 
+func TestOpenAIAdaptiveDiagnosticResultIncludesFailoverContext(t *testing.T) {
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	account := Account{ID: 7001, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 12}
+	service := &OpenAIGatewayService{accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}}}
+	scheduler := newOpenAIAdaptiveTestScheduler(service)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0
+	err := &UpstreamFailoverError{
+		StatusCode:               http.StatusServiceUnavailable,
+		ResponseBody:             []byte(`{"response":{"error":{"code":"server_overloaded","type":"server_error"}}}`),
+		RetryableOnSameAccount:   true,
+		RequestScopedTransient:   true,
+		SafeToFailoverAfterWrite: true,
+		FirstOutputGuardFailure:  true,
+		Stage:                    GatewayFailureStageInference,
+		Scope:                    GatewayFailureScopeProvider,
+		Reason:                   GatewayFailureReason("capacity_shed"),
+		NextAccountAction:        NextAccountStop,
+		FailureKind:              UpstreamFailureKindTransport,
+	}
+	ctx := context.WithValue(context.Background(), ctxkey.RequestID, "request-diagnostic-failure")
+
+	scheduler.logDiagnosticResult(ctx, cfg, OpenAIAccountScheduleReport{
+		AccountID:                   account.ID,
+		Stream:                      true,
+		TerminalReason:              "provider_overloaded",
+		FailoverOutcome:             OpenAIAdaptiveFailoverOutcomeSuppressed,
+		FailoverSuppressedReason:    OpenAIAdaptiveFailoverSuppressedNextAccountStopped,
+		SemanticOutputStarted:       true,
+		ResponseAlreadyCommunicated: true,
+		AccountSwitchCount:          2,
+		MaxAccountSwitches:          3,
+		SameAccountRetryCount:       1,
+		SameAccountRetryLimit:       2,
+		Err:                         err,
+	})
+
+	logText := output.String()
+	require.Contains(t, logText, "openai_adaptive_scheduler_diagnostic_result")
+	require.Contains(t, logText, "request_id=request-diagnostic-failure")
+	require.Contains(t, logText, "account_type=apikey")
+	require.Contains(t, logText, "platform=openai")
+	require.Contains(t, logText, "account_switch_count=2")
+	require.Contains(t, logText, "attempt_number=3")
+	require.Contains(t, logText, "max_account_switches=3")
+	require.Contains(t, logText, "failover_outcome=suppressed")
+	require.Contains(t, logText, "failover_suppressed_reason=next_account_stopped")
+	require.Contains(t, logText, "failure_class=upstream_failover")
+	require.Contains(t, logText, "upstream_status=503")
+	require.Contains(t, logText, "upstream_error_code=server_overloaded")
+	require.Contains(t, logText, "upstream_error_type=server_error")
+	require.Contains(t, logText, "failure_stage=inference")
+	require.Contains(t, logText, "failure_scope=provider")
+	require.Contains(t, logText, "failure_reason=capacity_shed")
+	require.Contains(t, logText, "failure_kind=transport")
+	require.Contains(t, logText, "retryable_same_account=true")
+	require.Contains(t, logText, "retry_next_account=false")
+	require.Contains(t, logText, "request_scoped_transient=true")
+	require.Contains(t, logText, "safe_to_failover_after_write=true")
+	require.Contains(t, logText, "first_output_guard_failure=true")
+	require.Contains(t, logText, "semantic_output_started=true")
+	require.Contains(t, logText, "response_already_communicated=true")
+	require.Contains(t, logText, "same_account_retry_count=1")
+	require.Contains(t, logText, "same_account_retry_limit=2")
+	require.Contains(t, logText, "configured_capacity=12")
+	require.Contains(t, logText, "diagnostic_sample_rate=0")
+}
+
+func TestOpenAIAdaptiveDiagnosticResultStillSamplesSuccess(t *testing.T) {
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	scheduler := newOpenAIAdaptiveTestScheduler(&OpenAIGatewayService{})
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0
+
+	scheduler.logDiagnosticResult(context.Background(), cfg, OpenAIAccountScheduleReport{Success: true})
+
+	require.Empty(t, output.String())
+}
+
+func TestOpenAIAdaptiveFailoverDecisionDefaults(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		options    OpenAIAdaptiveFailureReportOptions
+		wantResult string
+		wantReason string
+	}{
+		{name: "plain error", err: errors.New("stream failed"), wantResult: OpenAIAdaptiveFailoverOutcomeSuppressed, wantReason: OpenAIAdaptiveFailoverSuppressedPlainError},
+		{name: "non retryable request", err: &UpstreamFailoverError{StatusCode: http.StatusBadRequest}, wantResult: OpenAIAdaptiveFailoverOutcomeSuppressed, wantReason: OpenAIAdaptiveFailoverSuppressedNonRetryable},
+		{name: "next account stopped", err: &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, NextAccountAction: NextAccountStop}, wantResult: OpenAIAdaptiveFailoverOutcomeSuppressed, wantReason: OpenAIAdaptiveFailoverSuppressedNextAccountStopped},
+		{name: "eligible", err: &UpstreamFailoverError{StatusCode: http.StatusBadGateway}, wantResult: OpenAIAdaptiveFailoverOutcomeEligible},
+		{name: "handler override", err: &UpstreamFailoverError{StatusCode: http.StatusBadGateway}, options: OpenAIAdaptiveFailureReportOptions{FailoverOutcome: OpenAIAdaptiveFailoverOutcomeSuppressed, FailoverSuppressedReason: OpenAIAdaptiveFailoverSuppressedSwitchLimit}, wantResult: OpenAIAdaptiveFailoverOutcomeSuppressed, wantReason: OpenAIAdaptiveFailoverSuppressedSwitchLimit},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, reason := openAIAdaptiveFailoverDecision(tt.err, tt.options)
+			require.Equal(t, tt.wantResult, result)
+			require.Equal(t, tt.wantReason, reason)
+		})
+	}
+}
+
+func TestOpenAIStreamFailoverErrorPreservesDiagnosticCodeAndType(t *testing.T) {
+	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"server_error","type":"server_error","message":"Internal server error"}}}`)
+
+	err := (&OpenAIGatewayService{}).newOpenAIStreamFailoverError(
+		nil,
+		&Account{ID: 7002, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		false,
+		"upstream-request-id",
+		payload,
+		"Internal server error",
+	)
+
+	require.Equal(t, "server_error", err.UpstreamErrorCode)
+	require.Equal(t, "server_error", err.UpstreamErrorType)
+}
+
+func TestOpenAIResponseFailedErrorPreservesAdaptiveDiagnostics(t *testing.T) {
+	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"server_error","type":"server_error","message":"Internal server error"}}}`)
+	err := newOpenAIUpstreamResponseFailedError(payload, "Internal server error")
+
+	require.EqualError(t, err, "upstream response failed: Internal server error")
+	metadata := openAIAdaptiveFailureLogMetadataFromError(err)
+	require.Equal(t, "upstream_response_failed", metadata.FailureClass)
+	require.Equal(t, http.StatusBadGateway, metadata.UpstreamStatus)
+	require.Equal(t, "server_error", metadata.UpstreamErrorCode)
+	require.Equal(t, "server_error", metadata.UpstreamErrorType)
+	require.Equal(t, string(GatewayFailureStageInference), metadata.FailureStage)
+	require.False(t, metadata.RetryNextAccount)
+}
+
 func TestOpenAIAdaptiveDiagnosticSamplingRespectsSwitchAndRate(t *testing.T) {
 	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
 	req := OpenAIAccountScheduleRequest{RequestedModel: "gpt-5"}
