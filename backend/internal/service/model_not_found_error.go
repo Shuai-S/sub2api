@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -8,7 +9,13 @@ import (
 var upstreamModelNotFoundKeywords = []string{"model not found", "unknown model", "not found"}
 
 func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {
-	if statusCode != http.StatusNotFound {
+	if statusCode != http.StatusBadRequest && statusCode != http.StatusNotFound {
+		return false
+	}
+	// Some OpenAI-compatible upstreams return model_not_found as a 400. Keep
+	// 400 matching strict to avoid treating unrelated "not found" messages
+	// (for example, a missing endpoint) as an account capability mismatch.
+	if statusCode == http.StatusBadRequest && !hasExplicitModelNotFoundMarker(body) {
 		return false
 	}
 	normalized := normalizeModelNotFoundBody(body)
@@ -16,6 +23,26 @@ func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {
 		return false
 	}
 	return containsModelNotFoundKeyword(normalized)
+}
+
+func hasExplicitModelNotFoundMarker(body []byte) bool {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	containers := []map[string]any{payload}
+	if nested, ok := payload["error"].(map[string]any); ok {
+		containers = append(containers, nested)
+	}
+	for _, container := range containers {
+		for _, field := range []string{"type", "code"} {
+			value, ok := container[field].(string)
+			if ok && normalizeModelNotFoundBody([]byte(value)) == "model not found" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isModelNotFoundError(statusCode int, body []byte) bool {

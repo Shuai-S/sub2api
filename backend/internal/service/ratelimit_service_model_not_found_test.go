@@ -506,7 +506,7 @@ func TestRateLimitService_HandleUpstreamError_CodexPlanGatedImageModelSkipsCoold
 		"映射后的上游模型是图片模型，冷却键会写到 gpt-image-2 上，守卫必须一并识别")
 }
 
-// 404 model-not-found 分支不受守卫影响：即使是图片模型也照常冷却。
+// 400/404 model-not-found 分支不受守卫影响：即使是图片模型也照常冷却。
 func TestRateLimitService_HandleUpstreamError_ModelNotFoundImageModelStillCoolsDown(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &RateLimitService{accountRepo: repo}

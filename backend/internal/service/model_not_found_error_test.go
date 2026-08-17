@@ -43,9 +43,27 @@ func TestIsUpstreamModelNotFoundError(t *testing.T) {
 			want:       false,
 		},
 		{
-			name:       "non 404 does not match",
+			name:       "400 model not found message without marker does not match",
 			statusCode: http.StatusBadRequest,
 			body:       []byte(`{"error":{"message":"model not found"}}`),
+			want:       false,
+		},
+		{
+			name:       "400 model_not_found type matches",
+			statusCode: http.StatusBadRequest,
+			body:       []byte(`{"error":{"type":"model_not_found","message":"Model gpt-5.6-luna is not supported"}}`),
+			want:       true,
+		},
+		{
+			name:       "400 model_not_found code matches",
+			statusCode: http.StatusBadRequest,
+			body:       []byte(`{"error":{"code":"model_not_found","message":"Model gpt-5.6-luna is not supported"}}`),
+			want:       true,
+		},
+		{
+			name:       "400 endpoint not found does not match",
+			statusCode: http.StatusBadRequest,
+			body:       []byte(`{"error":{"message":"endpoint not found"}}`),
 			want:       false,
 		},
 	}

@@ -1892,9 +1892,9 @@ func (u *openAIHTTPModelNotFoundFailoverUpstream) Do(_ *http.Request, _ string, 
 	u.mu.Unlock()
 	if accountID == u.missingModelID {
 		return &http.Response{
-			StatusCode: http.StatusNotFound,
+			StatusCode: http.StatusBadRequest,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"model_not_found","message":"Model gpt-5.6-luna not found"}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Model \"gpt-5.6-luna\" is not supported by any configured account in this group","type":"model_not_found"}}`)),
 		}, nil
 	}
 	return &http.Response{
@@ -2181,7 +2181,7 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 }
 
-func TestOpenAIResponses_ModelNotFoundSwitchesAccountWithoutAdaptiveFailureSample(t *testing.T) {
+func TestOpenAIResponses_400ModelNotFoundSwitchesAccountWithoutAdaptiveFailureSample(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	groupID := int64(4205)
 	accounts := []service.Account{

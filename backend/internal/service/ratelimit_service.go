@@ -2198,8 +2198,8 @@ const tempUnschedMessageMaxBytes = 2048
 
 // HandleUpstreamModelNotFound marks the requested model as temporarily
 // unavailable on the account when the upstream deterministically reports it
-// cannot serve that model: a 404 model-not-found, or the Codex 400 rejecting a
-// plan-gated model on a ChatGPT OAuth account. Returning true tells the caller
+// cannot serve that model: a 400/404 model-not-found, or the Codex 400 rejecting
+// a plan-gated model on a ChatGPT OAuth account. Returning true tells the caller
 // to fail the current attempt over to another account; the scheduler skips the
 // (account, model) pair via IsSchedulableForModelWithContext until the
 // cooldown expires, instead of re-selecting an account that can never serve
