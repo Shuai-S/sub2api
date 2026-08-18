@@ -341,7 +341,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 	decision *OpenAIAccountScheduleDecision,
 ) (*AccountSelectionResult, bool, error) {
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
-	if previousResponseID == "" || normalizeOpenAICompatiblePlatform(req.Platform) != PlatformOpenAI {
+	if previousResponseID == "" || NormalizeOpenAICompatiblePlatform(req.Platform) != PlatformOpenAI {
 		return nil, false, nil
 	}
 	selection, err := s.service.selectAccountByPreviousResponseIDForCapability(
@@ -414,7 +414,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		return nil, false, nil
 	}
 	if shouldClearStickySession(account, req.RequestedModel) ||
-		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) ||
+		account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) ||
 		!account.IsOpenAICompatible() ||
 		!account.IsSchedulable() ||
 		s.service.isOpenAIAccountRuntimeBlocked(account) ||
@@ -632,7 +632,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 			plan.filterStats.exclude("not_schedulable")
 			continue
 		}
-		if account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+		if account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
 			plan.filterStats.exclude("platform_mismatch")
 			continue
 		}

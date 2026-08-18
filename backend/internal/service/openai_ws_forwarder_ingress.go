@@ -97,7 +97,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			// passthrough adapter 会在首轮和每个后续 response.create 前触发
 			// hooks.BeforeTurn，并在 terminal event 后触发 hooks.AfterTurn；handler
-			// 据此对长连接逐 turn 复核利润门并冻结对应的计费时刻。
+			// 据此对长连接逐 turn 复核利润门并冻结对应的计费时刻。TurnStarted
+			// 作为计费时间 fallback，覆盖异常路径上的未冻结 turn。
 			return s.proxyResponsesWebSocketV2Passthrough(
 				ctx,
 				c,
