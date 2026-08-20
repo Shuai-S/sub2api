@@ -548,8 +548,6 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	s.refreshLocked(state, now, settings)
 	quotaProbe := false
 	admitted := true
-	admissionObserved := -1
-	admissionWaiting := 0
 	if admission, ok := s.admissions[adaptiveTransientKey(observation.AccountID, observation.RequestID)]; ok {
 		if observation.CapacityGeneration == 0 {
 			observation.CapacityGeneration = admission.CapacityGeneration
@@ -557,13 +555,11 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 		quotaProbe = admission.QuotaProbe
 		observation.HealthProbe = admission.HealthProbe
 		admitted = admission.Admitted
-		admissionObserved = admission.ObservedConcurrency
-		admissionWaiting = admission.WaitingCount
-		if observation.ObservedConcurrency < 0 && admissionObserved >= 0 {
-			observation.ObservedConcurrency = admissionObserved
+		if observation.ObservedConcurrency < 0 && admission.ObservedConcurrency >= 0 {
+			observation.ObservedConcurrency = admission.ObservedConcurrency
 		}
 		if observation.WaitingCount <= 0 {
-			observation.WaitingCount = admissionWaiting
+			observation.WaitingCount = admission.WaitingCount
 		}
 		delete(s.admissions, adaptiveTransientKey(observation.AccountID, observation.RequestID))
 	}
