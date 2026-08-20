@@ -226,7 +226,7 @@ func TestOpenAIGatewayService_WSIngressResponseFailedReportsTurnError(t *testing
 	}
 }
 
-func TestOpenAIGatewayService_WSHTTPBridgeResponseFailedReturnsError(t *testing.T) {
+func TestOpenAIGatewayService_WSHTTPBridgeRelaysResponseFailed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	failedPayload := `{"type":"response.failed","response":{"id":"resp_bridge_failed","status":"failed","usage":{"input_tokens":5,"output_tokens":0},"error":{"code":"content_policy","message":"request blocked by content policy"}}}`
 	sseBody := "data: " + failedPayload + "\n\n"
@@ -265,8 +265,7 @@ func TestOpenAIGatewayService_WSHTTPBridgeResponseFailedReturnsError(t *testing.
 		},
 	)
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "upstream response failed")
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 5, result.Usage.InputTokens)
 	require.Len(t, relayed, 1)

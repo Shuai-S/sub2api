@@ -13,7 +13,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
-	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -23,6 +22,57 @@ const (
 	openAIWSHTTPBridgeThresholdBytesDefault int64 = 15 * 1024 * 1024
 	openAIWSHTTPBridgeErrorBodyLimitBytes         = 64 * 1024
 )
+
+const openAIWSHTTPBridgeToolStateContextKey = "openai_ws_http_bridge_tool_state"
+
+type openAIWSHTTPBridgeToolState struct {
+	ClientMapping apicompat.ResponsesClientToolMapping
+	LoweredTools  json.RawMessage
+}
+
+func openAIWSHTTPBridgeToolStateFromContext(c *gin.Context) (openAIWSHTTPBridgeToolState, bool) {
+	if c == nil {
+		return openAIWSHTTPBridgeToolState{}, false
+	}
+	value, ok := c.Get(openAIWSHTTPBridgeToolStateContextKey)
+	state, typed := value.(openAIWSHTTPBridgeToolState)
+	return state, ok && typed
+}
+
+func setOpenAIWSHTTPBridgeToolState(c *gin.Context, state openAIWSHTTPBridgeToolState) {
+	if c == nil {
+		return
+	}
+	state.LoweredTools = append(json.RawMessage(nil), state.LoweredTools...)
+	c.Set(openAIWSHTTPBridgeToolStateContextKey, state)
+}
+
+func decodeOpenAIWSHTTPBridgeLoweredTools(raw json.RawMessage) []any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var tools []any
+	if err := json.Unmarshal(raw, &tools); err != nil {
+		return nil
+	}
+	return tools
+}
+
+func openAIWSHTTPBridgeRawField(body []byte, name string) (json.RawMessage, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return nil, false
+	}
+	raw, present := fields[name]
+	return append(json.RawMessage(nil), raw...), present
+}
+
+func openAIWSHTTPBridgeToolUpstreamName(account *Account) string {
+	if account != nil && account.Platform == PlatformGrok {
+		return "Grok WS HTTP bridge"
+	}
+	return "OpenAI WS HTTP bridge"
+}
 
 // ResolveOpenAIWSClientFirstMessageTimeout returns the effective client ingress deadline.
 func ResolveOpenAIWSClientFirstMessageTimeout(cfg *config.Config) time.Duration {
@@ -81,20 +131,25 @@ func prepareOpenAIWSHTTPBridgeBody(payload []byte) ([]byte, error) {
 }
 
 type openAIWSToolCallReplayCollector struct {
-	items []json.RawMessage
-	seen  map[string]struct{}
+	items    []json.RawMessage
+	seen     map[string]struct{}
+	allItems []json.RawMessage
+	allSeen  map[string]struct{}
 }
 
 func (c *openAIWSToolCallReplayCollector) AddEvent(eventType string, message []byte) {
 	switch strings.TrimSpace(eventType) {
 	case "response.output_item.done":
-		c.addItem(gjson.GetBytes(message, "item"))
+		item := gjson.GetBytes(message, "item")
+		c.addAllItem(item)
+		c.addItem(item)
 	case "response.completed", "response.done":
 		output := gjson.GetBytes(message, "response.output")
 		if !output.IsArray() {
 			return
 		}
 		for _, item := range output.Array() {
+			c.addAllItem(item)
 			c.addItem(item)
 		}
 	}
@@ -102,6 +157,35 @@ func (c *openAIWSToolCallReplayCollector) AddEvent(eventType string, message []b
 
 func (c *openAIWSToolCallReplayCollector) Items() []json.RawMessage {
 	return cloneOpenAIWSRawMessages(c.items)
+}
+
+func (c *openAIWSToolCallReplayCollector) AllItems() []json.RawMessage {
+	return cloneOpenAIWSRawMessages(c.allItems)
+}
+
+func (c *openAIWSToolCallReplayCollector) addAllItem(item gjson.Result) {
+	if !item.Exists() || item.Type != gjson.JSON {
+		return
+	}
+	raw := strings.TrimSpace(item.Raw)
+	if raw == "" || !strings.HasPrefix(raw, "{") || strings.TrimSpace(item.Get("type").String()) == "" {
+		return
+	}
+	key := strings.TrimSpace(item.Get("id").String())
+	if key == "" {
+		key = strings.TrimSpace(item.Get("call_id").String())
+	}
+	if key == "" {
+		key = raw
+	}
+	if c.allSeen == nil {
+		c.allSeen = make(map[string]struct{})
+	}
+	if _, ok := c.allSeen[key]; ok {
+		return
+	}
+	c.allSeen[key] = struct{}{}
+	c.allItems = append(c.allItems, json.RawMessage(raw))
 }
 
 func (c *openAIWSToolCallReplayCollector) addItem(item gjson.Result) {
@@ -188,19 +272,51 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	if err != nil {
 		return nil, fmt.Errorf("prepare http bridge body: %w", err)
 	}
+	grokIntentSourceBody := append([]byte(nil), body...)
+	_, grokExplicitToolsField := openAIWSHTTPBridgeRawField(grokIntentSourceBody, "tools")
+	grokExplicitToolIntent := account.Platform == PlatformGrok && hasGrokResponsesToolIntent(grokIntentSourceBody)
 	var clientToolMapping apicompat.ResponsesClientToolMapping
-	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
-		body, clientToolMapping, err = adaptResponsesClientToolsForFunctionUpstream(body, "OpenAI WS HTTP bridge")
-		if err != nil {
-			return nil, fmt.Errorf("adapt OpenAI WS HTTP bridge client tools: %w", err)
+	functionToolUpstream := (account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey) || account.Platform == PlatformGrok
+	if functionToolUpstream {
+		if account.Platform == PlatformGrok {
+			body, err = sanitizeGrokResponsesInput(body)
+			if err != nil {
+				return nil, fmt.Errorf("sanitize Grok WS HTTP bridge input: %w", err)
+			}
 		}
+		inheritedState, _ := openAIWSHTTPBridgeToolStateFromContext(c)
+		inheritedLoweredTools := decodeOpenAIWSHTTPBridgeLoweredTools(inheritedState.LoweredTools)
+		body, clientToolMapping, err = adaptResponsesClientToolsForFunctionUpstreamWithMapping(
+			body,
+			openAIWSHTTPBridgeToolUpstreamName(account),
+			inheritedState.ClientMapping,
+			inheritedLoweredTools,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("adapt %s client tools: %w", openAIWSHTTPBridgeToolUpstreamName(account), err)
+		}
+		if account.Platform == PlatformGrok && !grokExplicitToolsField && !grokExplicitToolIntent && len(inheritedLoweredTools) > 0 && hasGrokResponsesToolIntent(body) {
+			// This continuation omitted tools, so the pre-adapter source cannot
+			// represent the effective inherited declarations. Cache routing must
+			// see the rehydrated tool intent or it will replace client functions
+			// with the native-search tool-free route. Explicit current-turn tool
+			// intent still uses the original pre-sanitization source above.
+			grokIntentSourceBody = append(grokIntentSourceBody[:0], body...)
+		}
+		loweredTools := inheritedState.LoweredTools
+		if currentTools, present := openAIWSHTTPBridgeRawField(body, "tools"); present {
+			loweredTools = currentTools
+		}
+		setOpenAIWSHTTPBridgeToolState(c, openAIWSHTTPBridgeToolState{
+			ClientMapping: clientToolMapping,
+			LoweredTools:  loweredTools,
+		})
 	}
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	var upstreamReq *http.Request
 	if account.Platform == PlatformGrok {
 		upstreamModel := resolveGrokWSUpstreamModel(account, body, originalModel)
-		grokIntentSourceBody := body
 		body, err = patchGrokResponsesBody(body, upstreamModel)
 		if err != nil {
 			releaseUpstreamCtx()
@@ -260,23 +376,13 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if account.Platform == PlatformGrok {
 			shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody)
 			s.handleGrokAccountUpstreamError(withGrokTeamRateLimitModel(ctx, resolveGrokWSUpstreamModel(account, body, originalModel)), account, resp.StatusCode, resp.Header, respBody)
-			if turn == 1 && shouldFailover {
+			if shouldFailover && (turn == 1 || resp.StatusCode == http.StatusTooManyRequests) {
 				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMsg, false)
 			}
-		} else if shouldFailover {
-			if turn == 1 {
-				return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, respBody)
-			}
-			canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
-			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, canonicalModel)
-			if resp.StatusCode == http.StatusTooManyRequests {
-				return nil, NewOpenAIWSClientCloseError(
-					coderws.StatusTryAgainLater,
-					"upstream rate limit exceeded, please reconnect",
-					fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg),
-				)
-			}
-		} else if account.Platform != PlatformGrok && shouldCooldownOpenAITransientUpstreamError(resp.StatusCode, respBody) {
+		} else if shouldFailover && (turn == 1 || resp.StatusCode == http.StatusTooManyRequests) {
+			return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, respBody)
+		}
+		if account.Platform != PlatformGrok && (shouldFailover || shouldCooldownOpenAITransientUpstreamError(resp.StatusCode, respBody)) {
 			canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, canonicalModel)
 		}
@@ -301,6 +407,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	upstreamTerminalEvent := ""
 	sawDone := false
 	wroteDownstream := false
+	pendingClientMessages := make([][]byte, 0, 4)
+	pendingClientMessageBytes := int64(0)
+	capacityFailoverSuppressedLogged := false
 	clientDisconnected := false
 	mappedModel := ""
 	needModelReplace := false
@@ -338,6 +447,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			result.wsReplayInput = replayInput
 			result.wsReplayInputExists = true
 		}
+		result.wsAccountFailoverReplayInput = replayCollector.AllItems()
 		if imageCount > 0 {
 			result.ImageCount = imageCount
 			result.ImageSize = imageSizeTier
@@ -391,7 +501,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 			lastEventType = eventType
 		}
-		var responseFailedErr error
+
 		if isOpenAIWSTokenEvent(eventType) {
 			tokenEventCount++
 			if firstTokenMs == nil {
@@ -403,37 +513,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
 		}
 		imageCounter.AddSSEData(upstreamMessage)
-		if eventType == "response.failed" {
-			failedMessage := extractOpenAISSEErrorMessage(upstreamMessage)
-			failedStatus := openAIStreamFailedEventSemanticStatus(upstreamMessage, failedMessage)
-			openAIRateLimited := account.Platform == PlatformOpenAI && failedStatus == http.StatusTooManyRequests
-			if openAIRateLimited {
-				s.handleOpenAIAccountUpstreamError(ctx, account, failedStatus, resp.Header, upstreamMessage, originalModel)
-			}
-			responseFailedErr = s.newOpenAIWSResponseFailedError(
-				c,
-				account,
-				true,
-				resp.Header,
-				upstreamMessage,
-				wroteDownstream || clientDisconnected,
-				usage,
-			)
-			var failoverErr *UpstreamFailoverError
-			if errors.As(responseFailedErr, &failoverErr) {
-				if openAIRateLimited {
-					failoverErr.StatusCode = failedStatus
-				}
-				if openAIRateLimited && turn > 1 {
-					return resultWithUsage(), NewOpenAIWSClientCloseError(
-						coderws.StatusTryAgainLater,
-						"upstream rate limit exceeded, please reconnect",
-						fmt.Errorf("upstream http bridge response failed: %s", failedMessage),
-					)
-				}
-				return resultWithUsage(), failoverErr
-			}
-		}
 
 		if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && strings.Contains(trimmedData, mappedModel) {
 			upstreamMessage = replaceOpenAIWSMessageModel(upstreamMessage, mappedModel, originalModel)
@@ -445,28 +524,28 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		}
 		replayCollector.AddEvent(eventType, upstreamMessage)
 
-		holdRateLimitError := false
 		var upstreamEventErr error
-		if eventType == "error" {
-			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
-			errMessage := strings.TrimSpace(errMsgRaw)
+		if eventType == "error" || eventType == "response.failed" {
+			errMessage := extractOpenAISSEErrorMessage(upstreamMessage)
 			if errMessage == "" {
 				errMessage = "upstream error event"
 			}
-			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
-			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
-			if account.Platform == PlatformGrok {
-				// SSE error events do not carry an HTTP status. The local status
-				// mapper therefore defaults unknown xAI codes (for example
-				// new_sensitive) to 502; classify the body as a request-scoped
-				// 403 before applying status-based failover or account state.
+			statusCode := openAIStreamFailureStatus(upstreamMessage, errMessage)
+			shouldFailover := openAIStreamFailedEventShouldFailover(upstreamMessage, errMessage)
+			requestScopedCapacity := isOpenAIUpstreamCapacityShedEvent(upstreamMessage)
+			if eventType == "error" {
+				errCodeRaw, errTypeRaw, _ := parseOpenAIWSErrorEventFields(upstreamMessage)
+				statusCode = openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
+				shouldFailover = s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
+			}
+			if account.Platform == PlatformGrok && eventType == "error" {
 				if isGrokContentPolicyRejection(http.StatusForbidden, upstreamMessage) {
 					shouldFailover = false
 				} else {
 					shouldFailover = s.shouldFailoverGrokUpstreamError(statusCode, upstreamMessage)
 					s.handleGrokAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage)
 				}
-			} else if shouldFailover {
+			} else if eventType == "error" && shouldFailover && !requestScopedCapacity {
 				accountStatus := statusCode
 				if transientStatus := openAIWSPayloadTransientStatus(upstreamMessage); transientStatus != 0 {
 					accountStatus = transientStatus
@@ -474,11 +553,38 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 				s.handleOpenAIAccountUpstreamError(ctx, account, accountStatus, resp.Header, upstreamMessage, canonicalModel)
 			}
-			if turn == 1 && !wroteDownstream && shouldFailover {
-				return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
+			if eventType == "response.failed" {
+				if account.Platform == PlatformOpenAI && statusCode == http.StatusTooManyRequests {
+					canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
+					s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage, canonicalModel)
+				}
+				failedErr := s.newOpenAIWSResponseFailedError(c, account, true, resp.Header, upstreamMessage, wroteDownstream || clientDisconnected, usage)
+				var failoverErr *UpstreamFailoverError
+				if errors.As(failedErr, &failoverErr) {
+					if statusCode == http.StatusTooManyRequests {
+						failoverErr.StatusCode = statusCode
+					}
+					if !wroteDownstream && !clientDisconnected && (turn == 1 || statusCode == http.StatusTooManyRequests) {
+						if turn == 1 && !requestScopedCapacity {
+							return resultWithUsage(), failoverErr
+						}
+						return nil, failoverErr
+					}
+				}
 			}
-			holdRateLimitError = account.Platform == PlatformOpenAI && turn > 1 && !wroteDownstream && !clientDisconnected && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw)
-			upstreamEventErr = errors.New(errMessage)
+			if !wroteDownstream && shouldFailover && (turn == 1 || statusCode == http.StatusTooManyRequests) {
+				if account.Platform == PlatformGrok {
+					return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
+				}
+				return nil, s.newOpenAIStreamFailoverError(c, account, true, resp.Header.Get("x-request-id"), upstreamMessage, errMessage, resp.Header)
+			}
+			if wroteDownstream && requestScopedCapacity && !capacityFailoverSuppressedLogged {
+				logOpenAICapacityFailoverSuppressed(ctx, account, "ws_http_bridge", resp.Header.Get("x-request-id"), eventType)
+				capacityFailoverSuppressedLogged = true
+			}
+			if eventType == "error" {
+				upstreamEventErr = errors.New(errMessage)
+			}
 		}
 
 		// 客户端写出副本改写容量降载码：Codex 对 error/response.failed 中的
@@ -491,38 +597,55 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				clientMessage = rewritten
 			}
 		}
-		if !clientDisconnected && !holdRateLimitError {
-			if err := writeClientMessage(clientMessage); err != nil {
-				if isOpenAIWSClientDisconnectError(err) {
-					clientDisconnected = true
-					closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
-					logOpenAIWSModeInfo(
-						"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",
-						account.ID,
-						turn,
-						closeStatus,
-						truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
-					)
-				} else {
-					return nil, wrapOpenAIWSIngressTurnError(
-						"write_client",
-						fmt.Errorf("write client websocket event: %w", err),
-						wroteDownstream,
+		if !clientDisconnected {
+			stageBeforeSemanticOutput := turn == 1 && account.Platform == PlatformOpenAI && !wroteDownstream
+			commitStagedMessages := !stageBeforeSemanticOutput ||
+				openAIStreamDataStartsClientOutput(string(clientMessage), eventType) ||
+				isOpenAIWSTerminalEvent(eventType)
+			if stageBeforeSemanticOutput && !commitStagedMessages {
+				if pendingClientMessageBytes+int64(len(clientMessage)) > openAIFirstOutputStageMaxBytes {
+					return nil, s.newOpenAIStreamFailoverError(
+						c,
+						account,
+						true,
+						resp.Header.Get("x-request-id"),
+						nil,
+						"OpenAI WS HTTP bridge first-output staging limit exceeded",
+						resp.Header,
 					)
 				}
+				pendingClientMessages = append(pendingClientMessages, append([]byte(nil), clientMessage...))
+				pendingClientMessageBytes += int64(len(clientMessage))
 			} else {
-				wroteDownstream = true
+				messages := append(pendingClientMessages, clientMessage)
+				pendingClientMessages = nil
+				pendingClientMessageBytes = 0
+				for _, message := range messages {
+					if err := writeClientMessage(message); err != nil {
+						if isOpenAIWSClientDisconnectError(err) {
+							clientDisconnected = true
+							closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
+							logOpenAIWSModeInfo(
+								"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",
+								account.ID,
+								turn,
+								closeStatus,
+								truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
+							)
+							break
+						}
+						return nil, wrapOpenAIWSIngressTurnError(
+							"write_client",
+							fmt.Errorf("write client websocket event: %w", err),
+							wroteDownstream,
+						)
+					}
+					wroteDownstream = true
+				}
 			}
 		}
 
 		if upstreamEventErr != nil {
-			if holdRateLimitError {
-				return resultWithUsage(), NewOpenAIWSClientCloseError(
-					coderws.StatusTryAgainLater,
-					"upstream rate limit exceeded, please reconnect",
-					fmt.Errorf("upstream http bridge error event: %s", upstreamEventErr.Error()),
-				)
-			}
 			return resultWithUsage(), upstreamEventErr
 		}
 		if isOpenAIWSTerminalEvent(eventType) {
@@ -547,9 +670,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				firstTokenMsValue,
 				clientDisconnected,
 			)
-			if responseFailedErr != nil {
-				return resultWithUsage(), responseFailedErr
-			}
 			return resultWithUsage(), nil
 		}
 	}

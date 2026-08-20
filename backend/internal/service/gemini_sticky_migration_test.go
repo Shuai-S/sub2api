@@ -47,6 +47,14 @@ func (c *geminiStickyMigrationCacheStub) GetGrokVideoPendingBilling(_ context.Co
 	return nil, nil
 }
 
+func (c *geminiStickyMigrationCacheStub) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+
+func (c *geminiStickyMigrationCacheStub) GetReasoningContent(context.Context, string) (string, error) {
+	return "", nil
+}
+
 func (c *geminiStickyMigrationCacheStub) ClaimGrokVideoBilled(_ context.Context, _ string, _ time.Duration) (bool, error) {
 	return true, nil
 }
