@@ -73,6 +73,8 @@ const runtimeStatusFilterOptions = computed(() => [
   { value: 'high_error', label: t('admin.ops.openaiAdaptiveLearning.status.highError') },
   { value: 'cooldown', label: t('admin.ops.openaiAdaptiveLearning.status.cooldown') },
   { value: 'half_open', label: t('admin.ops.openaiAdaptiveLearning.status.halfOpen') },
+  { value: 'circuit_half_open', label: t('admin.ops.openaiAdaptiveLearning.status.circuitHalfOpen') },
+  { value: 'capacity_recovery', label: t('admin.ops.openaiAdaptiveLearning.status.capacityRecovery') },
   { value: 'quota_limited', label: t('admin.ops.openaiAdaptiveLearning.status.quotaLimited') },
   { value: 'saturated', label: t('admin.ops.openaiAdaptiveLearning.status.saturated') },
   { value: 'unavailable', label: t('admin.ops.openaiAdaptiveLearning.status.unavailable') }
@@ -102,6 +104,8 @@ const statusKeyMap: Record<string, string> = {
   unavailable: 'admin.ops.openaiAdaptiveLearning.status.unavailable',
   cooldown: 'admin.ops.openaiAdaptiveLearning.status.cooldown',
   half_open: 'admin.ops.openaiAdaptiveLearning.status.halfOpen',
+  circuit_half_open: 'admin.ops.openaiAdaptiveLearning.status.circuitHalfOpen',
+  capacity_recovery: 'admin.ops.openaiAdaptiveLearning.status.capacityRecovery',
   quota_limited: 'admin.ops.openaiAdaptiveLearning.status.quotaLimited',
   high_error: 'admin.ops.openaiAdaptiveLearning.status.highError',
   saturated: 'admin.ops.openaiAdaptiveLearning.status.saturated',
@@ -122,6 +126,8 @@ const statusClassMap: Record<string, string> = {
   unavailable: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',
   cooldown: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   half_open: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  circuit_half_open: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  capacity_recovery: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
   quota_limited: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
   high_error: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
   saturated: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
@@ -571,8 +577,16 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                       {{ statusLabel(row.learning_status) }}
                     </span>
                     <span :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(row.runtime_status)]">
-                      {{ statusLabel(row.runtime_status) }}<template v-if="row.runtime_flags.length > 1"> +{{ row.runtime_flags.length - 1 }}</template>
+                      {{ statusLabel(row.runtime_status) }}
                     </span>
+                    <template v-for="flag in row.runtime_flags" :key="flag">
+                      <span
+                        v-if="flag !== row.runtime_status"
+                        :class="['inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold', statusClass(flag)]"
+                      >
+                        {{ statusLabel(flag) }}
+                      </span>
+                    </template>
                   </div>
                   <div v-if="row.runtime_reason" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.runtime_reason">
                     {{ row.runtime_reason }}

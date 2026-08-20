@@ -557,7 +557,7 @@ const openAIAdaptiveSchedulerDefaults = {
   openai_adaptive_scheduler_top_k: 8,
   openai_adaptive_scheduler_exploration_rate: 0.02,
   openai_adaptive_scheduler_softmax_temperature: 0.35,
-  openai_adaptive_scheduler_capacity_growth_factor: 1.15,
+  openai_adaptive_scheduler_capacity_growth_factor: 1.25,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
   openai_adaptive_scheduler_shrink_factor_soft: 0.9,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
@@ -576,7 +576,7 @@ const openAIAdaptiveSchedulerDefaults = {
   openai_adaptive_scheduler_high_error_max_samples: 100,
   openai_adaptive_scheduler_high_error_enter_rate: 0.25,
   openai_adaptive_scheduler_high_error_exit_rate: 0.15,
-  openai_adaptive_scheduler_capacity_recovery_samples: 30,
+  openai_adaptive_scheduler_capacity_recovery_samples: 8,
   openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
 } as const;
 
@@ -1278,7 +1278,7 @@ describe("admin SettingsView payment visible method controls", () => {
       wrapper
         .get('[data-testid="anthropic-adaptive-scheduler-parameters"]')
         .findAll("svg.cursor-help"),
-    ).toHaveLength(25);
+    ).toHaveLength(24);
     await topKInput.setValue("6");
     await wrapper
       .get('[data-testid="anthropic-adaptive-mode-enforce"]')
@@ -1582,7 +1582,7 @@ describe("admin SettingsView payment visible method controls", () => {
     ).toBe("0.9");
     expect(
       inputForLabel("admin.settings.openaiAdaptiveScheduler.parameters.capacityGrowthFactor").value,
-    ).toBe("1.15");
+    ).toBe("1.25");
     expect(
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.parameters.learningWindowSeconds",
@@ -1624,7 +1624,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(
       inputForLabel("admin.settings.openaiAdaptiveScheduler.parameters.capacityGrowthFactor")
         .placeholder,
-    ).toBe("1.15");
+    ).toBe("1.25");
     expect(
       inputForLabel(
         "admin.settings.openaiAdaptiveScheduler.parameters.learningWindowSeconds",

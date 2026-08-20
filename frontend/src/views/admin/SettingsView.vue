@@ -10099,7 +10099,6 @@ const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "anthropic_adaptive_scheduler_shrink_factor_soft", label: "capacityShrinkFactor", min: 0.01, max: 0.99, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_capacity_growth_factor", label: "capacityGrowthFactor", min: 1.01, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_capacity_recovery_samples", label: "capacityRecoverySamples", min: 1, step: 1 },
-      { key: "anthropic_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityRecoveryLoad", min: 0, max: 1, step: 0.01 },
     ],
   },
   {
@@ -10224,7 +10223,6 @@ const geminiAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "gemini_adaptive_scheduler_shrink_factor_soft", label: "capacityShrinkFactor", min: 0.01, max: 0.99, step: 0.01 },
       { key: "gemini_adaptive_scheduler_capacity_growth_factor", label: "capacityGrowthFactor", min: 1.01, step: 0.01 },
       { key: "gemini_adaptive_scheduler_capacity_recovery_samples", label: "capacityRecoverySamples", min: 1, step: 1 },
-      { key: "gemini_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityRecoveryLoad", min: 0, max: 1, step: 0.01 },
     ],
   },
   {
@@ -10282,7 +10280,7 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_top_k: 8,
   openai_adaptive_scheduler_exploration_rate: 0.02,
   openai_adaptive_scheduler_softmax_temperature: 0.35,
-  openai_adaptive_scheduler_capacity_growth_factor: 1.15,
+  openai_adaptive_scheduler_capacity_growth_factor: 1.25,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
   openai_adaptive_scheduler_shrink_factor_soft: 0.9,
   openai_adaptive_scheduler_learning_window_seconds: 1200,
@@ -10301,7 +10299,7 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_high_error_max_samples: 100,
   openai_adaptive_scheduler_high_error_enter_rate: 0.25,
   openai_adaptive_scheduler_high_error_exit_rate: 0.15,
-  openai_adaptive_scheduler_capacity_recovery_samples: 30,
+  openai_adaptive_scheduler_capacity_recovery_samples: 8,
   openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
 } satisfies Partial<SettingsForm>;
 
@@ -10343,7 +10341,6 @@ const openAIAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "openai_adaptive_scheduler_shrink_factor_soft", label: "capacityShrinkFactor", min: 0.01, max: 0.99, step: 0.01 },
       { key: "openai_adaptive_scheduler_capacity_growth_factor", label: "capacityGrowthFactor", min: 1.01, step: 0.01 },
       { key: "openai_adaptive_scheduler_capacity_recovery_samples", label: "capacityRecoverySamples", min: 1, step: 1 },
-      { key: "openai_adaptive_scheduler_capacity_probe_load_threshold", label: "capacityRecoveryLoad", min: 0, max: 1, step: 0.01 },
     ],
   },
   {

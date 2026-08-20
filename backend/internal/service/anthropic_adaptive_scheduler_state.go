@@ -23,7 +23,6 @@ func anthropicAdaptiveCoreSettings(settings AnthropicAdaptiveSchedulerSettings) 
 	core.CapacityShrinkFactor = settings.AnthropicAdaptiveSchedulerShrinkFactorSoft
 	core.CapacityRecoveryFactor = settings.AnthropicAdaptiveSchedulerCapacityGrowthFactor
 	core.CapacityRecoverySamples = settings.AnthropicAdaptiveSchedulerCapacityRecoverySamples
-	core.CapacityRecoveryLoad = settings.AnthropicAdaptiveSchedulerCapacityProbeLoadThreshold
 	core.CapacityCooldown = time.Duration(settings.AnthropicAdaptiveSchedulerCooldownSeconds) * time.Second
 	core.QuotaProbeInterval = time.Duration(settings.AnthropicAdaptiveSchedulerQuotaProbeIntervalSeconds) * time.Second
 	core.WeightReliability = settings.AnthropicAdaptiveSchedulerWeightReliability

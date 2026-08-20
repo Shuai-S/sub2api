@@ -35,9 +35,13 @@ const (
 type adaptiveRuntimeStatus string
 
 const (
-	adaptiveRuntimeHealthy      adaptiveRuntimeStatus = "healthy"
-	adaptiveRuntimeHighError    adaptiveRuntimeStatus = "high_error"
-	adaptiveRuntimeCooldown     adaptiveRuntimeStatus = "cooldown"
+	adaptiveRuntimeHealthy          adaptiveRuntimeStatus = "healthy"
+	adaptiveRuntimeHighError        adaptiveRuntimeStatus = "high_error"
+	adaptiveRuntimeCooldown         adaptiveRuntimeStatus = "cooldown"
+	adaptiveRuntimeCircuitHalfOpen  adaptiveRuntimeStatus = "circuit_half_open"
+	adaptiveRuntimeCapacityRecovery adaptiveRuntimeStatus = "capacity_recovery"
+	// Kept for persisted/API compatibility with older snapshots. New runtime
+	// flags use the two independent statuses above.
 	adaptiveRuntimeHalfOpen     adaptiveRuntimeStatus = "half_open"
 	adaptiveRuntimeQuotaLimited adaptiveRuntimeStatus = "quota_limited"
 	adaptiveRuntimeSaturated    adaptiveRuntimeStatus = "saturated"
@@ -65,7 +69,6 @@ type adaptiveCoreSettings struct {
 	CapacityShrinkFactor      float64
 	CapacityRecoveryFactor    float64
 	CapacityRecoverySamples   int
-	CapacityRecoveryLoad      float64
 	CapacityCooldown          time.Duration
 	QuotaProbeInterval        time.Duration
 	WeightReliability         float64
@@ -94,9 +97,8 @@ func defaultAdaptiveCoreSettings() adaptiveCoreSettings {
 		HighErrorEnterRate:        0.25,
 		HighErrorExitRate:         0.15,
 		CapacityShrinkFactor:      0.90,
-		CapacityRecoveryFactor:    1.15,
-		CapacityRecoverySamples:   30,
-		CapacityRecoveryLoad:      0.80,
+		CapacityRecoveryFactor:    1.25,
+		CapacityRecoverySamples:   8,
 		CapacityCooldown:          60 * time.Second,
 		QuotaProbeInterval:        5 * time.Minute,
 		WeightReliability:         0.50,
@@ -141,7 +143,6 @@ func normalizeAdaptiveCoreSettings(settings adaptiveCoreSettings) adaptiveCoreSe
 	settings.CapacityShrinkFactor = clampFloat(settings.CapacityShrinkFactor, 0.01, 0.99, defaults.CapacityShrinkFactor)
 	settings.CapacityRecoveryFactor = clampFloat(settings.CapacityRecoveryFactor, 1.01, 10, defaults.CapacityRecoveryFactor)
 	settings.CapacityRecoverySamples = clampIntMin(settings.CapacityRecoverySamples, 1, defaults.CapacityRecoverySamples)
-	settings.CapacityRecoveryLoad = clampFloat(settings.CapacityRecoveryLoad, 0, 1, defaults.CapacityRecoveryLoad)
 	if settings.CapacityCooldown <= 0 {
 		settings.CapacityCooldown = defaults.CapacityCooldown
 	}
@@ -167,27 +168,32 @@ type adaptiveHealthObservation struct {
 }
 
 type adaptiveAdmission struct {
-	AccountID          int64
-	CapacityGeneration uint64
-	HealthProbe        bool
-	QuotaProbe         bool
-	ClaimedAt          time.Time
+	AccountID           int64
+	CapacityGeneration  uint64
+	HealthProbe         bool
+	QuotaProbe          bool
+	Admitted            bool
+	ObservedConcurrency int
+	WaitingCount        int
+	ClaimedAt           time.Time
 }
 
 type adaptiveObservation struct {
-	AccountID           int64
-	RequestID           string
-	Type                adaptiveObservationType
-	ReasonCode          string
-	Reason              string
-	Authentication      bool
-	FirstTokenMs        *int
-	ConfiguredCapacity  int
-	ObservedConcurrency int
-	CapacityGeneration  uint64
-	QuotaResetAt        *time.Time
-	HealthProbe         bool
-	Synthetic           bool
+	AccountID             int64
+	RequestID             string
+	Type                  adaptiveObservationType
+	ReasonCode            string
+	Reason                string
+	Authentication        bool
+	FirstTokenMs          *int
+	ConfiguredCapacity    int
+	ObservedConcurrency   int
+	WaitingCount          int
+	CapacityGeneration    uint64
+	QuotaResetAt          *time.Time
+	HealthProbe           bool
+	AccountHealthEligible *bool
+	Synthetic             bool
 }
 
 type adaptiveAccountState struct {
@@ -277,11 +283,25 @@ func (s *adaptiveStateStore) ensureLocked(accountID int64, configuredCapacity in
 	if configuredCapacity < 0 {
 		configuredCapacity = 0
 	}
+	previousConfigured := state.ConfiguredCapacity
+	previousEffective := state.EffectiveCapacity
 	state.ConfiguredCapacity = configuredCapacity
 	if configuredCapacity == 0 {
 		state.EffectiveCapacity = 0
+	} else if configuredCapacity > previousConfigured && state.EffectiveCapacity < configuredCapacity {
+		// A configuration increase is an explicit operator signal. Do not make
+		// the account wait for the sampled recovery loop to catch up.
+		state.EffectiveCapacity = configuredCapacity
+		state.CapacityRecoverySuccesses = 0
+		state.CapacityHalfOpen = false
+		state.CapacityLimitedGeneration = false
+		state.CapacityCooldownUntil = time.Time{}
+		state.CapacityGeneration++
 	} else if state.EffectiveCapacity <= 0 || state.EffectiveCapacity > configuredCapacity {
 		state.EffectiveCapacity = configuredCapacity
+	}
+	if previousConfigured != configuredCapacity || previousEffective != state.EffectiveCapacity {
+		touchAdaptiveState(state, now)
 	}
 	return state
 }
@@ -383,6 +403,14 @@ func pruneAdaptiveHealthWindow(state *adaptiveAccountState, now time.Time, setti
 }
 
 func (s *adaptiveStateStore) registerAdmission(accountID int64, requestID string, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) uint64 {
+	return s.registerAdmissionWithLoad(accountID, requestID, configuredCapacity, -1, 0, true, now, settings)
+}
+
+func (s *adaptiveStateStore) registerPendingAdmission(accountID int64, requestID string, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) uint64 {
+	return s.registerAdmissionWithLoad(accountID, requestID, configuredCapacity, -1, 0, false, now, settings)
+}
+
+func (s *adaptiveStateStore) registerAdmissionWithLoad(accountID int64, requestID string, configuredCapacity, observedConcurrency, waitingCount int, admitted bool, now time.Time, settings adaptiveCoreSettings) uint64 {
 	if s == nil || accountID <= 0 {
 		return 0
 	}
@@ -397,11 +425,14 @@ func (s *adaptiveStateStore) registerAdmission(accountID int64, requestID string
 		healthProbe := state.HealthProbeInFlight && (state.HealthProbeOwner == "" || state.HealthProbeOwner == requestID)
 		quotaProbe := state.QuotaProbeInFlight && (state.QuotaProbeOwner == "" || state.QuotaProbeOwner == requestID)
 		s.admissions[adaptiveTransientKey(accountID, requestID)] = adaptiveAdmission{
-			AccountID:          accountID,
-			CapacityGeneration: generation,
-			HealthProbe:        healthProbe,
-			QuotaProbe:         quotaProbe,
-			ClaimedAt:          now,
+			AccountID:           accountID,
+			CapacityGeneration:  generation,
+			HealthProbe:         healthProbe,
+			QuotaProbe:          quotaProbe,
+			Admitted:            admitted,
+			ObservedConcurrency: observedConcurrency,
+			WaitingCount:        waitingCount,
+			ClaimedAt:           now,
 		}
 	}
 	return generation
@@ -516,12 +547,24 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	state := s.ensureLocked(observation.AccountID, observation.ConfiguredCapacity, now)
 	s.refreshLocked(state, now, settings)
 	quotaProbe := false
+	admitted := true
+	admissionObserved := -1
+	admissionWaiting := 0
 	if admission, ok := s.admissions[adaptiveTransientKey(observation.AccountID, observation.RequestID)]; ok {
 		if observation.CapacityGeneration == 0 {
 			observation.CapacityGeneration = admission.CapacityGeneration
 		}
 		quotaProbe = admission.QuotaProbe
 		observation.HealthProbe = admission.HealthProbe
+		admitted = admission.Admitted
+		admissionObserved = admission.ObservedConcurrency
+		admissionWaiting = admission.WaitingCount
+		if observation.ObservedConcurrency < 0 && admissionObserved >= 0 {
+			observation.ObservedConcurrency = admissionObserved
+		}
+		if observation.WaitingCount <= 0 {
+			observation.WaitingCount = admissionWaiting
+		}
 		delete(s.admissions, adaptiveTransientKey(observation.AccountID, observation.RequestID))
 	}
 	if quotaProbe && observation.Type != adaptiveObservationHealthSuccess && observation.Type != adaptiveObservationQuotaLimit {
@@ -544,12 +587,20 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 			state.QuotaProbeInFlight = false
 			state.QuotaProbeOwner = ""
 		}
-		capacityIncreased = s.observeCapacityRecoveryLocked(state, observation, now, settings)
+		capacityIncreased = s.observeCapacityRecoveryLocked(state, observation, admitted, now, settings)
 	case adaptiveObservationAccountFailure:
+		if !adaptiveAccountHealthEligible(observation) {
+			break
+		}
 		if s.claimFailureLocked(observation.AccountID, observation.RequestID, now, settings) {
 			s.observeHealthLocked(state, false, observation, now, settings)
 		}
 	case adaptiveObservationCapacityLimit:
+		if adaptiveAccountHealthEligible(observation) {
+			if s.claimFailureLocked(observation.AccountID, observation.RequestID, now, settings) {
+				s.observeHealthLocked(state, false, observation, now, settings)
+			}
+		}
 		capacityDecreased = s.observeCapacityLimitLocked(state, observation, now, settings)
 	case adaptiveObservationQuotaLimit:
 		state.QuotaLimited = true
@@ -567,6 +618,18 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	}
 	touchAdaptiveState(state, now)
 	return capacityIncreased, capacityDecreased
+}
+
+func adaptiveAccountHealthEligible(observation adaptiveObservation) bool {
+	if observation.AccountHealthEligible != nil {
+		return *observation.AccountHealthEligible
+	}
+	switch strings.ToLower(strings.TrimSpace(observation.ReasonCode)) {
+	case "upstream_5xx", "generic_rate_limit", "account_health_failure", "stream_incomplete", "failure", "provider_overloaded", "provider_capacity", "model_upstream_error":
+		return false
+	default:
+		return true
+	}
 }
 
 func (s *adaptiveStateStore) claimFailureLocked(accountID int64, requestID string, now time.Time, settings adaptiveCoreSettings) bool {
@@ -678,20 +741,20 @@ func (s *adaptiveStateStore) observeCapacityLimitLocked(state *adaptiveAccountSt
 	return true
 }
 
-func (s *adaptiveStateStore) observeCapacityRecoveryLocked(state *adaptiveAccountState, observation adaptiveObservation, now time.Time, settings adaptiveCoreSettings) bool {
+func (s *adaptiveStateStore) observeCapacityRecoveryLocked(state *adaptiveAccountState, observation adaptiveObservation, admitted bool, now time.Time, settings adaptiveCoreSettings) bool {
 	if !state.CapacityHalfOpen || state.EffectiveCapacity >= state.ConfiguredCapacity || state.CapacityLimitedGeneration {
+		return false
+	}
+	if !admitted {
 		return false
 	}
 	if observation.CapacityGeneration != state.CapacityGeneration {
 		return false
 	}
-	observed := observation.ObservedConcurrency
-	if observed <= 0 {
-		observed = state.LastObservedConcurrency
-	}
-	if state.EffectiveCapacity > 0 && float64(observed)/float64(state.EffectiveCapacity) < settings.CapacityRecoveryLoad {
-		return false
-	}
+	// Once the capacity cooldown has elapsed, every successful request that
+	// actually acquired this account's slot is valid recovery evidence. Do not
+	// require a queue or a utilization threshold: low traffic must be able to
+	// restore a healthy account before the next burst arrives.
 	state.CapacityRecoverySuccesses++
 	if state.CapacityRecoverySuccesses < settings.CapacityRecoverySamples {
 		return false
@@ -777,14 +840,14 @@ func adaptiveRuntimeState(state adaptiveAccountState, accountAvailable bool, cur
 		if state.CircuitOpenUntil.After(now) {
 			flags = append(flags, adaptiveRuntimeCooldown)
 		} else {
-			flags = append(flags, adaptiveRuntimeHalfOpen)
+			flags = append(flags, adaptiveRuntimeCircuitHalfOpen)
 		}
 	}
 	if state.QuotaLimited {
 		flags = append(flags, adaptiveRuntimeQuotaLimited)
 	}
 	if state.CapacityHalfOpen {
-		flags = appendUniqueAdaptiveRuntimeFlag(flags, adaptiveRuntimeHalfOpen)
+		flags = appendUniqueAdaptiveRuntimeFlag(flags, adaptiveRuntimeCapacityRecovery)
 	}
 	if state.EffectiveCapacity > 0 && currentConcurrency >= state.EffectiveCapacity {
 		flags = append(flags, adaptiveRuntimeSaturated)
@@ -795,7 +858,7 @@ func adaptiveRuntimeState(state adaptiveAccountState, accountAvailable bool, cur
 	if len(flags) == 0 {
 		flags = append(flags, adaptiveRuntimeHealthy)
 	}
-	priority := []adaptiveRuntimeStatus{adaptiveRuntimeUnavailable, adaptiveRuntimeCooldown, adaptiveRuntimeHalfOpen, adaptiveRuntimeQuotaLimited, adaptiveRuntimeSaturated, adaptiveRuntimeHighError, adaptiveRuntimeHealthy}
+	priority := []adaptiveRuntimeStatus{adaptiveRuntimeUnavailable, adaptiveRuntimeCooldown, adaptiveRuntimeCircuitHalfOpen, adaptiveRuntimeCapacityRecovery, adaptiveRuntimeQuotaLimited, adaptiveRuntimeSaturated, adaptiveRuntimeHighError, adaptiveRuntimeHealthy}
 	main := adaptiveRuntimeHealthy
 	for _, candidate := range priority {
 		for _, flag := range flags {
@@ -815,6 +878,15 @@ func appendUniqueAdaptiveRuntimeFlag(flags []adaptiveRuntimeStatus, flag adaptiv
 		}
 	}
 	return append(flags, flag)
+}
+
+func containsAdaptiveRuntimeFlag(flags []adaptiveRuntimeStatus, wanted adaptiveRuntimeStatus) bool {
+	for _, flag := range flags {
+		if flag == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 type adaptiveScoreCandidate struct {

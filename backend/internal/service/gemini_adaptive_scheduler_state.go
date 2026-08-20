@@ -32,7 +32,6 @@ func geminiAdaptiveCoreSettings(settings GeminiAdaptiveSchedulerSettings) adapti
 	core.CapacityShrinkFactor = settings.GeminiAdaptiveSchedulerShrinkFactorSoft
 	core.CapacityRecoveryFactor = settings.GeminiAdaptiveSchedulerCapacityGrowthFactor
 	core.CapacityRecoverySamples = settings.GeminiAdaptiveSchedulerCapacityRecoverySamples
-	core.CapacityRecoveryLoad = settings.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold
 	core.CapacityCooldown = time.Duration(settings.GeminiAdaptiveSchedulerCooldownSeconds) * time.Second
 	core.QuotaProbeInterval = time.Duration(settings.GeminiAdaptiveSchedulerQuotaProbeIntervalSeconds) * time.Second
 	core.WeightReliability = settings.GeminiAdaptiveSchedulerWeightReliability

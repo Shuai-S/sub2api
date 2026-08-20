@@ -286,7 +286,54 @@ func TestAdaptiveCapacityGenerationRejectsOldInflightResults(t *testing.T) {
 	require.Equal(t, 90, store.snapshot(1, 100, now.Add(time.Second), settings).EffectiveCapacity)
 }
 
-func TestAdaptiveCapacityRecoversAfterHighLoadSuccessesInCurrentGeneration(t *testing.T) {
+func TestAdaptiveConfiguredCapacityIncreaseAppliesImmediately(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	_, decreased := store.observe(adaptiveObservation{
+		AccountID:           1,
+		RequestID:           "limit",
+		Type:                adaptiveObservationCapacityLimit,
+		ConfiguredCapacity:  100,
+		ObservedConcurrency: 100,
+	}, now, settings)
+	require.True(t, decreased)
+	require.Equal(t, 90, store.snapshot(1, 100, now, settings).EffectiveCapacity)
+
+	state := store.snapshot(1, 200, now.Add(time.Second), settings)
+	require.Equal(t, 200, state.EffectiveCapacity)
+	require.False(t, state.CapacityHalfOpen)
+	require.Zero(t, state.CapacityRecoverySuccesses)
+}
+
+func TestAdaptiveRuntimeSeparatesCircuitAndCapacityRecovery(t *testing.T) {
+	now := time.Now()
+	state := *newAdaptiveAccountState(1, 100, now)
+	state.CircuitOpenUntil = now.Add(-time.Second)
+	state.CapacityHalfOpen = true
+	main, flags, _, _ := adaptiveRuntimeState(state, true, 1, now)
+	require.Equal(t, adaptiveRuntimeCircuitHalfOpen, main)
+	require.Contains(t, flags, adaptiveRuntimeCircuitHalfOpen)
+	require.Contains(t, flags, adaptiveRuntimeCapacityRecovery)
+}
+
+func TestAdaptivePendingAdmissionDoesNotRecoverCapacity(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	_, decreased := store.observe(adaptiveObservation{AccountID: 1, RequestID: "limit", Type: adaptiveObservationCapacityLimit, ConfiguredCapacity: 100, ObservedConcurrency: 100}, now, settings)
+	require.True(t, decreased)
+	recoveryAt := now.Add(settings.CapacityCooldown)
+	state := store.snapshot(1, 100, recoveryAt, settings)
+	require.True(t, state.CapacityHalfOpen)
+	store.registerPendingAdmission(1, "pending", 100, recoveryAt, settings)
+	store.observe(adaptiveObservation{AccountID: 1, RequestID: "pending", Type: adaptiveObservationHealthSuccess, ConfiguredCapacity: 100, ObservedConcurrency: 90, CapacityGeneration: state.CapacityGeneration}, recoveryAt, settings)
+	state = store.snapshot(1, 100, recoveryAt, settings)
+	require.Zero(t, state.CapacityRecoverySuccesses)
+	require.Equal(t, 90, state.EffectiveCapacity)
+}
+
+func TestAdaptiveCapacityRecoversAfterSuccessfulAdmissionsInCurrentGeneration(t *testing.T) {
 	now := time.Now()
 	settings := defaultAdaptiveCoreSettings()
 	store := newAdaptiveStateStore()
@@ -303,12 +350,14 @@ func TestAdaptiveCapacityRecoversAfterHighLoadSuccessesInCurrentGeneration(t *te
 	require.True(t, state.CapacityHalfOpen)
 
 	for i := 0; i < settings.CapacityRecoverySamples; i++ {
+		requestID := "recovery-" + string(rune('a'+i))
+		store.registerAdmissionWithLoad(1, requestID, 100, 1, 0, true, recoveryAt.Add(time.Duration(i)*time.Millisecond), settings)
 		store.observe(adaptiveObservation{
 			AccountID:           1,
-			RequestID:           "recovery-" + string(rune('a'+i)),
+			RequestID:           requestID,
 			Type:                adaptiveObservationHealthSuccess,
 			ConfiguredCapacity:  100,
-			ObservedConcurrency: 80,
+			ObservedConcurrency: -1,
 			CapacityGeneration:  state.CapacityGeneration,
 		}, recoveryAt.Add(time.Duration(i)*time.Millisecond), settings)
 	}

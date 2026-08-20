@@ -105,7 +105,7 @@ func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 		OpenAIAdaptiveSchedulerTopK:                       8,
 		OpenAIAdaptiveSchedulerExplorationRate:            0.02,
 		OpenAIAdaptiveSchedulerSoftmaxTemperature:         0.35,
-		OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.15,
+		OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.25,
 		OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.80,
 		OpenAIAdaptiveSchedulerShrinkFactorSoft:           0.90,
 		OpenAIAdaptiveSchedulerLearningWindowSeconds:      1200,
@@ -124,7 +124,7 @@ func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 		OpenAIAdaptiveSchedulerHighErrorMaxSamples:        100,
 		OpenAIAdaptiveSchedulerHighErrorEnterRate:         0.25,
 		OpenAIAdaptiveSchedulerHighErrorExitRate:          0.15,
-		OpenAIAdaptiveSchedulerCapacityRecoverySamples:    30,
+		OpenAIAdaptiveSchedulerCapacityRecoverySamples:    8,
 		OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds:  300,
 	}
 }

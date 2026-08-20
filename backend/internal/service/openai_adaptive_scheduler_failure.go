@@ -308,27 +308,53 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 		return "insufficient_balance"
 	}
 	if openAIAdaptiveFailureCooldownReason(err) == "concurrency_limit" {
-		return "concurrency_limit"
+		if isExplicitAccountConcurrencyFailure(err) {
+			return "concurrency_limit"
+		}
+		return "provider_overloaded"
 	}
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
+		// Transport failures created by the account transport path are the only
+		// 5xx-shaped errors that may lower an individual account. Plain 502/503
+		// responses are shared provider/network evidence until explicitly
+		// attributed otherwise.
+		if failoverErr.FailureKind == UpstreamFailureKindTransport && failoverErr.Scope == GatewayFailureScopeAccount {
+			return "transport_error"
+		}
 		if failoverErr.Scope == GatewayFailureScopeProvider || failoverErr.StatusCode == 529 {
 			return "provider_overloaded"
 		}
-		if failoverErr.IsCredentialFailure() || failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden {
+		if failoverErr.IsCredentialFailure() || ((failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden) && failoverErr.Scope == GatewayFailureScopeAccount) {
 			return "account_auth"
 		}
 		if failoverErr.StatusCode == http.StatusTooManyRequests {
 			return "generic_rate_limit"
 		}
 		if failoverErr.StatusCode >= 500 {
-			return "upstream_5xx"
+			return "provider_overloaded"
 		}
 	}
 	if !healthSample {
 		return "non_account_health_error"
 	}
 	return "account_health_failure"
+}
+
+func isExplicitAccountConcurrencyFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) && failoverErr != nil {
+		return failoverErr.StatusCode == http.StatusTooManyRequests && failoverErr.Scope == GatewayFailureScopeAccount
+	}
+	var wsCloseErr *OpenAIWSClientCloseError
+	if errors.As(err, &wsCloseErr) && wsCloseErr != nil {
+		lower := strings.ToLower(strings.TrimSpace(wsCloseErr.Reason()))
+		return strings.Contains(lower, "account is busy") || strings.Contains(lower, "account concurrency") || strings.Contains(lower, "upstream websocket is busy")
+	}
+	return false
 }
 
 func isOpenAIAdaptiveInsufficientBalanceError(err error) bool {

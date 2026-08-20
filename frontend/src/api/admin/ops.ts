@@ -249,6 +249,8 @@ export type OpsOpenAIAdaptiveLearningStatus =
   | 'unavailable'
   | 'cooldown'
   | 'half_open'
+  | 'circuit_half_open'
+  | 'capacity_recovery'
   | 'quota_limited'
   | 'high_error'
   | 'saturated'
@@ -262,6 +264,8 @@ export type OpsAdaptiveRuntimeStatus =
   | 'high_error'
   | 'cooldown'
   | 'half_open'
+  | 'circuit_half_open'
+  | 'capacity_recovery'
   | 'quota_limited'
   | 'saturated'
   | 'unavailable'
@@ -303,6 +307,8 @@ export interface OpsOpenAIAdaptiveLearningSummary {
   high_error_accounts: number
   cooldown_accounts: number
   half_open_accounts: number
+  circuit_half_open_accounts?: number
+  capacity_recovery_accounts?: number
   saturated_accounts: number
   unavailable_accounts: number
   learned_accounts: number
@@ -336,6 +342,8 @@ export interface OpsOpenAIAdaptiveLearningAccount {
   health_samples: number
   capacity_generation: number
   capacity_half_open: boolean
+  circuit_half_open?: boolean
+  capacity_recovery?: boolean
 
   scheduler_score: number
   success_score: number
@@ -458,6 +466,8 @@ export interface OpsAnthropicAdaptiveLearningSummary {
   learned_accounts: number
   not_applicable_accounts: number
   half_open_accounts: number
+  circuit_half_open_accounts?: number
+  capacity_recovery_accounts?: number
   quota_limited_accounts: number
 }
 
@@ -487,6 +497,8 @@ export interface OpsAnthropicAdaptiveLearningAccount {
   health_samples: number
   capacity_generation: number
   capacity_half_open: boolean
+  circuit_half_open?: boolean
+  capacity_recovery?: boolean
 
   scheduler_score: number
   reliability_score: number
@@ -652,6 +664,8 @@ export interface OpsGeminiAdaptiveLearningSummary {
   learned_accounts: number
   not_applicable_accounts: number
   half_open_accounts: number
+  circuit_half_open_accounts?: number
+  capacity_recovery_accounts?: number
 }
 
 export interface OpsGeminiAdaptiveLearningAccount {
@@ -679,6 +693,8 @@ export interface OpsGeminiAdaptiveLearningAccount {
   health_samples: number
   capacity_generation: number
   capacity_half_open: boolean
+  circuit_half_open?: boolean
+  capacity_recovery?: boolean
 
   scheduler_score: number
   reliability_score: number

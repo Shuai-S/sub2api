@@ -216,6 +216,28 @@ func TestOpenAIAdaptiveFailureCooldownDistinguishesUserAndAccountConcurrency(t *
 	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(accountLimitErr))
 }
 
+func TestOpenAIAdaptiveUnscopedServerErrorsStayProviderScoped(t *testing.T) {
+	for _, status := range []int{http.StatusBadGateway, http.StatusServiceUnavailable} {
+		err := &UpstreamFailoverError{StatusCode: status, ResponseBody: []byte(`{"error":{"type":"server_error"}}`)}
+		reason := classifyOpenAIAdaptiveTerminalReason(err, true)
+		require.Equal(t, "provider_overloaded", reason)
+		observation, _ := classifyAdaptiveTerminalReason(false, reason)
+		require.Equal(t, adaptiveObservationProviderOverload, observation)
+	}
+}
+
+func TestOpenAIAdaptiveAccountTransportFailureRemainsAccountScoped(t *testing.T) {
+	err := &UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		Scope:        GatewayFailureScopeAccount,
+		FailureKind:  UpstreamFailureKindTransport,
+		HealthSample: boolPtr(true),
+	}
+	require.Equal(t, "transport_error", classifyOpenAIAdaptiveTerminalReason(err, true))
+	observation, _ := classifyAdaptiveTerminalReason(false, "transport_error")
+	require.Equal(t, adaptiveObservationAccountFailure, observation)
+}
+
 func TestOpenAIAdaptiveExistingFailureReasonsMapToCoreObservations(t *testing.T) {
 	tests := []struct {
 		reason             string

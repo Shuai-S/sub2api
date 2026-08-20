@@ -12,15 +12,17 @@ const (
 	openAIAdaptiveLearningDefaultLimit = 50
 	openAIAdaptiveLearningMaxLimit     = 500
 
-	OpenAIAdaptiveLearningStatusDisabled    = "disabled"
-	OpenAIAdaptiveLearningStatusUnavailable = "unavailable"
-	OpenAIAdaptiveLearningStatusCooldown    = "cooldown"
-	OpenAIAdaptiveLearningStatusHalfOpen    = "half_open"
-	OpenAIAdaptiveLearningStatusHighError   = "high_error"
-	OpenAIAdaptiveLearningStatusSaturated   = "saturated"
-	OpenAIAdaptiveLearningStatusLearning    = "learning"
-	OpenAIAdaptiveLearningStatusUnlearned   = "unlearned"
-	OpenAIAdaptiveLearningStatusHealthy     = "healthy"
+	OpenAIAdaptiveLearningStatusDisabled         = "disabled"
+	OpenAIAdaptiveLearningStatusUnavailable      = "unavailable"
+	OpenAIAdaptiveLearningStatusCooldown         = "cooldown"
+	OpenAIAdaptiveLearningStatusHalfOpen         = "half_open"
+	OpenAIAdaptiveLearningStatusCircuitHalfOpen  = "circuit_half_open"
+	OpenAIAdaptiveLearningStatusCapacityRecovery = "capacity_recovery"
+	OpenAIAdaptiveLearningStatusHighError        = "high_error"
+	OpenAIAdaptiveLearningStatusSaturated        = "saturated"
+	OpenAIAdaptiveLearningStatusLearning         = "learning"
+	OpenAIAdaptiveLearningStatusUnlearned        = "unlearned"
+	OpenAIAdaptiveLearningStatusHealthy          = "healthy"
 )
 
 type OpenAIAdaptiveSchedulerLearningSnapshot struct {
@@ -95,18 +97,20 @@ type OpenAIAdaptiveSchedulerLearningSettingsSnapshot struct {
 }
 
 type OpenAIAdaptiveSchedulerLearningSummary struct {
-	TrackedAccounts       int `json:"tracked_accounts"`
-	UnlearnedAccounts     int `json:"unlearned_accounts"`
-	LearningAccounts      int `json:"learning_accounts"`
-	HealthyAccounts       int `json:"healthy_accounts"`
-	HighErrorAccounts     int `json:"high_error_accounts"`
-	CooldownAccounts      int `json:"cooldown_accounts"`
-	HalfOpenAccounts      int `json:"half_open_accounts"`
-	SaturatedAccounts     int `json:"saturated_accounts"`
-	UnavailableAccounts   int `json:"unavailable_accounts"`
-	LearnedAccounts       int `json:"learned_accounts"`
-	NotApplicableAccounts int `json:"not_applicable_accounts"`
-	QuotaLimitedAccounts  int `json:"quota_limited_accounts"`
+	TrackedAccounts          int `json:"tracked_accounts"`
+	UnlearnedAccounts        int `json:"unlearned_accounts"`
+	LearningAccounts         int `json:"learning_accounts"`
+	HealthyAccounts          int `json:"healthy_accounts"`
+	HighErrorAccounts        int `json:"high_error_accounts"`
+	CooldownAccounts         int `json:"cooldown_accounts"`
+	HalfOpenAccounts         int `json:"half_open_accounts"`
+	CircuitHalfOpenAccounts  int `json:"circuit_half_open_accounts"`
+	CapacityRecoveryAccounts int `json:"capacity_recovery_accounts"`
+	SaturatedAccounts        int `json:"saturated_accounts"`
+	UnavailableAccounts      int `json:"unavailable_accounts"`
+	LearnedAccounts          int `json:"learned_accounts"`
+	NotApplicableAccounts    int `json:"not_applicable_accounts"`
+	QuotaLimitedAccounts     int `json:"quota_limited_accounts"`
 }
 
 type OpenAIAdaptiveSchedulerAccountLearningSnapshot struct {
@@ -136,6 +140,8 @@ type OpenAIAdaptiveSchedulerAccountLearningSnapshot struct {
 	HealthSamples      int      `json:"health_samples"`
 	CapacityGeneration uint64   `json:"capacity_generation"`
 	CapacityHalfOpen   bool     `json:"capacity_half_open"`
+	CircuitHalfOpen    bool     `json:"circuit_half_open"`
+	CapacityRecovery   bool     `json:"capacity_recovery"`
 
 	SchedulerScore float64 `json:"scheduler_score"`
 	SuccessScore   float64 `json:"success_score"`
@@ -329,6 +335,8 @@ func buildOpenAIAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		HealthSamples:             samples,
 		CapacityGeneration:        state.CapacityGeneration,
 		CapacityHalfOpen:          state.CapacityHalfOpen,
+		CircuitHalfOpen:           containsAdaptiveRuntimeFlag(flags, adaptiveRuntimeCircuitHalfOpen),
+		CapacityRecovery:          containsAdaptiveRuntimeFlag(flags, adaptiveRuntimeCapacityRecovery),
 		SuccessEMA:                state.SuccessEMA,
 		TTFTEMA:                   state.TTFTEMA,
 		TTFTSamples:               state.TTFTSamples,
@@ -644,20 +652,24 @@ func openAIAdaptiveLearningStatusRank(status string) int {
 		return 1
 	case OpenAIAdaptiveLearningStatusHalfOpen:
 		return 2
-	case OpenAIAdaptiveLearningStatusHighError:
+	case OpenAIAdaptiveLearningStatusCircuitHalfOpen:
+		return 2
+	case OpenAIAdaptiveLearningStatusCapacityRecovery:
 		return 3
-	case OpenAIAdaptiveLearningStatusSaturated:
+	case OpenAIAdaptiveLearningStatusHighError:
 		return 4
-	case OpenAIAdaptiveLearningStatusUnavailable:
+	case OpenAIAdaptiveLearningStatusSaturated:
 		return 5
-	case OpenAIAdaptiveLearningStatusLearning:
+	case OpenAIAdaptiveLearningStatusUnavailable:
 		return 6
-	case OpenAIAdaptiveLearningStatusUnlearned:
+	case OpenAIAdaptiveLearningStatusLearning:
 		return 7
+	case OpenAIAdaptiveLearningStatusUnlearned:
+		return 8
 	case OpenAIAdaptiveLearningStatusDisabled:
-		return 8
+		return 9
 	default:
-		return 8
+		return 9
 	}
 }
 
@@ -682,6 +694,12 @@ func summarizeOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLe
 			summary.CooldownAccounts++
 		case OpenAIAdaptiveLearningStatusHalfOpen:
 			summary.HalfOpenAccounts++
+		case OpenAIAdaptiveLearningStatusCircuitHalfOpen:
+			summary.CircuitHalfOpenAccounts++
+			summary.HalfOpenAccounts++
+		case OpenAIAdaptiveLearningStatusCapacityRecovery:
+			summary.CapacityRecoveryAccounts++
+			summary.HalfOpenAccounts++
 		case string(adaptiveRuntimeQuotaLimited):
 			summary.QuotaLimitedAccounts++
 		case OpenAIAdaptiveLearningStatusHighError:
@@ -690,6 +708,14 @@ func summarizeOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLe
 			summary.SaturatedAccounts++
 		case OpenAIAdaptiveLearningStatusHealthy:
 			summary.HealthyAccounts++
+		}
+		if row.CircuitHalfOpen && row.RuntimeStatus != OpenAIAdaptiveLearningStatusCircuitHalfOpen {
+			summary.CircuitHalfOpenAccounts++
+			summary.HalfOpenAccounts++
+		}
+		if row.CapacityRecovery && row.RuntimeStatus != OpenAIAdaptiveLearningStatusCapacityRecovery {
+			summary.CapacityRecoveryAccounts++
+			summary.HalfOpenAccounts++
 		}
 	}
 	return summary

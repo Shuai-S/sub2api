@@ -121,7 +121,11 @@ type OpenAIAccountScheduleReport struct {
 	MaxAccountSwitches          int
 	SameAccountRetryCount       int
 	SameAccountRetryLimit       int
-	Err                         error
+	// ObservedConcurrency and WaitingCount are captured at/after admission
+	// when the caller has them. They are optional for legacy reporters.
+	ObservedConcurrency int
+	WaitingCount        int
+	Err                 error
 }
 
 type OpenAIAccountSchedulerMetricsSnapshot struct {

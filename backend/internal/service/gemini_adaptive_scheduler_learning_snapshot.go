@@ -96,19 +96,21 @@ type GeminiAdaptiveSchedulerLearningSettingsSnapshot struct {
 }
 
 type GeminiAdaptiveSchedulerLearningSummary struct {
-	TrackedAccounts       int `json:"tracked_accounts"`
-	DisabledAccounts      int `json:"disabled_accounts"`
-	UnavailableAccounts   int `json:"unavailable_accounts"`
-	QuotaLimitedAccounts  int `json:"quota_limited_accounts"`
-	CooldownAccounts      int `json:"cooldown_accounts"`
-	HighErrorAccounts     int `json:"high_error_accounts"`
-	SaturatedAccounts     int `json:"saturated_accounts"`
-	LearningAccounts      int `json:"learning_accounts"`
-	UnlearnedAccounts     int `json:"unlearned_accounts"`
-	HealthyAccounts       int `json:"healthy_accounts"`
-	LearnedAccounts       int `json:"learned_accounts"`
-	NotApplicableAccounts int `json:"not_applicable_accounts"`
-	HalfOpenAccounts      int `json:"half_open_accounts"`
+	TrackedAccounts          int `json:"tracked_accounts"`
+	DisabledAccounts         int `json:"disabled_accounts"`
+	UnavailableAccounts      int `json:"unavailable_accounts"`
+	QuotaLimitedAccounts     int `json:"quota_limited_accounts"`
+	CooldownAccounts         int `json:"cooldown_accounts"`
+	HighErrorAccounts        int `json:"high_error_accounts"`
+	SaturatedAccounts        int `json:"saturated_accounts"`
+	LearningAccounts         int `json:"learning_accounts"`
+	UnlearnedAccounts        int `json:"unlearned_accounts"`
+	HealthyAccounts          int `json:"healthy_accounts"`
+	LearnedAccounts          int `json:"learned_accounts"`
+	NotApplicableAccounts    int `json:"not_applicable_accounts"`
+	HalfOpenAccounts         int `json:"half_open_accounts"`
+	CircuitHalfOpenAccounts  int `json:"circuit_half_open_accounts"`
+	CapacityRecoveryAccounts int `json:"capacity_recovery_accounts"`
 }
 
 type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
@@ -137,6 +139,8 @@ type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
 	HealthSamples      int      `json:"health_samples"`
 	CapacityGeneration uint64   `json:"capacity_generation"`
 	CapacityHalfOpen   bool     `json:"capacity_half_open"`
+	CircuitHalfOpen    bool     `json:"circuit_half_open"`
+	CapacityRecovery   bool     `json:"capacity_recovery"`
 
 	SchedulerScore   float64 `json:"scheduler_score"`
 	ReliabilityScore float64 `json:"reliability_score"`
@@ -307,6 +311,8 @@ func buildGeminiAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		HealthSamples:             samples,
 		CapacityGeneration:        state.CapacityGeneration,
 		CapacityHalfOpen:          state.CapacityHalfOpen,
+		CircuitHalfOpen:           containsAdaptiveRuntimeFlag(flags, adaptiveRuntimeCircuitHalfOpen),
+		CapacityRecovery:          containsAdaptiveRuntimeFlag(flags, adaptiveRuntimeCapacityRecovery),
 		PathSuccessEMA:            state.SuccessEMA,
 		TTFTEMA:                   state.TTFTEMA,
 		TTFTSamples:               state.TTFTSamples,
@@ -596,12 +602,26 @@ func summarizeGeminiAdaptiveLearningRows(rows []GeminiAdaptiveSchedulerAccountLe
 			summary.CooldownAccounts++
 		case string(adaptiveRuntimeHalfOpen):
 			summary.HalfOpenAccounts++
+		case string(adaptiveRuntimeCircuitHalfOpen):
+			summary.CircuitHalfOpenAccounts++
+			summary.HalfOpenAccounts++
+		case string(adaptiveRuntimeCapacityRecovery):
+			summary.CapacityRecoveryAccounts++
+			summary.HalfOpenAccounts++
 		case GeminiAdaptiveLearningStatusHighError:
 			summary.HighErrorAccounts++
 		case GeminiAdaptiveLearningStatusSaturated:
 			summary.SaturatedAccounts++
 		case GeminiAdaptiveLearningStatusHealthy:
 			summary.HealthyAccounts++
+		}
+		if row.CircuitHalfOpen && row.RuntimeStatus != string(adaptiveRuntimeCircuitHalfOpen) {
+			summary.CircuitHalfOpenAccounts++
+			summary.HalfOpenAccounts++
+		}
+		if row.CapacityRecovery && row.RuntimeStatus != string(adaptiveRuntimeCapacityRecovery) {
+			summary.CapacityRecoveryAccounts++
+			summary.HalfOpenAccounts++
 		}
 	}
 	return summary
