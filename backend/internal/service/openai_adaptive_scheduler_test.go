@@ -216,13 +216,35 @@ func TestOpenAIAdaptiveFailureCooldownDistinguishesUserAndAccountConcurrency(t *
 	require.Equal(t, "concurrency_limit", openAIAdaptiveFailureCooldownReason(accountLimitErr))
 }
 
-func TestOpenAIAdaptiveUnscopedServerErrorsStayProviderScoped(t *testing.T) {
+func TestOpenAIAdaptiveUnscopedServerErrorsBecomeAccountHealthFailures(t *testing.T) {
 	for _, status := range []int{http.StatusBadGateway, http.StatusServiceUnavailable} {
 		err := &UpstreamFailoverError{StatusCode: status, ResponseBody: []byte(`{"error":{"type":"server_error"}}`)}
 		reason := classifyOpenAIAdaptiveTerminalReason(err, true)
-		require.Equal(t, "provider_overloaded", reason)
+		require.Equal(t, "upstream_5xx", reason)
 		observation, _ := classifyAdaptiveTerminalReason(false, reason)
-		require.Equal(t, adaptiveObservationProviderOverload, observation)
+		require.Equal(t, adaptiveObservationAccountFailure, observation)
+	}
+}
+
+func TestOpenAIAdaptiveExplicitGlobalServerErrorsStayProviderScoped(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *UpstreamFailoverError
+	}{
+		{name: "provider scope", err: &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, Scope: GatewayFailureScopeProvider}},
+		{name: "request scope", err: &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, Scope: GatewayFailureScopeRequest}},
+		{name: "request transient", err: &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, Scope: GatewayFailureScopeAccount, RequestScopedTransient: true}},
+		{name: "provider overload status", err: &UpstreamFailoverError{StatusCode: 529, Scope: GatewayFailureScopeAccount}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.False(t, openAIAdaptiveFailureHealthSample(tt.err))
+			reason := classifyOpenAIAdaptiveTerminalReason(tt.err, true)
+			require.Equal(t, "provider_overloaded", reason)
+			observation, _ := classifyAdaptiveTerminalReason(false, reason)
+			require.Equal(t, adaptiveObservationProviderOverload, observation)
+		})
 	}
 }
 
@@ -236,6 +258,51 @@ func TestOpenAIAdaptiveAccountTransportFailureRemainsAccountScoped(t *testing.T)
 	require.Equal(t, "transport_error", classifyOpenAIAdaptiveTerminalReason(err, true))
 	observation, _ := classifyAdaptiveTerminalReason(false, "transport_error")
 	require.Equal(t, adaptiveObservationAccountFailure, observation)
+}
+
+func TestOpenAIAdaptiveRepeatedServerErrorsOpenAccountCircuit(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano()})
+	account := Account{ID: 1000, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 100}
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{
+		"openai:broken_account": account.ID,
+		"openai:healthy_account": 1001,
+	}}
+	service := &OpenAIGatewayService{cache: cache, accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}}}
+	scheduler := newOpenAIAdaptiveTestScheduler(service)
+	err := &UpstreamFailoverError{StatusCode: http.StatusServiceUnavailable, ResponseBody: []byte(`{"error":{"type":"server_error"}}`)}
+	healthSample := openAIAdaptiveFailureHealthSample(err)
+	reason := classifyOpenAIAdaptiveTerminalReason(err, healthSample)
+
+	require.True(t, healthSample)
+	require.Equal(t, "upstream_5xx", reason)
+	requestIDs := []string{"server-error-1", "server-error-2", "server-error-3"}
+	for i, requestID := range requestIDs {
+		ctx := context.WithValue(context.Background(), ctxkey.RequestID, requestID)
+		scheduler.ReportScheduleResultWithContext(ctx, OpenAIAccountScheduleReport{
+			AccountID:      account.ID,
+			HealthSample:   healthSample,
+			TerminalReason: reason,
+			Err:            err,
+		})
+		state := scheduler.core.snapshot(account.ID, account.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg))
+		require.Equal(t, i+1, state.ConsecutiveFailures)
+		if i < len(requestIDs)-1 {
+			require.True(t, state.CircuitOpenUntil.IsZero())
+		}
+	}
+
+	state := scheduler.core.snapshot(account.ID, account.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg))
+	require.Len(t, state.HealthObservations, len(requestIDs))
+	require.False(t, state.CircuitOpenUntil.IsZero())
+	require.NotContains(t, cache.sessionBindings, "openai:broken_account")
+	require.Equal(t, int64(1001), cache.sessionBindings["openai:healthy_account"])
+	require.Equal(t, 1, cache.accountCleanupCall[account.ID])
 }
 
 func TestOpenAIAdaptiveExistingFailureReasonsMapToCoreObservations(t *testing.T) {

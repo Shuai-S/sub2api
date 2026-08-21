@@ -196,6 +196,9 @@ func openAIAdaptiveFailureHealthSample(err error) bool {
 		if failoverErr.HealthSample != nil {
 			return *failoverErr.HealthSample
 		}
+		if isOpenAIAdaptiveProviderScopedFailure(failoverErr) {
+			return false
+		}
 		if isUpstreamModelNotFoundError(failoverErr.StatusCode, failoverErr.ResponseBody) {
 			return false
 		}
@@ -315,15 +318,14 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 	}
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
-		// Transport failures created by the account transport path are the only
-		// 5xx-shaped errors that may lower an individual account. Plain 502/503
-		// responses are shared provider/network evidence until explicitly
-		// attributed otherwise.
+		// Explicit provider/request failures must not lower a selected account.
+		// Unscoped 5xx responses are learned as account failures so a consistently
+		// broken upstream account cannot remain at the neutral reliability score.
+		if isOpenAIAdaptiveProviderScopedFailure(failoverErr) {
+			return "provider_overloaded"
+		}
 		if failoverErr.FailureKind == UpstreamFailureKindTransport && failoverErr.Scope == GatewayFailureScopeAccount {
 			return "transport_error"
-		}
-		if failoverErr.Scope == GatewayFailureScopeProvider || failoverErr.StatusCode == 529 {
-			return "provider_overloaded"
 		}
 		if failoverErr.IsCredentialFailure() || ((failoverErr.StatusCode == http.StatusUnauthorized || failoverErr.StatusCode == http.StatusForbidden) && failoverErr.Scope == GatewayFailureScopeAccount) {
 			return "account_auth"
@@ -332,13 +334,23 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 			return "generic_rate_limit"
 		}
 		if failoverErr.StatusCode >= 500 {
-			return "provider_overloaded"
+			if healthSample {
+				return "upstream_5xx"
+			}
+			return "non_account_health_error"
 		}
 	}
 	if !healthSample {
 		return "non_account_health_error"
 	}
 	return "account_health_failure"
+}
+
+func isOpenAIAdaptiveProviderScopedFailure(err *UpstreamFailoverError) bool {
+	return err != nil && (err.Scope == GatewayFailureScopeProvider ||
+		err.Scope == GatewayFailureScopeRequest ||
+		err.RequestScopedTransient ||
+		err.StatusCode == 529)
 }
 
 func isExplicitAccountConcurrencyFailure(err error) bool {

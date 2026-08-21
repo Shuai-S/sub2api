@@ -1324,7 +1324,7 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 		configuredCapacity = account.Concurrency
 	}
 	observationType, authentication := classifyAdaptiveTerminalReason(report.Success, report.TerminalReason)
-	accountHealthEligible := report.TerminalReason == "account_auth" || report.TerminalReason == "transport_error" || report.TerminalReason == "concurrency_limit"
+	accountHealthEligible := report.TerminalReason == "account_auth" || report.TerminalReason == "transport_error" || report.TerminalReason == "upstream_5xx" || report.TerminalReason == "concurrency_limit"
 	if report.BalanceInsufficient {
 		observationType = adaptiveObservationQuotaLimit
 	}
