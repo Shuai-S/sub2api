@@ -795,7 +795,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	// goroutine）和 OnTurnComplete / final result（runUpstreamToClient
 	// goroutine）之间同步当前 turn 的 usage metadata。
 	usageMeta.initFromFirstFrame(firstClientMessage, capturedSessionModel)
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
+	promptCacheKey = strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
 	if hooks != nil && hooks.BeforeTurn != nil {
 		if err := hooks.BeforeTurn(1); err != nil {
 			return err

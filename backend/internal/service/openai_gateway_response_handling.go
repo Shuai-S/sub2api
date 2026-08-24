@@ -57,6 +57,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if account != nil && account.Platform == PlatformOpenAI {
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
 	}
+	guardFirstOutput := firstOutputTimeout > 0
 	stageFirstOutput := account != nil && account.Platform == PlatformOpenAI
 	var attemptResponseHeaders http.Header
 	if stageFirstOutput {
@@ -598,53 +599,53 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 							return
 						}
 					}
-				}
-				if outputStarted && !cyberHit {
-					if codexFailureTerminal && eventType == "error" {
-						// OpenAI commonly follows a bare error with response.failed.
-						// Defer account health updates so the pair is applied once.
-						bareErrorAccountSideEffectsPending = true
-					} else {
-						s.handleOpenAIStreamTerminalAccountSideEffects(c, account, dataBytes, failedMessage, resp.Header)
-						bareErrorAccountSideEffectsPending = false
-					}
-				}
-				if !outputStarted {
-					shouldFailover := false
-					if !cyberHit {
-						if eventType == "error" {
-							shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage)
+					if outputStarted && !cyberHit {
+						if codexFailureTerminal && eventType == "error" {
+							// OpenAI commonly follows a bare error with response.failed.
+							// Defer account health updates so the pair is applied once.
+							bareErrorAccountSideEffectsPending = true
 						} else {
-							shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage)
+							s.handleOpenAIStreamTerminalAccountSideEffects(c, account, dataBytes, failedMessage, resp.Header)
+							bareErrorAccountSideEffectsPending = false
 						}
 					}
-					if shouldFailover {
-						sawFailedEvent = true
-						streamEarlyErr = openAIStreamPreSemanticFailover(s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.Header))
-						return
-					}
-					if !cyberHit && !sawBareError {
-						if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
+					if !outputStarted {
+						shouldFailover := false
+						if !cyberHit {
+							if eventType == "error" {
+								shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage)
+							} else {
+								shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage)
+							}
+						}
+						if shouldFailover {
 							sawFailedEvent = true
-							// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
-							// antigravity 先例），否则透传命中的 failed 在监控中不可见。
-							s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, failedMessage)
-							MarkResponseCommitted(c)
-							c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-							c.JSON(status, gin.H{
-								"error": gin.H{
-									"type":    errType,
-									"message": errMsg,
-								},
-							})
-							streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+							streamEarlyErr = openAIStreamPreSemanticFailover(s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.Header))
 							return
 						}
+						if !cyberHit && !sawBareError {
+							if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
+								sawFailedEvent = true
+								// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
+								// antigravity 先例），否则透传命中的 failed 在监控中不可见。
+								s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, failedMessage)
+								MarkResponseCommitted(c)
+								c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+								c.JSON(status, gin.H{
+									"error": gin.H{
+										"type":    errType,
+										"message": errMsg,
+									},
+								})
+								streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+								return
+							}
+						}
 					}
+					forceFlushFailedEvent = true
+					sawFailedEvent = true
+					terminalFailurePending = !codexFailureTerminal || eventType == "response.failed"
 				}
-				forceFlushFailedEvent = true
-				sawFailedEvent = true
-				terminalFailurePending = !codexFailureTerminal || eventType == "response.failed"
 			}
 			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
 				dataBytes = normalizedData
@@ -746,7 +747,16 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				} else if _, err := writePendingString("\n"); err != nil {
 					handlePendingWriteError(err)
 				} else {
-					eventInProgress = true
+					eventInProgress = line != ""
+					if shouldFlush {
+						if err := flushBuffered(); err != nil {
+							clientDisconnected = true
+							logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
+						} else {
+							clientOutputStarted = true
+							lastDownstreamWriteAt = time.Now()
+						}
+					}
 				}
 			}
 			// Record first token time

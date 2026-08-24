@@ -2532,6 +2532,7 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountOrID int
 		s.clearOpenAIAccountModelTransientState(accountID, normalizeOpenAIAccountModelTransientModel(model))
 	}
 	s.ReportOpenAIAccountScheduleResultWithContext(context.Background(), accountID, success, firstTokenMs)
+	return healthTripped
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithContext(ctx context.Context, accountID int64, success bool, firstTokenMs *int) {
