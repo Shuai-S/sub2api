@@ -188,20 +188,20 @@ func TestOpenAIPoolModeTempRule_StopsSameAccountRetryAndIsolatesBlockToModel(t *
 		Schedulable: true,
 		Credentials: map[string]any{
 			"pool_mode":                    true,
-			"pool_mode_retry_status_codes": []any{float64(http.StatusServiceUnavailable)},
+			"pool_mode_retry_status_codes": []any{float64(http.StatusBadGateway)},
 			"temp_unschedulable_enabled":   true,
 			"temp_unschedulable_rules": []any{
 				map[string]any{
-					"error_code":       float64(http.StatusServiceUnavailable),
-					"keywords":         []any{"unavailable"},
+					"error_code":       float64(http.StatusBadGateway),
+					"keywords":         []any{"bad gateway"},
 					"duration_minutes": float64(30),
 				},
 			},
 		},
 	}
-	body := []byte(`{"error":{"message":"Service temporarily unavailable"}}`)
+	body := []byte(`{"error":{"message":"Bad gateway"}}`)
 	resp := &http.Response{
-		StatusCode: http.StatusServiceUnavailable,
+		StatusCode: http.StatusBadGateway,
 		Header:     http.Header{},
 	}
 
@@ -211,7 +211,7 @@ func TestOpenAIPoolModeTempRule_StopsSameAccountRetryAndIsolatesBlockToModel(t *
 		account,
 		resp,
 		body,
-		"Service temporarily unavailable",
+		"Bad gateway",
 		"gpt-5.4",
 	)
 
@@ -273,9 +273,9 @@ func TestOpenAIPoolModeNonRetryable5xx_StillCreatesModelTransientBlock(t *testin
 		shouldDisable := gateway.handleOpenAIAccountUpstreamError(
 			context.Background(),
 			account,
-			http.StatusServiceUnavailable,
+			http.StatusBadGateway,
 			http.Header{},
-			[]byte(`{"error":{"message":"upstream unavailable"}}`),
+			[]byte(`{"error":{"message":"bad gateway"}}`),
 			"gpt-5.4",
 		)
 		require.False(t, shouldDisable)

@@ -38,7 +38,7 @@ func TestHandleOpenAITransientError_BlocksOnlyRequestedModel(t *testing.T) {
 }
 
 func TestHandleOpenAITransientError_TransientStatusesUseModelScope(t *testing.T) {
-	for _, statusCode := range []int{http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, 520, 521, 522, 523, 524} {
+	for _, statusCode := range []int{http.StatusInternalServerError, http.StatusBadGateway, http.StatusGatewayTimeout, 520, 521, 522, 523, 524} {
 		t.Run(http.StatusText(statusCode), func(t *testing.T) {
 			svc := &OpenAIGatewayService{}
 			svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)
@@ -57,6 +57,37 @@ func TestHandleOpenAITransientError_TransientStatusesUseModelScope(t *testing.T)
 			require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "gpt-5.5"), "status %d should block the failing model", statusCode)
 		})
 	}
+}
+
+func TestHandleOpenAITransientError_ServiceUnavailableOnlyFailsOver(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       5603,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{
+				map[string]any{
+					"error_code":       float64(http.StatusServiceUnavailable),
+					"keywords":         []any{"unavailable"},
+					"duration_minutes": float64(30),
+				},
+			},
+		},
+	}
+	body := []byte(`{"error":{"code":"upstream_unavailable","message":"Service temporarily unavailable, please retry later.","type":"service_unavailable"}}`)
+
+	for range 3 {
+		shouldDisable := svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusServiceUnavailable, http.Header{}, body, "gpt-5.5")
+		require.False(t, shouldDisable)
+	}
+
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusServiceUnavailable, "", body))
+	require.False(t, shouldCooldownOpenAITransientUpstreamError(http.StatusServiceUnavailable, body))
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "gpt-5.5"))
 }
 
 func TestHandleOpenAITransientError_529RemainsOverloadOnly(t *testing.T) {

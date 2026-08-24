@@ -63,6 +63,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
 	}
+	// A 503 is an upstream availability signal. It is eligible for account
+	// failover, but must never change this account's schedulability.
+	if account != nil && account.Platform == PlatformOpenAI && statusCode == http.StatusServiceUnavailable {
+		return false
+	}
 	// Capacity shedding describes this request, not account health. Keep the
 	// account schedulable while the request-local retry budget handles recovery.
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
@@ -140,7 +145,7 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 
 func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []byte) bool {
 	switch statusCode {
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, 520, 521, 522, 523, 524:
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusGatewayTimeout, 520, 521, 522, 523, 524:
 		return true
 	case http.StatusBadRequest:
 		return isOpenAITransientProcessingError(statusCode, "", responseBody)

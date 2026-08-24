@@ -190,6 +190,9 @@ func openAIAdaptiveFailureHealthSample(err error) bool {
 	if isOpenAIAdaptiveInsufficientBalanceError(err) {
 		return false
 	}
+	if isOpenAIAdaptiveServiceUnavailable(err) {
+		return false
+	}
 	healthSample := shouldLearnOpenAIAdaptiveFailure(err)
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
@@ -216,6 +219,9 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 	if isOpenAIAdaptiveInsufficientBalanceError(err) {
 		return ""
 	}
+	if isOpenAIAdaptiveServiceUnavailable(err) {
+		return ""
+	}
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
 		if reason := openAIAdaptiveFailureTextCooldownReason(upstreamFailoverErrorMessageForAdaptive(failoverErr)); reason != "" {
@@ -226,8 +232,6 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 			return "upstream_429"
 		case http.StatusBadGateway:
 			return "upstream_502"
-		case http.StatusServiceUnavailable:
-			return "upstream_503"
 		}
 	}
 	var wsCloseErr *OpenAIWSClientCloseError
@@ -248,8 +252,6 @@ func openAIAdaptiveFailureCooldownReason(err error) string {
 				return "ws_upstream_429"
 			case http.StatusBadGateway:
 				return "ws_upstream_502"
-			case http.StatusServiceUnavailable:
-				return "ws_upstream_503"
 			}
 		}
 	}
@@ -310,6 +312,9 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 	if isOpenAIAdaptiveInsufficientBalanceError(err) {
 		return "insufficient_balance"
 	}
+	if isOpenAIAdaptiveServiceUnavailable(err) {
+		return "provider_overloaded"
+	}
 	if openAIAdaptiveFailureCooldownReason(err) == "concurrency_limit" {
 		if isExplicitAccountConcurrencyFailure(err) {
 			return "concurrency_limit"
@@ -319,8 +324,8 @@ func classifyOpenAIAdaptiveTerminalReason(err error, healthSample bool) string {
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) {
 		// Explicit provider/request failures must not lower a selected account.
-		// Unscoped 5xx responses are learned as account failures so a consistently
-		// broken upstream account cannot remain at the neutral reliability score.
+		// Other unscoped 5xx responses are learned as account failures so a
+		// consistently broken upstream account cannot remain at the neutral score.
 		if isOpenAIAdaptiveProviderScopedFailure(failoverErr) {
 			return "provider_overloaded"
 		}
@@ -351,6 +356,21 @@ func isOpenAIAdaptiveProviderScopedFailure(err *UpstreamFailoverError) bool {
 		err.Scope == GatewayFailureScopeRequest ||
 		err.RequestScopedTransient ||
 		err.StatusCode == 529)
+}
+
+// 503 represents transient upstream availability, so it may fail over to the
+// next account but must not affect account health or cooldown state.
+func isOpenAIAdaptiveServiceUnavailable(err error) bool {
+	var failoverErr *UpstreamFailoverError
+	if errors.As(err, &failoverErr) && failoverErr != nil && failoverErr.StatusCode == http.StatusServiceUnavailable {
+		return true
+	}
+	var responseFailedErr *openAIUpstreamResponseFailedError
+	if errors.As(err, &responseFailedErr) && responseFailedErr != nil && responseFailedErr.StatusCode == http.StatusServiceUnavailable {
+		return true
+	}
+	var dialErr *openAIWSDialError
+	return errors.As(err, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusServiceUnavailable
 }
 
 func isExplicitAccountConcurrencyFailure(err error) bool {
