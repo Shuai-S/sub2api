@@ -2502,7 +2502,7 @@ func (s *OpenAIGatewayService) shouldUseOpenAIWSIngressHTTPBridge(account *Accou
 	return wsCfg.HTTPBridgeEnabled
 }
 
-func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountOrID interface{}, model string, success bool, firstTokenMs *int, observedErr ...error) bool {
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountOrID any, model string, success bool, firstTokenMs *int, observedErr ...error) bool {
 	var accountID int64
 	var account *Account
 	switch value := accountOrID.(type) {
