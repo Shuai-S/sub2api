@@ -3058,7 +3058,7 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		return
 	}
 	copyFailoverRetryAfter(c, failoverErr.ResponseHeaders)
-	if service.IsOpenAIAccountInternalFailoverError(failoverErr) {
+	if failoverErr.Reason != service.OpenAIUpstreamAccessStateReason && service.IsOpenAIAccountInternalFailoverError(failoverErr) {
 		// Keep the raw upstream details in Ops context, but never expose account
 		// credentials, balance amounts, request IDs, or quota diagnostics to the
 		// downstream caller.

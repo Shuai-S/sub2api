@@ -527,125 +527,89 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				logOpenAICapacityFailoverSuppressed(ctx, account, "native_sse", upstreamRequestID, eventType)
 				capacityFailoverSuppressedLogged = true
 			}
-			if eventType == "error" && !openAIStreamClientOutputStarted(c, semanticOutputStarted) {
-				errorMessage := extractOpenAISSEErrorMessage(dataBytes)
-				if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, errorMessage); matched {
-					s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, errorMessage)
-					MarkResponseCommitted(c)
-					c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-					c.JSON(status, gin.H{
-						"error": gin.H{
-							"type":    errType,
-							"message": errMsg,
-						},
+			cyberHit := false
+			if eventType == "response.failed" || eventType == "error" {
+				if codexFailureTerminal && eventType == "error" {
+					sawBareError = true
+					bareErrorPayload = append(bareErrorPayload[:0], dataBytes...)
+					suppressCurrentEvent = true
+				} else if codexFailureTerminal && eventType == "response.failed" {
+					sawResponseFailed = true
+				}
+				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				failedPayload = dataBytes
+				if failedMessage == "" {
+					failedMessage = "Upstream response failed"
+				}
+				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
+				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
+				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
+				s.parseSSEUsageBytesWithType(dataBytes, eventType, usage)
+				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
+					cyberHit = true
+					MarkOpsCyberPolicy(c, CyberPolicyMark{
+						Code:           code,
+						Message:        msg,
+						Body:           truncateString(string(dataBytes), 4096),
+						UpstreamStatus: http.StatusOK,
+						UpstreamInTok:  usage.InputTokens,
+						UpstreamOutTok: usage.OutputTokens,
 					})
-					streamEarlyErr = fmt.Errorf("upstream error event: passthrough rule matched message=%s", errMsg)
-					return
 				}
-				cyberHit := false
-				if eventType == "response.failed" || eventType == "error" {
+				outputStarted := openAIStreamClientOutputStarted(c, clientOutputStarted)
+				if !outputStarted && !cyberHit {
+					if compactErr := newOpenAICompactFallbackSignal(c, dataBytes, failedMessage); compactErr != nil {
+						sawFailedEvent = true
+						streamEarlyErr = compactErr
+						return
+					}
+				}
+				if outputStarted && !cyberHit {
 					if codexFailureTerminal && eventType == "error" {
-						sawBareError = true
-						bareErrorPayload = append(bareErrorPayload[:0], dataBytes...)
-						suppressCurrentEvent = true
-					} else if codexFailureTerminal && eventType == "response.failed" {
-						sawResponseFailed = true
+						// OpenAI commonly follows a bare error with response.failed.
+						// Defer account health updates so the pair is applied once.
+						bareErrorAccountSideEffectsPending = true
+					} else {
+						s.handleOpenAIStreamTerminalAccountSideEffects(c, account, dataBytes, failedMessage, resp.Header)
+						bareErrorAccountSideEffectsPending = false
 					}
-					failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-					failedPayload = dataBytes
-					if failedMessage == "" {
-						failedMessage = "Upstream response failed"
-					}
-					// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
-					// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
-					// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
-					s.parseSSEUsageBytesWithType(dataBytes, eventType, usage)
-					if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
-						cyberHit = true
-						MarkOpsCyberPolicy(c, CyberPolicyMark{
-							Code:           code,
-							Message:        msg,
-							Body:           truncateString(string(dataBytes), 4096),
-							UpstreamStatus: http.StatusOK,
-							UpstreamInTok:  usage.InputTokens,
-							UpstreamOutTok: usage.OutputTokens,
-						})
-					}
-					if !openAIStreamSemanticOutputStarted(c, semanticOutputStarted) {
-						if !c.Writer.Written() {
-							if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
-								sawFailedEvent = true
-								// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
-								// antigravity 先例），否则透传命中的 failed 在监控中不可见。
-								s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, failedMessage)
-								MarkResponseCommitted(c)
-								c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-								c.JSON(status, gin.H{
-									"error": gin.H{
-										"type":    errType,
-										"message": errMsg,
-									},
-								})
-								streamEarlyErr = newOpenAIUpstreamResponseFailedError(dataBytes, "passthrough rule matched message="+errMsg)
-								return
-							}
-						}
-					}
-					outputStarted := openAIStreamClientOutputStarted(c, clientOutputStarted)
-					if !outputStarted && !cyberHit {
-						if compactErr := newOpenAICompactFallbackSignal(c, dataBytes, failedMessage); compactErr != nil {
-							sawFailedEvent = true
-							streamEarlyErr = compactErr
-							return
-						}
-					}
-					if outputStarted && !cyberHit {
-						if codexFailureTerminal && eventType == "error" {
-							// OpenAI commonly follows a bare error with response.failed.
-							// Defer account health updates so the pair is applied once.
-							bareErrorAccountSideEffectsPending = true
-						} else {
-							s.handleOpenAIStreamTerminalAccountSideEffects(c, account, dataBytes, failedMessage, resp.Header)
-							bareErrorAccountSideEffectsPending = false
-						}
-					}
-					if !outputStarted {
-						shouldFailover := false
-						if !cyberHit {
-							if eventType == "error" {
-								shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage)
-							} else {
-								shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage)
-							}
-						}
-						if shouldFailover {
-							sawFailedEvent = true
-							streamEarlyErr = openAIStreamPreSemanticFailover(s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.Header))
-							return
-						}
-						if !cyberHit && !sawBareError {
-							if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
-								sawFailedEvent = true
-								// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
-								// antigravity 先例），否则透传命中的 failed 在监控中不可见。
-								s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, failedMessage)
-								MarkResponseCommitted(c)
-								c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-								c.JSON(status, gin.H{
-									"error": gin.H{
-										"type":    errType,
-										"message": errMsg,
-									},
-								})
-								streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
-								return
-							}
-						}
-					}
-					forceFlushFailedEvent = true
-					sawFailedEvent = true
-					terminalFailurePending = !codexFailureTerminal || eventType == "response.failed"
 				}
+				if !outputStarted {
+					shouldFailover := false
+					if !cyberHit {
+						if eventType == "error" {
+							shouldFailover = openAIStreamErrorEventShouldFailover(dataBytes, failedMessage)
+						} else {
+							shouldFailover = openAIStreamFailedEventShouldFailover(dataBytes, failedMessage)
+						}
+					}
+					if shouldFailover {
+						sawFailedEvent = true
+						streamEarlyErr = openAIStreamPreSemanticFailover(s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage, resp.Header))
+						return
+					}
+					if !cyberHit && !sawBareError {
+						if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {
+							sawFailedEvent = true
+							// 命中透传规则也要记录 ops 上游错误事件（对齐 CC/Messages 与
+							// antigravity 先例），否则透传命中的 failed 在监控中不可见。
+							s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, failedMessage)
+							MarkResponseCommitted(c)
+							c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+							c.JSON(status, gin.H{
+								"error": gin.H{
+									"type":    errType,
+									"message": errMsg,
+								},
+							})
+							streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
+							return
+						}
+					}
+				}
+				forceFlushFailedEvent = true
+				sawFailedEvent = true
+				terminalFailurePending = !codexFailureTerminal || eventType == "response.failed"
 			}
 			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
 				dataBytes = normalizedData
@@ -748,15 +712,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					handlePendingWriteError(err)
 				} else {
 					eventInProgress = line != ""
-					if shouldFlush {
-						if err := flushBuffered(); err != nil {
-							clientDisconnected = true
-							logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
-						} else {
-							clientOutputStarted = true
-							lastDownstreamWriteAt = time.Now()
-						}
-					}
 				}
 			}
 			// Record first token time
@@ -834,6 +789,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 						logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
 					} else {
 						clientOutputStarted = true
+						semanticOutputStarted = true
+						markOpenAIStreamSemanticOutputStarted(c)
 						lastDownstreamWriteAt = time.Now()
 					}
 				}

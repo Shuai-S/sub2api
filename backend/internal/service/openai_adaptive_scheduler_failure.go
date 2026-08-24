@@ -362,7 +362,7 @@ func isOpenAIAdaptiveProviderScopedFailure(err *UpstreamFailoverError) bool {
 // next account but must not affect account health or cooldown state.
 func isOpenAIAdaptiveServiceUnavailable(err error) bool {
 	var failoverErr *UpstreamFailoverError
-	if errors.As(err, &failoverErr) && failoverErr != nil && failoverErr.StatusCode == http.StatusServiceUnavailable {
+	if errors.As(err, &failoverErr) && failoverErr != nil && failoverErr.StatusCode == http.StatusServiceUnavailable && failoverErr.FailureKind != UpstreamFailureKindImageGeneration {
 		return true
 	}
 	var responseFailedErr *openAIUpstreamResponseFailedError

@@ -101,6 +101,7 @@ func TestOpenAIGatewayService_ForwardWSV2ResponseFailedReturnsErrorWithUsage(t *
 		c,
 		account,
 		map[string]any{"model": "gpt-5.1", "stream": false, "input": "hello"},
+		"",
 		"sk-test",
 		svc.getOpenAIWSProtocolResolver().Resolve(account),
 		false,

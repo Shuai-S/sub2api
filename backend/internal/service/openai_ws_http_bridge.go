@@ -453,7 +453,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMsg, false)
 			}
 		} else if shouldFailover && (turn == 1 || resp.StatusCode == http.StatusTooManyRequests) {
-			return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, respBody)
+			failoverErr := s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, respBody)
+			s.maybeBlockOpenAIWSHTTPBridge429(account, resp.StatusCode)
+			return nil, failoverErr
 		}
 		if account.Platform != PlatformGrok && (shouldFailover || shouldCooldownOpenAITransientUpstreamError(resp.StatusCode, respBody)) {
 			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, actualModel)
@@ -681,6 +683,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				if account.Platform == PlatformOpenAI && statusCode == http.StatusTooManyRequests {
 					canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 					s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage, canonicalModel)
+					s.maybeBlockOpenAIWSHTTPBridge429(account, statusCode)
 				}
 				failedErr := s.newOpenAIWSResponseFailedError(c, account, true, resp.Header, upstreamMessage, wroteDownstream || clientDisconnected, usage)
 				var failoverErr *UpstreamFailoverError
@@ -700,6 +703,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				if account.Platform == PlatformGrok {
 					return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
 				}
+				s.maybeBlockOpenAIWSHTTPBridge429(account, statusCode)
 				return nil, s.newOpenAIStreamFailoverError(c, account, true, resp.Header.Get("x-request-id"), upstreamMessage, errMessage, resp.Header)
 			}
 			if account.Platform != PlatformGrok && !failureAccountSideEffectsApplied {
@@ -840,6 +844,18 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, terminalErr, true)
 	}
 	return resultWithUsage(), terminalErr
+}
+
+// WS HTTP bridge turns are account-isolated: once an OAuth account returns a
+// rate-limit response, the current bridge session must move to another
+// account instead of reusing the ordinary HTTP gateway's same-account retry
+// window. Keep this scoped to the bridge so regular Responses requests retain
+// their existing OAuth 429 behavior.
+func (s *OpenAIGatewayService) maybeBlockOpenAIWSHTTPBridge429(account *Account, statusCode int) {
+	if statusCode != http.StatusTooManyRequests || !isOpenAIOAuthAccount(account) || account.IsShadow() {
+		return
+	}
+	s.BlockAccountScheduling(account, time.Now().Add(openAIStopSchedulingBridgeCooldown), "ws_http_bridge_429")
 }
 
 func resolveGrokWSCacheIdentity(c *gin.Context, account *Account, seedPayload, currentPayload []byte, originalModel string) (string, error) {

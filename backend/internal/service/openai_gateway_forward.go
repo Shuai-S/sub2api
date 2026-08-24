@@ -1126,23 +1126,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					if resp.Body != nil {
 						_ = resp.Body.Close()
 					}
-					compactResp, compactBody := openAICompactFallbackErrorResponse(resp, signal)
-					if s.shouldFailoverOpenAIUpstreamResponse(compactResp.StatusCode, signal.message, compactBody) {
-						appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-							Platform:           account.Platform,
-							AccountID:          account.ID,
-							AccountName:        account.Name,
-							UpstreamStatusCode: compactResp.StatusCode,
-							UpstreamRequestID:  compactResp.Header.Get("x-request-id"),
-							Kind:               "failover",
-							Message:            signal.message,
-						})
-						shouldDisable := s.handleFailoverSideEffects(ctx, compactResp, account, compactBody, upstreamModel)
-						return nil, s.newOpenAIAccountFailoverError(
-							account, compactResp.StatusCode, compactResp.Header, compactBody, signal.message, shouldDisable,
-							!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(compactResp.StatusCode) || isOpenAITransientProcessingError(compactResp.StatusCode, signal.message, compactBody)),
-						)
-					}
+					compactResp, _ := openAICompactFallbackErrorResponse(resp, signal)
+					// The explicit compact fallback has already been consumed. Treat the
+					// second model failure as the request's final client error instead of
+					// re-entering generic model-availability failover.
 					return s.handleErrorResponse(ctx, compactResp, c, account, body, resolveOpenAIErrorSchedulingModel(billingModel, upstreamModel))
 				}
 				return nil, err

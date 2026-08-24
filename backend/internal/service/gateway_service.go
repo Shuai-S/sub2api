@@ -681,6 +681,7 @@ type UpstreamFailureKind string
 const (
 	UpstreamFailureKindCapabilityMismatch UpstreamFailureKind = "capability_mismatch"
 	UpstreamFailureKindTransport          UpstreamFailureKind = "transport"
+	UpstreamFailureKindImageGeneration    UpstreamFailureKind = "image_generation"
 )
 
 // GatewayFailureStage identifies which request stage failed. The zero value is

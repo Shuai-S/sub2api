@@ -116,11 +116,15 @@ func OpenAIImagesUpstreamErrorToFailover(err *OpenAIImagesUpstreamError) *Upstre
 	if statusCode <= 0 {
 		statusCode = http.StatusBadGateway
 	}
+	failureKind := err.FailureKind
+	if failureKind == "" {
+		failureKind = UpstreamFailureKindImageGeneration
+	}
 	failoverErr := &UpstreamFailoverError{
 		StatusCode:             statusCode,
 		ResponseBody:           openAIImagesUpstreamErrorResponseBody(err),
 		RetryableOnSameAccount: strings.TrimSpace(err.Code) == "no_image_output",
-		FailureKind:            err.FailureKind,
+		FailureKind:            failureKind,
 	}
 	if IsOpenAIImagesCapabilityMismatch(err) {
 		healthSample := false
@@ -2136,6 +2140,13 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 		shouldDisable = false
 	}
 	if strings.TrimSpace(upstreamErr.Code) == "no_image_output" {
+		return failoverErr
+	}
+	// Capability mismatches are account-local and must retain their explicit
+	// health-sample override while the caller switches accounts. Rebuilding a
+	// generic failover error here would silently lose FailureKind and HealthSample.
+	if IsOpenAIImagesCapabilityMismatch(upstreamErr) {
+		failoverErr.ResponseHeaders = headers
 		return failoverErr
 	}
 	return s.newOpenAIAccountFailoverError(
