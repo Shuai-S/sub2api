@@ -310,14 +310,30 @@ func buildOpenAIAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		load = &AccountLoadInfo{AccountID: account.ID}
 	}
 	learning, samples := adaptiveLearningState(state, account.IsOAuth(), now, settings)
-	runtimeStatus, flags, reasonCode, reason := adaptiveRuntimeState(state, account.IsActive() && account.Schedulable, load.CurrentConcurrency, now)
+	accountCallable := account.IsSchedulableAt(now)
+	runtimeState := state
+	accountRateLimited := account.RateLimitResetAt != nil && now.Before(*account.RateLimitResetAt)
+	if accountRateLimited {
+		// Account-level 429 state is a durable scheduling hard gate and may have
+		// been written by a different instance (or before adaptive state restore).
+		// Merge it into this read-only view so the panel never calls the account
+		// healthy while the real scheduler excludes it.
+		runtimeState.QuotaLimited = true
+		runtimeState.QuotaResetAt = *account.RateLimitResetAt
+		runtimeState.QuotaNextProbeAt = *account.RateLimitResetAt
+	}
+	runtimeStatus, flags, reasonCode, reason := adaptiveRuntimeState(runtimeState, accountCallable, load.CurrentConcurrency, now)
+	if accountRateLimited {
+		reasonCode = "account_rate_limited"
+		reason = ""
+	}
 	row := OpenAIAdaptiveSchedulerAccountLearningSnapshot{
 		AccountID:                 account.ID,
 		AccountName:               account.Name,
 		Platform:                  account.Platform,
 		Type:                      account.Type,
 		AccountStatus:             account.Status,
-		Schedulable:               account.IsSchedulable(),
+		Schedulable:               accountCallable,
 		ConfiguredConcurrency:     account.Concurrency,
 		EffectiveCapacity:         state.EffectiveCapacity,
 		RateMultiplier:            account.BillingRateMultiplier(),
@@ -348,9 +364,9 @@ func buildOpenAIAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		CircuitOpenCount:          state.CircuitOpenCount,
 		CapacityCooldownUntil:     timePtrIfNotZero(state.CapacityCooldownUntil),
 		CapacityRecoverySuccesses: state.CapacityRecoverySuccesses,
-		QuotaLimited:              state.QuotaLimited,
-		QuotaResetAt:              timePtrIfNotZero(state.QuotaResetAt),
-		QuotaNextProbeAt:          timePtrIfNotZero(state.QuotaNextProbeAt),
+		QuotaLimited:              runtimeState.QuotaLimited,
+		QuotaResetAt:              timePtrIfNotZero(runtimeState.QuotaResetAt),
+		QuotaNextProbeAt:          timePtrIfNotZero(runtimeState.QuotaNextProbeAt),
 	}
 	for _, flag := range flags {
 		row.RuntimeFlags = append(row.RuntimeFlags, string(flag))

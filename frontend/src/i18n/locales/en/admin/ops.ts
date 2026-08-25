@@ -214,6 +214,9 @@ export default {
         runtimeFilter: {
           all: 'All runtime states'
         },
+        reason: {
+          accountRateLimited: 'Rate limited; expected to recover at {time}'
+        },
         summary: {
           tracked: 'Tracked',
           healthy: 'Healthy',

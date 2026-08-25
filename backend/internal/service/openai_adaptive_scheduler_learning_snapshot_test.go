@@ -53,6 +53,50 @@ func TestOpenAIAdaptiveLearningSnapshotMarksOAuthNotApplicable(t *testing.T) {
 	require.True(t, snapshot.Learned)
 }
 
+func TestOpenAIAdaptiveLearningSnapshotMarksRateLimitedOAuthUnavailableUntilRecovery(t *testing.T) {
+	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
+	resetAt := now.Add(2 * time.Hour)
+	account := &Account{
+		ID:               7,
+		Name:             "rate-limited-oauth",
+		Platform:         PlatformOpenAI,
+		Type:             AccountTypeOAuth,
+		Status:           StatusActive,
+		Schedulable:      true,
+		Concurrency:      100,
+		RateLimitResetAt: &resetAt,
+	}
+	state := newAdaptiveAccountState(account.ID, account.Concurrency, now)
+
+	limited := buildOpenAIAdaptiveCoreLearningAccountSnapshot(account, *state, &AccountLoadInfo{}, now, defaultAdaptiveCoreSettings())
+
+	require.False(t, limited.Schedulable)
+	require.Equal(t, string(adaptiveLearningNotApplicable), limited.LearningStatus)
+	require.Equal(t, string(adaptiveRuntimeUnavailable), limited.RuntimeStatus)
+	require.Contains(t, limited.RuntimeFlags, string(adaptiveRuntimeUnavailable))
+	require.Contains(t, limited.RuntimeFlags, string(adaptiveRuntimeQuotaLimited))
+	require.Equal(t, "account_rate_limited", limited.RuntimeReasonCode)
+	require.True(t, limited.QuotaLimited)
+	require.NotNil(t, limited.QuotaResetAt)
+	require.Equal(t, resetAt, *limited.QuotaResetAt)
+	limitedSummary := summarizeOpenAIAdaptiveLearningRows([]OpenAIAdaptiveSchedulerAccountLearningSnapshot{limited})
+	require.Zero(t, limitedSummary.HealthyAccounts)
+	require.Equal(t, 1, limitedSummary.UnavailableAccounts)
+
+	recoveredAt := resetAt.Add(time.Second)
+	recovered := buildOpenAIAdaptiveCoreLearningAccountSnapshot(account, *state, &AccountLoadInfo{}, recoveredAt, defaultAdaptiveCoreSettings())
+
+	require.True(t, recovered.Schedulable)
+	require.Equal(t, string(adaptiveRuntimeHealthy), recovered.RuntimeStatus)
+	require.Equal(t, []string{string(adaptiveRuntimeHealthy)}, recovered.RuntimeFlags)
+	require.Empty(t, recovered.RuntimeReasonCode)
+	require.False(t, recovered.QuotaLimited)
+	require.Nil(t, recovered.QuotaResetAt)
+	recoveredSummary := summarizeOpenAIAdaptiveLearningRows([]OpenAIAdaptiveSchedulerAccountLearningSnapshot{recovered})
+	require.Equal(t, 1, recoveredSummary.HealthyAccounts)
+	require.Zero(t, recoveredSummary.UnavailableAccounts)
+}
+
 func TestFilterOpenAIAdaptiveLearningSchedulableAccountsHidesSchedulingDisabled(t *testing.T) {
 	accounts := []Account{
 		{

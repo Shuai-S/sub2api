@@ -394,6 +394,58 @@ func TestOpenAIAdaptiveSchedulerOpenCircuitExcludesCandidate(t *testing.T) {
 	require.Empty(t, order)
 }
 
+func TestOpenAIAdaptiveSchedulerExcludesAccountLevelRateLimit(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(11002)
+	resetAt := time.Now().Add(time.Hour)
+	account := Account{
+		ID:               22002,
+		Platform:         PlatformOpenAI,
+		Type:             AccountTypeOAuth,
+		Status:           StatusActive,
+		Schedulable:      true,
+		Concurrency:      100,
+		GroupIDs:         []int64{groupID},
+		RateLimitResetAt: &resetAt,
+	}
+	service := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	scheduler := newOpenAIAdaptiveTestScheduler(service)
+
+	order, candidateCount, _, err := scheduler.buildAdaptiveSelectionOrder(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, DefaultOpenAIAdaptiveSchedulerSettings())
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Contains(t, err.Error(), "not_schedulable=1")
+	require.Zero(t, candidateCount)
+	require.Empty(t, order)
+
+	recoveredAt := time.Now().Add(-time.Second)
+	account.RateLimitResetAt = &recoveredAt
+	recoveredService := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	recoveredScheduler := newOpenAIAdaptiveTestScheduler(recoveredService)
+	recoveredOrder, recoveredCandidateCount, _, recoveredErr := recoveredScheduler.buildAdaptiveSelectionOrder(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	}, DefaultOpenAIAdaptiveSchedulerSettings())
+
+	require.NoError(t, recoveredErr)
+	require.Equal(t, 1, recoveredCandidateCount)
+	require.Len(t, recoveredOrder, 1)
+	require.Equal(t, account.ID, recoveredOrder[0].account.ID)
+}
+
 func TestOpenAIAdaptiveSchedulerNoAvailableErrorReportsEmptyPool(t *testing.T) {
 	groupID := int64(11003)
 	scheduler := newOpenAIAdaptiveTestScheduler(&OpenAIGatewayService{accountRepo: schedulerTestOpenAIAccountRepo{}})

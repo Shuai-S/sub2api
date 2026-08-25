@@ -182,10 +182,17 @@ func (a *Account) EffectiveLoadFactor() int {
 }
 
 func (a *Account) IsSchedulable() bool {
+	return a.IsSchedulableAt(time.Now())
+}
+
+// IsSchedulableAt reports whether the account passes the account-level hard
+// scheduling gates at the supplied time. Keeping the clock explicit lets the
+// scheduler and operational snapshots describe the same instant, especially
+// around rate-limit and cooldown recovery boundaries.
+func (a *Account) IsSchedulableAt(now time.Time) bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false
 	}
-	now := time.Now()
 	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !now.Before(*a.ExpiresAt) {
 		return false
 	}

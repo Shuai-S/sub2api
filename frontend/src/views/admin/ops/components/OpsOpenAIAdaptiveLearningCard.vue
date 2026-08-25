@@ -298,6 +298,15 @@ function statusClass(status: string): string {
   return statusClassMap[status] || statusClassMap.unavailable
 }
 
+function runtimeReason(row: OpsOpenAIAdaptiveLearningAccount): string {
+  if (row.runtime_reason_code === 'account_rate_limited') {
+    return t('admin.ops.openaiAdaptiveLearning.reason.accountRateLimited', {
+      time: formatTime(row.quota_reset_at)
+    })
+  }
+  return row.runtime_reason || ''
+}
+
 function formatInt(v?: number | null): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return '-'
   return formatNumber(Math.round(v))
@@ -321,6 +330,10 @@ function formatScore(v?: number | null): string {
 function formatRate(v?: number | null): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return '-'
   return v.toFixed(2)
+}
+
+function callableCapacity(row: OpsOpenAIAdaptiveLearningAccount): number {
+  return row.schedulable ? row.effective_capacity : 0
 }
 
 function formatDuration(seconds?: number | null): string {
@@ -588,13 +601,13 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                       </span>
                     </template>
                   </div>
-                  <div v-if="row.runtime_reason" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="row.runtime_reason">
-                    {{ row.runtime_reason }}
+                  <div v-if="runtimeReason(row)" class="mt-1 max-w-[190px] truncate text-[11px] text-gray-500 dark:text-gray-400" :title="runtimeReason(row)">
+                    {{ runtimeReason(row) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">
-					{{ formatInt(row.effective_capacity) }}/{{ formatInt(row.configured_concurrency) }}
+						{{ formatInt(callableCapacity(row)) }}/{{ formatInt(row.configured_concurrency) }}
                   </div>
                   <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.openaiAdaptiveLearning.table.capacityHint') }}
@@ -603,7 +616,7 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                 <td class="px-3 py-2">
                   <div class="mb-1 flex items-center justify-between gap-2">
                     <span class="font-mono font-semibold text-gray-900 dark:text-white">
-                      {{ formatInt(row.current_concurrency) }}/{{ formatInt(row.effective_capacity) }}
+                      {{ formatInt(row.current_concurrency) }}/{{ formatInt(callableCapacity(row)) }}
                     </span>
                     <span class="font-semibold text-gray-600 dark:text-gray-300">{{ formatLoad(row.load_percentage) }}</span>
                   </div>
@@ -615,9 +628,12 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   </div>
                 </td>
                 <td class="px-3 py-2">
-                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatScore(row.scheduler_score) }}</div>
-                  <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ row.schedulable ? formatScore(row.scheduler_score) : '-' }}</div>
+                  <div v-if="row.schedulable" class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
                     R {{ formatScore(row.success_score) }} / C {{ formatScore(row.capacity_score) }} / T {{ formatScore(row.latency_score) }} / $ {{ formatScore(row.cost_score) }}
+                  </div>
+                  <div v-else class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    {{ statusLabel(row.runtime_status) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
@@ -636,8 +652,8 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
 				  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(row.quota_next_probe_at || row.quota_reset_at || row.last_failure_at || row.last_success_at)">
                     {{ row.cooldown_remaining_sec > 0
                       ? t('admin.ops.openaiAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
-                      : row.runtime_status === 'quota_limited'
-                        ? (row.runtime_reason || statusLabel(row.runtime_status))
+                      : row.runtime_status === 'quota_limited' || row.runtime_reason_code === 'account_rate_limited'
+                        ? (runtimeReason(row) || statusLabel(row.runtime_status))
                         : formatTime(row.last_failure_at || row.last_success_at) }}
                   </div>
                   <div v-if="row.consecutive_failure > 0 && row.runtime_status !== 'quota_limited'" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">

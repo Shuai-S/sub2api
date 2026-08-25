@@ -151,4 +151,48 @@ describe('OpsOpenAIAdaptiveLearningCard', () => {
     )
     expect(riskCard?.text()).toContain('5')
   })
+
+  it('renders an account-level rate limit as unavailable with its recovery time', async () => {
+    mockGetOpenAIAdaptiveLearning.mockResolvedValue({
+      ...sampleResponse,
+      summary: {
+        ...sampleResponse.summary,
+        healthy_accounts: 0,
+        quota_limited_accounts: 0,
+        unavailable_accounts: 1,
+      },
+      accounts: [{
+        ...sampleResponse.accounts[0],
+        type: 'oauth',
+        schedulable: false,
+        scheduler_status: 'unavailable',
+        learning_status: 'not_applicable',
+        runtime_status: 'unavailable',
+        runtime_flags: ['unavailable', 'quota_limited'],
+        runtime_reason_code: 'account_rate_limited',
+        runtime_reason: '',
+        quota_limited: true,
+        quota_reset_at: '2026-08-25T13:00:00Z',
+        quota_next_probe_at: '2026-08-25T13:00:00Z',
+      }],
+    })
+
+    const wrapper = mount(OpsOpenAIAdaptiveLearningCard, {
+      props: { refreshToken: 0 },
+      global: {
+        stubs: {
+          Select: SelectStub,
+          EmptyState: true,
+          RouterLink: defineComponent({ template: '<a><slot /></a>' }),
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.status.unavailable')
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.status.quotaLimited')
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.reason.accountRateLimited')
+    expect(wrapper.text()).not.toContain('admin.ops.openaiAdaptiveLearning.status.healthy')
+    expect(wrapper.text()).toContain('0/100')
+  })
 })

@@ -190,7 +190,7 @@ export default {
         },
         status: {
           disabled: '已关闭',
-          unavailable: '不可调度',
+          unavailable: '不可调用',
           cooldown: '冷却中',
           halfOpen: '半开探测',
           circuitHalfOpen: '熔断半开',
@@ -210,11 +210,14 @@ export default {
         runtimeFilter: {
           all: '全部运行状态'
         },
+        reason: {
+          accountRateLimited: '账号限流中，预计 {time} 恢复'
+        },
         summary: {
           tracked: '已学习账号',
           healthy: '健康',
           risk: '风险',
-          unavailable: '不可调度'
+          unavailable: '不可调用'
         },
         settings: {
           window: '学习窗口',
