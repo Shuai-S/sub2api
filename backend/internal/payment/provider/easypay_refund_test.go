@@ -301,5 +301,14 @@ func newTestEasyPay(t *testing.T, apiBase string) *EasyPay {
 	if err != nil {
 		t.Fatalf("NewEasyPay: %v", err)
 	}
+	// Keep parallel httptest servers from closing this client's connections
+	// through the process-wide DefaultTransport during server cleanup.
+	if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+		provider.httpClient = &http.Client{
+			Transport: transport.Clone(),
+			Timeout:   easypayHTTPTimeout,
+		}
+		t.Cleanup(provider.httpClient.CloseIdleConnections)
+	}
 	return provider
 }
