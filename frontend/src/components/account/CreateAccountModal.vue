@@ -6254,7 +6254,7 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
       extra
     })
 
-    appStore.showSuccess(t('admin.accounts.messages.accountCreated'))
+    appStore.showSuccess(t('admin.accounts.accountCreated'))
     emit('created')
     handleClose()
   } catch (error: any) {

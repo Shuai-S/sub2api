@@ -184,6 +184,7 @@ export default {
         empty: 'No OpenAI accounts for the current filters',
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
+        successEma: 'success EMA',
         cooldownRemaining: 'cooldown {value}',
         consecutiveFailures: 'fail streak {count}',
         totalAccounts: 'Total accounts: {total}',

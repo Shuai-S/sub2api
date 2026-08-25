@@ -180,6 +180,7 @@ export default {
         empty: '当前筛选条件下暂无 OpenAI 账号',
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
+        successEma: '成功 EMA',
         cooldownRemaining: '冷却剩余 {value}',
         consecutiveFailures: '连续失败 {count}',
         totalAccounts: '账号总数：{total}',
