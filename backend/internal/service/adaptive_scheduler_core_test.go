@@ -317,6 +317,24 @@ func TestAdaptiveHalfOpenProbeLeaseIsSingleFlight(t *testing.T) {
 	require.Equal(t, 1, winners)
 }
 
+func TestAdaptiveRequestCanClaimOnlyOneHalfOpenProbe(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.mu.Lock()
+	store.ensureLocked(1, 10, now).CircuitOpenUntil = now.Add(-2 * time.Second)
+	store.ensureLocked(2, 10, now).CircuitOpenUntil = now.Add(-time.Second)
+	store.mu.Unlock()
+
+	require.True(t, store.claimHealthProbe(1, "one-probe-request", 10, now, settings))
+	store.releaseHealthProbe(1, "one-probe-request", now)
+	require.False(t, store.claimHealthProbe(2, "one-probe-request", 10, now, settings))
+	require.True(t, store.claimHealthProbe(2, "next-request", 10, now, settings))
+
+	// Healthy accounts remain eligible when the request's half-open budget is spent.
+	require.True(t, store.claimHealthProbe(3, "one-probe-request", 10, now, settings))
+}
+
 func TestAdaptiveInconclusiveHalfOpenProbeSchedulesShortRetry(t *testing.T) {
 	now := time.Now()
 	settings := defaultAdaptiveCoreSettings()

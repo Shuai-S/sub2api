@@ -235,18 +235,21 @@ type adaptiveAccountState struct {
 }
 
 type adaptiveStateStore struct {
-	mu                   sync.RWMutex
-	accounts             map[int64]*adaptiveAccountState
-	failureClaims        map[string]time.Time
+	mu            sync.RWMutex
+	accounts      map[int64]*adaptiveAccountState
+	failureClaims map[string]time.Time
+	// Kept after an account lease is released so failover cannot spend the same request on another half-open account.
+	healthProbeClaims    map[string]time.Time
 	admissions           map[string]adaptiveAdmission
 	lastTransientCleanup time.Time
 }
 
 func newAdaptiveStateStore() *adaptiveStateStore {
 	return &adaptiveStateStore{
-		accounts:      make(map[int64]*adaptiveAccountState),
-		failureClaims: make(map[string]time.Time),
-		admissions:    make(map[string]adaptiveAdmission),
+		accounts:          make(map[int64]*adaptiveAccountState),
+		failureClaims:     make(map[string]time.Time),
+		healthProbeClaims: make(map[string]time.Time),
+		admissions:        make(map[string]adaptiveAdmission),
 	}
 }
 
@@ -514,6 +517,13 @@ func (s *adaptiveStateStore) claimHealthProbe(accountID int64, requestID string,
 	}
 	if state.CircuitOpenUntil.After(now) || state.HealthProbeInFlight {
 		return false
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID != "" {
+		if _, claimed := s.healthProbeClaims[requestID]; claimed {
+			return false
+		}
+		s.healthProbeClaims[requestID] = now
 	}
 	state.HealthProbeInFlight = true
 	state.HealthProbeUntil = now.Add(settings.HealthProbeLease)
@@ -857,6 +867,11 @@ func (s *adaptiveStateStore) cleanupTransientsLocked(now time.Time, settings ada
 	for key, claimedAt := range s.failureClaims {
 		if now.Sub(claimedAt) > retention {
 			delete(s.failureClaims, key)
+		}
+	}
+	for requestID, claimedAt := range s.healthProbeClaims {
+		if now.Sub(claimedAt) > retention {
+			delete(s.healthProbeClaims, requestID)
 		}
 	}
 	for key, admission := range s.admissions {
