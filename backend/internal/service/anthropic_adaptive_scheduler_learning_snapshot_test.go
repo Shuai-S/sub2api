@@ -86,3 +86,15 @@ func TestFilterAnthropicAdaptiveLearningSchedulableAccounts(t *testing.T) {
 	got := filterAnthropicAdaptiveLearningSchedulableAccounts(accounts)
 	require.Equal(t, []int64{2, 3}, []int64{got[0].ID, got[1].ID})
 }
+
+func TestAnthropicAdaptiveLearningLastEventIncludesRecoveryTimes(t *testing.T) {
+	lastSuccess := time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC)
+	quotaProbe := lastSuccess.Add(time.Hour)
+
+	got := anthropicAdaptiveLearningLastEventTime(AnthropicAdaptiveSchedulerAccountLearningSnapshot{
+		LastSuccessAt:    &lastSuccess,
+		QuotaNextProbeAt: &quotaProbe,
+	})
+
+	require.Equal(t, quotaProbe, got)
+}

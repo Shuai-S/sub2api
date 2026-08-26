@@ -387,6 +387,21 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 }
 
+func (s *OpenAIGatewayService) RecoverAccountSchedulingHealth(ctx context.Context, accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	s.ClearAccountSchedulingBlock(accountID)
+	if s.openaiAdaptiveCore == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	settings := openAIAdaptiveCoreSettings(s.openAIAdaptiveSchedulerSettings(ctx))
+	s.openaiAdaptiveCore.recoverHealth(accountID, time.Now(), settings)
+}
+
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
 	if s == nil || !isOpenAIAccount(account) {
 		return false

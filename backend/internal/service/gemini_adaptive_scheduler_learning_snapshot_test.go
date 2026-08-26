@@ -87,3 +87,15 @@ func TestFilterGeminiAdaptiveLearningSchedulableAccounts(t *testing.T) {
 	got := filterGeminiAdaptiveLearningSchedulableAccounts(accounts)
 	require.Equal(t, []int64{2, 3}, []int64{got[0].ID, got[1].ID})
 }
+
+func TestGeminiAdaptiveLearningLastEventIncludesQuotaReset(t *testing.T) {
+	lastSuccess := time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC)
+	quotaReset := lastSuccess.Add(time.Hour)
+
+	got := geminiAdaptiveLearningLastEventTime(GeminiAdaptiveSchedulerAccountLearningSnapshot{
+		LastSuccessAt: &lastSuccess,
+		QuotaResetAt:  &quotaReset,
+	})
+
+	require.Equal(t, quotaReset, got)
+}

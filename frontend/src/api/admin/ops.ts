@@ -398,6 +398,7 @@ export type OpsOpenAIAdaptiveLearningSortBy =
   | 'score'
   | 'samples'
   | 'error'
+  | 'latency'
   | 'last_event'
 
 export type OpsOpenAIAdaptiveLearningSortOrder = 'asc' | 'desc'

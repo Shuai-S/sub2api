@@ -545,7 +545,7 @@ func compareGeminiAdaptiveLearningRows(left, right GeminiAdaptiveSchedulerAccoun
 }
 
 func geminiAdaptiveLearningLastEventTime(row GeminiAdaptiveSchedulerAccountLearningSnapshot) time.Time {
-	values := []*time.Time{row.LastSuccessAt, row.LastFailureAt, row.CooldownUntil, row.CapacityCooldownUntil, row.QuotaNextProbeAt}
+	values := []*time.Time{row.LastSuccessAt, row.LastFailureAt, row.CooldownUntil, row.CapacityCooldownUntil, row.QuotaResetAt, row.QuotaNextProbeAt}
 	latest := time.Time{}
 	for _, value := range values {
 		if value != nil && value.After(latest) {

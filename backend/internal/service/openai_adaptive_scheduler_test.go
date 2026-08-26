@@ -394,6 +394,100 @@ func TestOpenAIAdaptiveSchedulerOpenCircuitExcludesCandidate(t *testing.T) {
 	require.Empty(t, order)
 }
 
+func TestOpenAIAdaptiveSchedulerDueProbePreemptsStickyAndRecovers(t *testing.T) {
+	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
+
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	cfg.OpenAIAdaptiveSchedulerEnabled = true
+	cfg.OpenAIAdaptiveSchedulerMode = openAIAdaptiveSchedulerModeEnforce
+	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano()})
+
+	groupID := int64(11008)
+	sticky := Account{ID: 22020, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Concurrency: 10, GroupIDs: []int64{groupID}}
+	halfOpen := Account{ID: 22021, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 10, GroupIDs: []int64{groupID}}
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:sticky": sticky.ID}}
+	acquiredIDs := make([]int64, 0, 1)
+	service := &OpenAIGatewayService{
+		cache:              cache,
+		accountRepo:        schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{sticky, halfOpen}}},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{acquiredIDs: &acquiredIDs}),
+	}
+	scheduler := newOpenAIAdaptiveTestScheduler(service)
+	scheduler.core.mu.Lock()
+	halfOpenState := scheduler.core.ensureLocked(halfOpen.ID, halfOpen.Concurrency, time.Now())
+	halfOpenState.CircuitOpenUntil = time.Now().Add(-time.Minute)
+	halfOpenState.CircuitOpenCount = 3
+	halfOpenState.ConsecutiveFailures = 20
+	scheduler.core.mu.Unlock()
+	ctx := context.WithValue(context.Background(), ctxkey.RequestID, "half-open-probe")
+	guardSelection, _, guardErr := scheduler.selectDueHealthProbe(ctx, OpenAIAccountScheduleRequest{
+		GroupID:                 &groupID,
+		Platform:                PlatformOpenAI,
+		GuardianParentAccountID: sticky.ID,
+		RequestedModel:          "gpt-5.1",
+		RequiredTransport:       OpenAIUpstreamTransportAny,
+	}, cfg)
+	require.NoError(t, guardErr)
+	require.Nil(t, guardSelection)
+
+	selection, decision, err := scheduler.Select(ctx, OpenAIAccountScheduleRequest{
+		GroupID:           &groupID,
+		Platform:          PlatformOpenAI,
+		SessionHash:       "sticky",
+		RequestedModel:    "gpt-5.1",
+		RequiredTransport: OpenAIUpstreamTransportAny,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, halfOpen.ID, selection.Account.ID)
+	require.Equal(t, []int64{halfOpen.ID}, acquiredIDs)
+	require.Equal(t, "half_open_probe_in_flight", adaptiveDiagnosticCircuitStatus(scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg)), time.Now()))
+	require.Equal(t, openAIAccountScheduleLayerAdaptive, decision.Layer)
+	require.False(t, decision.StickySessionHit)
+	require.Equal(t, sticky.ID, cache.sessionBindings["openai:sticky"])
+
+	selection.ReleaseFunc()
+	stateAfterRelease := scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg))
+	require.True(t, stateAfterRelease.HealthProbeInFlight)
+
+	scheduler.ReportScheduleResultWithContext(ctx, OpenAIAccountScheduleReport{
+		AccountID:      halfOpen.ID,
+		Success:        true,
+		HealthSample:   true,
+		TerminalReason: "success_no_result",
+	})
+	recovered := scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg))
+	require.True(t, recovered.CircuitOpenUntil.IsZero())
+	require.Zero(t, recovered.CircuitOpenCount)
+	require.Zero(t, recovered.ConsecutiveFailures)
+	require.False(t, recovered.HealthProbeInFlight)
+	require.Equal(t, sticky.ID, cache.sessionBindings["openai:sticky"])
+}
+
+func TestOpenAIAccountSuccessfulTestClosesAdaptiveCircuit(t *testing.T) {
+	account := &Account{ID: 22022, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 10}
+	core := newAdaptiveStateStore()
+	service := &OpenAIGatewayService{openaiAdaptiveCore: core}
+	service.BlockAccountScheduling(account, time.Now().Add(time.Minute), "account_health_failure")
+	core.mu.Lock()
+	state := core.ensureLocked(account.ID, account.Concurrency, time.Now())
+	state.CircuitOpenUntil = time.Now().Add(10 * time.Minute)
+	state.CircuitOpenCount = 5
+	state.ConsecutiveFailures = 12
+	core.mu.Unlock()
+
+	service.RecoverAccountSchedulingHealth(context.Background(), account.ID)
+
+	recovered := core.snapshot(account.ID, account.Concurrency, time.Now(), defaultAdaptiveCoreSettings())
+	require.True(t, recovered.CircuitOpenUntil.IsZero())
+	require.Zero(t, recovered.CircuitOpenCount)
+	require.Zero(t, recovered.ConsecutiveFailures)
+	require.Equal(t, "successful_account_test", recovered.LastReasonCode)
+	require.False(t, service.isOpenAIAccountRuntimeBlocked(account))
+}
+
 func TestOpenAIAdaptiveSchedulerExcludesAccountLevelRateLimit(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(11002)

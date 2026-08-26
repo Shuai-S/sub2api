@@ -339,8 +339,15 @@ function formatTime(value?: string | null): string {
 }
 
 function latestEvent(row: OpsGeminiAdaptiveLearningAccount): string | undefined {
-  return [row.last_success_at, row.last_failure_at, row.capacity_cooldown_until, row.quota_next_probe_at]
-    .filter((value): value is string => Boolean(value))
+  return [
+    row.last_success_at,
+    row.last_failure_at,
+    row.cooldown_until,
+    row.capacity_cooldown_until,
+    row.quota_reset_at,
+    row.quota_next_probe_at
+  ]
+    .filter((value): value is string => typeof value === 'string' && !value.startsWith('0001-01-01'))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
 }
 
@@ -490,14 +497,14 @@ function onNextPage() {
 
       <div v-else class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700">
         <div class="max-h-[500px] overflow-auto">
-          <table class="min-w-[1280px] text-left text-xs">
+          <table class="min-w-[1440px] text-left text-xs">
             <thead class="sticky top-0 z-10 bg-white dark:bg-dark-800">
               <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-gray-400">
                 <th
                   v-for="column in ([
                     ['account', 'account'], ['status', 'status'], ['capacity', 'capacity'],
                     ['load', 'load'], ['score', 'score'], ['samples', 'samples'],
-                    ['latency', 'latency'], ['last_event', 'lastEvent']
+                    ['error', 'error'], ['latency', 'latency'], ['last_event', 'lastEvent']
                   ] as const)"
                   :key="column[0]"
                   class="px-3 py-2 font-semibold"
@@ -579,13 +586,19 @@ function onNextPage() {
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.geminiAdaptiveLearning.successEma') }} {{ formatPercent(row.path_success_ema, 1) }}
                   </div>
-				  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
-					{{ t('admin.ops.geminiAdaptiveLearning.failureStreaks', { count: row.consecutive_failure }) }}
+                </td>
+                <td class="px-3 py-2">
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatPercent(1 - row.path_success_ema, 1) }}</div>
+                  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+                    {{ t('admin.ops.geminiAdaptiveLearning.failureStreaks', { count: row.consecutive_failure }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
                     {{ formatLatency(row.ttft_ema) }}
+                  </div>
+                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
+                    {{ t('admin.ops.geminiAdaptiveLearning.ttftSamples', { count: formatInt(row.ttft_samples) }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">

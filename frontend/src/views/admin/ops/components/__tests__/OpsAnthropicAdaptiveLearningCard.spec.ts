@@ -193,8 +193,22 @@ describe('OpsAnthropicAdaptiveLearningCard', () => {
     )
     expect(wrapper.text()).toContain('Claude primary')
     expect(wrapper.text()).toContain('admin.ops.anthropicAdaptiveLearning.rateMultiplier {"value":"0.80"}')
+    expect(wrapper.text()).toContain('admin.ops.anthropicAdaptiveLearning.table.error')
+    expect(wrapper.text()).toContain('5.0%')
     expect(wrapper.text()).toContain('180ms')
+    expect(wrapper.text()).toContain('admin.ops.anthropicAdaptiveLearning.ttftSamples {"count":"12"}')
     expect(wrapper.text()).toContain('R 95 / C 63 / T 70 / $ 50')
+
+    const errorButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('admin.ops.anthropicAdaptiveLearning.table.error')
+    )
+    expect(errorButton).toBeDefined()
+    await errorButton?.trigger('click')
+    await flushPromises()
+
+    expect(mockGetAnthropicAdaptiveLearning).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'error', sort_order: 'desc' })
+    )
   })
 
   it('does not request data when another platform is selected', async () => {

@@ -413,10 +413,10 @@ func anthropicAdaptiveDiagnosticCandidates(
 }
 
 func adaptiveDiagnosticCircuitStatus(state adaptiveAccountState, now time.Time) string {
+	if !state.CircuitOpenUntil.IsZero() && state.HealthProbeInFlight && state.HealthProbeUntil.After(now) {
+		return "half_open_probe_in_flight"
+	}
 	if state.CircuitOpenUntil.After(now) {
-		if state.HealthProbeInFlight && state.HealthProbeUntil.After(now) {
-			return "half_open_probe_in_flight"
-		}
 		return "open"
 	}
 	if !state.CircuitOpenUntil.IsZero() {

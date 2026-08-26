@@ -181,6 +181,7 @@ export default {
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
         successEma: '成功 EMA',
+        ttftSamples: '首字样本 {count}',
         cooldownRemaining: '冷却剩余 {value}',
         consecutiveFailures: '连续失败 {count}',
         totalAccounts: '账号总数：{total}',
@@ -235,8 +236,9 @@ export default {
           capacityHint: '有效/配置',
           load: '负载',
           score: '当前分值',
-          samples: '样本',
-          error: '错误',
+          samples: '样本与 EMA',
+          error: '错误率',
+          latency: '首字延迟',
           lastEvent: '最近事件'
         }
       },
@@ -252,6 +254,7 @@ export default {
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
         successEma: '成功 EMA',
+        ttftSamples: '首字样本 {count}',
         failureStreaks: '连续失败 {count}',
         cooldownRemaining: '冷却剩余 {value}',
         totalAccounts: '账号总数：{total}',
@@ -302,7 +305,8 @@ export default {
           capacityHint: '有效/配置',
           load: '负载',
           score: '当前分值',
-          samples: '样本',
+          samples: '样本与 EMA',
+          error: '错误率',
           latency: '首字延迟',
           lastEvent: '最近事件'
         }
@@ -319,6 +323,7 @@ export default {
         rateMultiplier: '倍率 {value}',
         queued: '排队 {count}',
         successEma: '成功 EMA',
+        ttftSamples: '首字样本 {count}',
         failureStreaks: '连续失败 {count}',
         cooldownRemaining: '冷却剩余 {value}',
         totalAccounts: '账号总数：{total}',
@@ -391,7 +396,8 @@ export default {
           score: '六维分值',
           quota: '配额节奏',
           samples: '样本与 EMA',
-          latency: '首包/总延迟',
+          error: '错误率',
+          latency: '首字延迟',
           lastEvent: '最近事件'
         }
       },

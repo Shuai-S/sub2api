@@ -72,6 +72,15 @@ type recoverTokenInvalidatorStub struct {
 	err      error
 }
 
+type successfulTestHealthRecoveryRecorder struct {
+	runtimeBlockRecorder
+	recoveredIDs []int64
+}
+
+func (r *successfulTestHealthRecoveryRecorder) RecoverAccountSchedulingHealth(_ context.Context, accountID int64) {
+	r.recoveredIDs = append(r.recoveredIDs, accountID)
+}
+
 func (c *tempUnschedCacheRecorder) SetTempUnsched(ctx context.Context, accountID int64, state *TempUnschedState) error {
 	return nil
 }
@@ -264,6 +273,23 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 	require.Equal(t, 0, repo.clearModelRateLimitCalls)
 	require.Equal(t, 0, repo.clearTempUnschedCalls)
 	require.Empty(t, cache.deletedIDs)
+}
+
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NotifiesAdaptiveHealthRecovery(t *testing.T) {
+	repo := &rateLimitClearRepoStub{
+		getByIDAccount: &Account{ID: 8, Status: StatusActive, Schedulable: true, Extra: map[string]any{}},
+	}
+	blocker := &successfulTestHealthRecoveryRecorder{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc.SetAccountRuntimeBlocker(blocker)
+
+	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 8)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.ClearedError)
+	require.False(t, result.ClearedRateLimit)
+	require.Equal(t, []int64{8}, blocker.recoveredIDs)
 }
 
 func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearErrorFailed(t *testing.T) {

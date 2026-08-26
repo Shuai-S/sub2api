@@ -322,6 +322,12 @@ function formatLoad(v?: number | null): string {
   return `${v.toFixed(v >= 10 ? 0 : 1)}%`
 }
 
+function formatLatency(v?: number | null): string {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return '-'
+  if (v < 1000) return `${Math.round(v)}ms`
+  return `${(v / 1000).toFixed(v < 10000 ? 1 : 0)}s`
+}
+
 function formatScore(v?: number | null): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return '-'
   return `${Math.round(v * 100)}`
@@ -347,10 +353,23 @@ function formatDuration(seconds?: number | null): string {
 }
 
 function formatTime(value?: string | null): string {
-  if (!value) return '-'
+  if (!value || value.startsWith('0001-01-01')) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleString()
+}
+
+function latestEvent(row: OpsOpenAIAdaptiveLearningAccount): string | undefined {
+  return [
+    row.last_success_at,
+    row.last_failure_at,
+    row.cooldown_until,
+    row.capacity_cooldown_until,
+    row.quota_reset_at,
+    row.quota_next_probe_at
+  ]
+    .filter((value): value is string => typeof value === 'string' && !value.startsWith('0001-01-01'))
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
 }
 
 function loadBarStyle(row: OpsOpenAIAdaptiveLearningAccount): string {
@@ -385,7 +404,7 @@ function setSort(nextSortBy: OpsOpenAIAdaptiveLearningSortBy) {
 }
 
 function defaultSortOrder(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): OpsOpenAIAdaptiveLearningSortOrder {
-  return nextSortBy === 'account' ? 'asc' : 'desc'
+  return nextSortBy === 'account' || nextSortBy === 'latency' ? 'asc' : 'desc'
 }
 
 function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
@@ -519,7 +538,7 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
 
       <div v-else class="overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
         <div class="max-h-[460px] overflow-auto">
-          <table class="min-w-full text-left text-xs">
+          <table class="min-w-[1280px] text-left text-xs">
             <thead class="sticky top-0 z-10 bg-white dark:bg-dark-800">
               <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-gray-400">
                 <th class="px-3 py-2 font-semibold">
@@ -562,6 +581,12 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('error')">
                     {{ t('admin.ops.openaiAdaptiveLearning.table.error') }}
                     <span class="w-3 text-[10px]">{{ sortIndicator('error') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('latency')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.latency') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('latency') }}</span>
                   </button>
                 </th>
                 <th class="px-3 py-2 font-semibold">
@@ -643,21 +668,26 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   </div>
                 </td>
                 <td class="px-3 py-2">
-				  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatPercent(1 - row.success_ema, 1) }}</div>
-				  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-					{{ t('admin.ops.openaiAdaptiveLearning.consecutiveFailures', { count: row.consecutive_failure }) }}
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatPercent(1 - row.success_ema, 1) }}</div>
+                  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+                    {{ t('admin.ops.openaiAdaptiveLearning.consecutiveFailures', { count: row.consecutive_failure }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
-				  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(row.quota_next_probe_at || row.quota_reset_at || row.last_failure_at || row.last_success_at)">
+                  <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
+                    {{ formatLatency(row.ttft_ema) }}
+                  </div>
+                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
+                    {{ t('admin.ops.openaiAdaptiveLearning.ttftSamples', { count: formatInt(row.ttft_samples) }) }}
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <div class="text-[11px] text-gray-700 dark:text-gray-300" :title="formatTime(latestEvent(row))">
                     {{ row.cooldown_remaining_sec > 0
                       ? t('admin.ops.openaiAdaptiveLearning.cooldownRemaining', { value: formatDuration(row.cooldown_remaining_sec) })
                       : row.runtime_status === 'quota_limited' || row.runtime_reason_code === 'account_rate_limited'
                         ? (runtimeReason(row) || statusLabel(row.runtime_status))
-                        : formatTime(row.last_failure_at || row.last_success_at) }}
-                  </div>
-                  <div v-if="row.consecutive_failure > 0 && row.runtime_status !== 'quota_limited'" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
-                    {{ t('admin.ops.openaiAdaptiveLearning.consecutiveFailures', { count: row.consecutive_failure }) }}
+                        : formatTime(latestEvent(row)) }}
                   </div>
                 </td>
               </tr>

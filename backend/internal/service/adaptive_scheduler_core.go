@@ -347,6 +347,66 @@ func (s *adaptiveStateStore) effectiveCapacity(accountID int64, configuredCapaci
 	return s.snapshot(accountID, configuredCapacity, now, settings).EffectiveCapacity
 }
 
+func (s *adaptiveStateStore) dueHealthProbeAccountIDs(now time.Time, settings adaptiveCoreSettings) []int64 {
+	if s == nil {
+		return nil
+	}
+	settings = normalizeAdaptiveCoreSettings(settings)
+	type dueProbe struct {
+		accountID int64
+		dueAt     time.Time
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupTransientsLocked(now, settings)
+	due := make([]dueProbe, 0)
+	for accountID, state := range s.accounts {
+		if s.refreshLocked(state, now, settings) {
+			touchAdaptiveState(state, now)
+		}
+		if state.CircuitOpenUntil.IsZero() || state.CircuitOpenUntil.After(now) || state.HealthProbeInFlight {
+			continue
+		}
+		due = append(due, dueProbe{accountID: accountID, dueAt: state.CircuitOpenUntil})
+	}
+	sort.Slice(due, func(i, j int) bool {
+		if !due[i].dueAt.Equal(due[j].dueAt) {
+			return due[i].dueAt.Before(due[j].dueAt)
+		}
+		return due[i].accountID < due[j].accountID
+	})
+	ids := make([]int64, 0, len(due))
+	for _, probe := range due {
+		ids = append(ids, probe.accountID)
+	}
+	return ids
+}
+
+func (s *adaptiveStateStore) recoverHealth(accountID int64, now time.Time, settings adaptiveCoreSettings) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	settings = normalizeAdaptiveCoreSettings(settings)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.accounts[accountID]
+	if state == nil {
+		return false
+	}
+	wasOpen := !state.CircuitOpenUntil.IsZero()
+	s.observeHealthLocked(state, true, adaptiveObservation{
+		AccountID:   accountID,
+		HealthProbe: true,
+		ReasonCode:  "successful_account_test",
+	}, now, settings)
+	state.LastObservationType = adaptiveObservationHealthSuccess
+	state.LastReasonCode = "successful_account_test"
+	state.LastReason = ""
+	touchAdaptiveState(state, now)
+	return wasOpen
+}
+
 func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
 	changed := pruneAdaptiveHealthWindow(state, now, settings)
 	if !state.CapacityCooldownUntil.IsZero() && !state.CapacityCooldownUntil.After(now) && state.EffectiveCapacity < state.ConfiguredCapacity && !state.CapacityHalfOpen {
@@ -356,6 +416,7 @@ func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time
 	}
 	if state.HealthProbeInFlight && !state.HealthProbeUntil.After(now) {
 		state.HealthProbeInFlight = false
+		state.HealthProbeUntil = time.Time{}
 		state.HealthProbeOwner = ""
 		changed = true
 	}
@@ -610,7 +671,9 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 			state.QuotaNextProbeAt = now.Add(settings.QuotaProbeInterval)
 		}
 	case adaptiveObservationProviderOverload, adaptiveObservationIgnored:
-		// Provider-wide and request-local failures are diagnostic only.
+		// Provider-wide and request-local failures do not count against account
+		// health, but an inconclusive half-open probe must still advance the state.
+		s.deferInconclusiveHealthProbeLocked(state, observation, now, settings)
 	}
 	touchAdaptiveState(state, now)
 	return capacityIncreased, capacityDecreased
@@ -644,11 +707,11 @@ func (s *adaptiveStateStore) claimFailureLocked(accountID int64, requestID strin
 func (s *adaptiveStateStore) observeHealthLocked(state *adaptiveAccountState, success bool, observation adaptiveObservation, now time.Time, settings adaptiveCoreSettings) {
 	state.HealthObservations = append(state.HealthObservations, adaptiveHealthObservation{At: now, Success: success})
 	state.SuccessEMA = settings.SuccessEMAAlpha*boolFloat(success) + (1-settings.SuccessEMAAlpha)*state.SuccessEMA
-	probeMatches := observation.HealthProbe || (state.HealthProbeInFlight && (state.HealthProbeOwner == "" || observation.RequestID == "" || state.HealthProbeOwner == observation.RequestID))
+	probeMatches := adaptiveHealthProbeMatches(state, observation)
 	if success {
 		state.ConsecutiveFailures = 0
 		state.LastSuccessAt = now
-		if state.CircuitOpenUntil.IsZero() || probeMatches {
+		if state.CircuitOpenUntil.IsZero() || !state.CircuitOpenUntil.After(now) || probeMatches {
 			state.CircuitOpenUntil = time.Time{}
 			state.CircuitOpenCount = 0
 			state.HealthProbeInFlight = false
@@ -687,6 +750,21 @@ func (s *adaptiveStateStore) observeHealthLocked(state *adaptiveAccountState, su
 		}
 	}
 	pruneAdaptiveHealthWindow(state, now, settings)
+}
+
+func adaptiveHealthProbeMatches(state *adaptiveAccountState, observation adaptiveObservation) bool {
+	return observation.HealthProbe || (state.HealthProbeInFlight &&
+		(state.HealthProbeOwner == "" || observation.RequestID == "" || state.HealthProbeOwner == observation.RequestID))
+}
+
+func (s *adaptiveStateStore) deferInconclusiveHealthProbeLocked(state *adaptiveAccountState, observation adaptiveObservation, now time.Time, settings adaptiveCoreSettings) {
+	if state == nil || state.CircuitOpenUntil.IsZero() || state.CircuitOpenUntil.After(now) || !adaptiveHealthProbeMatches(state, observation) {
+		return
+	}
+	state.CircuitOpenUntil = now.Add(settings.HealthProbeLease)
+	state.HealthProbeInFlight = false
+	state.HealthProbeUntil = time.Time{}
+	state.HealthProbeOwner = ""
 }
 
 func adaptiveCircuitCooldown(openCount int, settings adaptiveCoreSettings) time.Duration {
@@ -955,16 +1033,11 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 		minimumCost = 1
 	}
 	sort.Float64s(ttfts)
-	ttftEnabled := len(ttfts) >= 2
-	medianTTFT := 0.0
 	minTTFT, maxTTFT := 0.0, 0.0
-	if ttftEnabled {
-		medianTTFT = ttfts[len(ttfts)/2]
-		if len(ttfts)%2 == 0 {
-			medianTTFT = (ttfts[len(ttfts)/2-1] + medianTTFT) / 2
-		}
+	if len(ttfts) >= 2 {
 		minTTFT, maxTTFT = ttfts[0], ttfts[len(ttfts)-1]
 	}
+	ttftEnabled := len(ttfts) >= 2 && maxTTFT > minTTFT
 	weightSum := settings.WeightReliability + settings.WeightCapacity + settings.WeightCost
 	if ttftEnabled {
 		weightSum += settings.WeightTTFT
@@ -991,11 +1064,12 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 			candidate.CostScore = clamp01(minimumCost / candidate.Cost)
 		}
 		if ttftEnabled {
-			ttft := candidate.State.TTFTEMA
-			if candidate.State.TTFTSamples == 0 || ttft <= 0 {
-				ttft = medianTTFT
+			candidate.TTFTScore = 0.5
+			if candidate.State.TTFTSamples > 0 && candidate.State.TTFTEMA > 0 {
+				rawTTFTScore := 1 - normalizeAdaptiveValue(candidate.State.TTFTEMA, minTTFT, maxTTFT, 0.5)
+				ttftConfidence := math.Min(1, float64(candidate.State.TTFTSamples)/float64(settings.LearningMinHealthSamples))
+				candidate.TTFTScore = 0.5 + ttftConfidence*(rawTTFTScore-0.5)
 			}
-			candidate.TTFTScore = 1 - normalizeAdaptiveValue(ttft, minTTFT, maxTTFT, 0.5)
 		}
 		candidate.Score = (settings.WeightReliability*candidate.ReliabilityScore +
 			settings.WeightCapacity*candidate.CapacityScore +
@@ -1104,7 +1178,7 @@ func scoreSoftmaxAdaptiveOrder(candidates []adaptiveScoreCandidate, settings ada
 
 func classifyAdaptiveTerminalReason(success bool, terminalReason string) (adaptiveObservationType, bool) {
 	reason := strings.ToLower(strings.TrimSpace(terminalReason))
-	if success && (reason == "success" || reason == "legacy_result") {
+	if success && (reason == "success" || reason == "success_no_result" || reason == "legacy_result") {
 		return adaptiveObservationHealthSuccess, false
 	}
 	switch reason {

@@ -646,6 +646,9 @@ func anthropicAdaptiveLearningLastEventTime(row AnthropicAdaptiveSchedulerAccoun
 		row.LastSuccessAt,
 		row.LastFailureAt,
 		row.CooldownUntil,
+		row.CapacityCooldownUntil,
+		row.QuotaResetAt,
+		row.QuotaNextProbeAt,
 	} {
 		if candidate != nil && candidate.After(latest) {
 			latest = *candidate

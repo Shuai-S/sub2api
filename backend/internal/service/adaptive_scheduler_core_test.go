@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,26 @@ func TestAdaptiveScoreUsesDynamicCandidateLayerCost(t *testing.T) {
 	require.InDelta(t, 0.6, scored[1].CostScore, 1e-9)
 	require.InDelta(t, 1.0, scored[0].Score, 1e-9)
 	require.InDelta(t, 0.6, scored[1].Score, 1e-9)
+}
+
+func TestAdaptiveScoreCalculatesCostWithinPriorityLayer(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 0
+	settings.WeightTTFT = 0
+	settings.WeightCost = 1
+	candidates := []adaptiveScoreCandidate{
+		{AccountID: 1, OAuth: true, Cost: 0.05, State: *newAdaptiveAccountState(1, 10, now)},
+		{AccountID: 2, Cost: 0.20, State: *newAdaptiveAccountState(2, 10, now)},
+		{AccountID: 3, Cost: 0.40, State: *newAdaptiveAccountState(3, 10, now)},
+	}
+
+	scored := scoreAdaptiveCandidates(candidates, now, settings)
+
+	require.InDelta(t, 1.0, scored[0].CostScore, 1e-9)
+	require.InDelta(t, 1.0, scored[1].CostScore, 1e-9)
+	require.InDelta(t, 0.5, scored[2].CostScore, 1e-9)
 }
 
 func TestAdaptiveOrderKeepsOAuthAsTheOnlyHardPriorityLayer(t *testing.T) {
@@ -61,6 +82,84 @@ func TestAdaptiveScoreRedistributesTTFTWeightWithoutComparableSamples(t *testing
 	require.Zero(t, scored[0].TTFTScore)
 	expected := (0.50*0.5 + 0.20 + 0.15) / (0.50 + 0.20 + 0.15)
 	require.InDelta(t, expected, scored[0].Score, 1e-9)
+}
+
+func TestAdaptiveScoreRedistributesTTFTWeightWithOnlyOneValidCandidate(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 1
+	settings.WeightCost = 0
+	settings.WeightTTFT = 1
+	withTTFT := newAdaptiveAccountState(1, 10, now)
+	withTTFT.TTFTEMA = 100
+	withTTFT.TTFTSamples = 10
+	withoutTTFT := newAdaptiveAccountState(2, 10, now)
+
+	scored := scoreAdaptiveCandidates([]adaptiveScoreCandidate{
+		{AccountID: 1, Cost: 1, State: *withTTFT},
+		{AccountID: 2, Cost: 1, State: *withoutTTFT},
+	}, now, settings)
+
+	require.Zero(t, scored[0].TTFTScore)
+	require.Zero(t, scored[1].TTFTScore)
+	require.InDelta(t, 1.0, scored[0].Score, 1e-9)
+	require.InDelta(t, 1.0, scored[1].Score, 1e-9)
+}
+
+func TestAdaptiveScoreRedistributesTTFTWeightWithoutCandidateSpread(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 1
+	settings.WeightCost = 0
+	settings.WeightTTFT = 1
+	first := newAdaptiveAccountState(1, 10, now)
+	first.TTFTEMA = 200
+	first.TTFTSamples = 10
+	second := newAdaptiveAccountState(2, 10, now)
+	second.TTFTEMA = 200
+	second.TTFTSamples = 20
+
+	scored := scoreAdaptiveCandidates([]adaptiveScoreCandidate{
+		{AccountID: 1, Cost: 1, State: *first},
+		{AccountID: 2, Cost: 1, State: *second},
+	}, now, settings)
+
+	require.Zero(t, scored[0].TTFTScore)
+	require.Zero(t, scored[1].TTFTScore)
+	require.InDelta(t, 1.0, scored[0].Score, 1e-9)
+	require.InDelta(t, 1.0, scored[1].Score, 1e-9)
+}
+
+func TestAdaptiveScoreUsesNeutralTTFTForMissingSamplesAndConfidenceForSparseSamples(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 0
+	settings.WeightCost = 0
+	settings.WeightTTFT = 1
+	fastSparse := newAdaptiveAccountState(1, 10, now)
+	fastSparse.TTFTEMA = 100
+	fastSparse.TTFTSamples = 1
+	slowLearned := newAdaptiveAccountState(2, 10, now)
+	slowLearned.TTFTEMA = 300
+	slowLearned.TTFTSamples = int64(settings.LearningMinHealthSamples)
+	missing := newAdaptiveAccountState(3, 10, now)
+
+	scored := scoreAdaptiveCandidates([]adaptiveScoreCandidate{
+		{AccountID: 1, Cost: 1, State: *fastSparse},
+		{AccountID: 2, Cost: 1, State: *slowLearned},
+		{AccountID: 3, Cost: 1, State: *missing},
+	}, now, settings)
+
+	expectedSparseScore := 0.5 + 0.5/float64(settings.LearningMinHealthSamples)
+	require.InDelta(t, expectedSparseScore, scored[0].TTFTScore, 1e-9)
+	require.Zero(t, scored[1].TTFTScore)
+	require.InDelta(t, 0.5, scored[2].TTFTScore, 1e-9)
+	require.InDelta(t, expectedSparseScore, scored[0].Score, 1e-9)
+	require.Zero(t, scored[1].Score)
+	require.InDelta(t, 0.5, scored[2].Score, 1e-9)
 }
 
 func TestAdaptiveCircuitUsesDeduplicatedFailuresAndAuthenticationFastOpen(t *testing.T) {
@@ -168,6 +267,104 @@ func TestAdaptiveExpiredCircuitIgnoresOldInflightFailureUntilRealProbe(t *testin
 	state = store.snapshot(1, 10, expiredAt, settings)
 	require.Equal(t, 2, state.CircuitOpenCount)
 	require.Equal(t, expiredAt.Add(2*time.Minute), state.CircuitOpenUntil)
+}
+
+func TestAdaptiveDueHealthProbesAreOldestFirstAndExcludeInflight(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.mu.Lock()
+	store.ensureLocked(1, 10, now).CircuitOpenUntil = now.Add(-time.Minute)
+	store.ensureLocked(2, 10, now).CircuitOpenUntil = now.Add(-2 * time.Minute)
+	store.ensureLocked(3, 10, now).CircuitOpenUntil = now.Add(time.Minute)
+	store.mu.Unlock()
+
+	require.Equal(t, []int64{2, 1}, store.dueHealthProbeAccountIDs(now, settings))
+	require.True(t, store.claimHealthProbe(2, "probe-2", 10, now, settings))
+	require.Equal(t, []int64{1}, store.dueHealthProbeAccountIDs(now, settings))
+}
+
+func TestAdaptiveHalfOpenProbeLeaseIsSingleFlight(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.mu.Lock()
+	store.ensureLocked(1, 10, now).CircuitOpenUntil = now.Add(-time.Second)
+	store.mu.Unlock()
+
+	const contenders = 32
+	start := make(chan struct{})
+	results := make(chan bool, contenders)
+	var wg sync.WaitGroup
+	for range contenders {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			results <- store.claimHealthProbe(1, "probe", 10, now, settings)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for acquired := range results {
+		if acquired {
+			winners++
+		}
+	}
+	require.Equal(t, 1, winners)
+}
+
+func TestAdaptiveInconclusiveHalfOpenProbeSchedulesShortRetry(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.mu.Lock()
+	state := store.ensureLocked(1, 10, now)
+	state.CircuitOpenUntil = now.Add(-time.Second)
+	state.CircuitOpenCount = 4
+	store.mu.Unlock()
+
+	require.True(t, store.claimHealthProbe(1, "probe", 10, now, settings))
+	store.registerAdmission(1, "probe", 10, now, settings)
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		RequestID:          "probe",
+		Type:               adaptiveObservationProviderOverload,
+		ConfiguredCapacity: 10,
+	}, now, settings)
+
+	stateSnapshot := store.snapshot(1, 10, now, settings)
+	require.Equal(t, now.Add(settings.HealthProbeLease), stateSnapshot.CircuitOpenUntil)
+	require.Equal(t, 4, stateSnapshot.CircuitOpenCount)
+	require.False(t, stateSnapshot.HealthProbeInFlight)
+	require.Empty(t, store.dueHealthProbeAccountIDs(now, settings))
+	require.Equal(t, []int64{1}, store.dueHealthProbeAccountIDs(now.Add(settings.HealthProbeLease), settings))
+}
+
+func TestAdaptiveExpiredCircuitRecoversFromUncorrelatedSuccess(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.mu.Lock()
+	state := store.ensureLocked(1, 10, now)
+	state.CircuitOpenUntil = now.Add(-time.Second)
+	state.CircuitOpenCount = 3
+	state.ConsecutiveFailures = 7
+	store.mu.Unlock()
+
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		Type:               adaptiveObservationHealthSuccess,
+		ConfiguredCapacity: 10,
+	}, now, settings)
+
+	stateSnapshot := store.snapshot(1, 10, now, settings)
+	require.True(t, stateSnapshot.CircuitOpenUntil.IsZero())
+	require.Zero(t, stateSnapshot.CircuitOpenCount)
+	require.Zero(t, stateSnapshot.ConsecutiveFailures)
 }
 
 func TestAdaptiveQuotaOnlyClearsAfterSuccessfulQuotaProbe(t *testing.T) {

@@ -162,3 +162,28 @@ func TestOpenAIAdaptiveLearningReportsQuotaLimited(t *testing.T) {
 	}})
 	require.Equal(t, 1, summary.QuotaLimitedAccounts)
 }
+
+func TestOpenAIAdaptiveLearningSortsByLatency(t *testing.T) {
+	rows := []OpenAIAdaptiveSchedulerAccountLearningSnapshot{
+		{AccountID: 1, TTFTEMA: 320},
+		{AccountID: 2, TTFTEMA: 120},
+		{AccountID: 3, TTFTEMA: 240},
+	}
+
+	sortOpenAIAdaptiveLearningRows(rows, "latency", "asc")
+
+	require.Equal(t, []int64{2, 3, 1}, []int64{rows[0].AccountID, rows[1].AccountID, rows[2].AccountID})
+	require.Equal(t, "latency", normalizeOpenAIAdaptiveLearningSortBy("latency"))
+}
+
+func TestOpenAIAdaptiveLearningLastEventIncludesQuotaReset(t *testing.T) {
+	lastSuccess := time.Date(2026, 8, 26, 10, 0, 0, 0, time.UTC)
+	quotaReset := lastSuccess.Add(time.Hour)
+
+	got := openAIAdaptiveLearningLastEventTime(OpenAIAdaptiveSchedulerAccountLearningSnapshot{
+		LastSuccessAt: &lastSuccess,
+		QuotaResetAt:  &quotaReset,
+	})
+
+	require.Equal(t, quotaReset, got)
+}

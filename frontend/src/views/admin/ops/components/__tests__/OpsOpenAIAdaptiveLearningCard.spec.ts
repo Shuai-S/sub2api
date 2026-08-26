@@ -195,4 +195,47 @@ describe('OpsOpenAIAdaptiveLearningCard', () => {
     expect(wrapper.text()).not.toContain('admin.ops.openaiAdaptiveLearning.status.healthy')
     expect(wrapper.text()).toContain('0/100')
   })
+
+  it('renders TTFT and error data and supports latency sorting', async () => {
+    mockGetOpenAIAdaptiveLearning.mockResolvedValue({
+      ...sampleResponse,
+      accounts: [{
+        ...sampleResponse.accounts[0],
+        runtime_status: 'healthy',
+        runtime_flags: ['healthy'],
+        success_ema: 0.9,
+        consecutive_failure: 2,
+      }],
+    })
+
+    const wrapper = mount(OpsOpenAIAdaptiveLearningCard, {
+      props: { refreshToken: 0 },
+      global: {
+        stubs: {
+          Select: SelectStub,
+          EmptyState: true,
+          RouterLink: defineComponent({ template: '<a><slot /></a>' }),
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.table.error')
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.table.latency')
+    expect(wrapper.text()).toContain('10.0%')
+    expect(wrapper.text()).toContain('200ms')
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.ttftSamples {"count":"12"}')
+    expect(wrapper.text()).toContain('admin.ops.openaiAdaptiveLearning.consecutiveFailures {"count":2}')
+
+    const latencyButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('admin.ops.openaiAdaptiveLearning.table.latency')
+    )
+    expect(latencyButton).toBeDefined()
+    await latencyButton?.trigger('click')
+    await flushPromises()
+
+    expect(mockGetOpenAIAdaptiveLearning).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'latency', sort_order: 'asc' })
+    )
+  })
 })

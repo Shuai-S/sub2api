@@ -535,7 +535,7 @@ func sortOpenAIAdaptiveLearningRows(rows []OpenAIAdaptiveSchedulerAccountLearnin
 
 func normalizeOpenAIAdaptiveLearningSortBy(value string) string {
 	switch strings.TrimSpace(value) {
-	case "account", "status", "capacity", "load", "score", "samples", "error", "last_event":
+	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "last_event":
 		return strings.TrimSpace(value)
 	case "default", "":
 		return ""
@@ -581,6 +581,10 @@ func compareOpenAIAdaptiveLearningRows(left, right OpenAIAdaptiveSchedulerAccoun
 		if cmp := compareFloat64(1-left.SuccessEMA, 1-right.SuccessEMA); cmp != 0 {
 			return cmp
 		}
+	case "latency":
+		if cmp := compareFloat64(left.TTFTEMA, right.TTFTEMA); cmp != 0 {
+			return cmp
+		}
 	case "last_event":
 		if cmp := compareTime(openAIAdaptiveLearningLastEventTime(left), openAIAdaptiveLearningLastEventTime(right)); cmp != 0 {
 			return cmp
@@ -611,6 +615,7 @@ func openAIAdaptiveLearningLastEventTime(row OpenAIAdaptiveSchedulerAccountLearn
 		row.LastFailureAt,
 		row.CooldownUntil,
 		row.CapacityCooldownUntil,
+		row.QuotaResetAt,
 		row.QuotaNextProbeAt,
 	} {
 		if candidate != nil && candidate.After(latest) {

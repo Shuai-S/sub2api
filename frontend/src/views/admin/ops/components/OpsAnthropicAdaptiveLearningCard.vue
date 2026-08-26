@@ -334,14 +334,21 @@ function formatLatency(value?: number | null): string {
 }
 
 function formatTime(value?: string | null): string {
-  if (!value) return '-'
+  if (!value || value.startsWith('0001-01-01')) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString()
 }
 
 function latestEvent(row: OpsAnthropicAdaptiveLearningAccount): string | undefined {
-  return [row.last_success_at, row.last_failure_at, row.capacity_cooldown_until, row.quota_next_probe_at]
-    .filter((value): value is string => Boolean(value))
+  return [
+    row.last_success_at,
+    row.last_failure_at,
+    row.cooldown_until,
+    row.capacity_cooldown_until,
+    row.quota_reset_at,
+    row.quota_next_probe_at
+  ]
+    .filter((value): value is string => typeof value === 'string' && !value.startsWith('0001-01-01'))
     .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0]
 }
 
@@ -499,7 +506,7 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
 
       <div v-else class="overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
         <div class="max-h-[460px] overflow-auto">
-          <table class="min-w-full text-left text-xs">
+          <table class="min-w-[1280px] text-left text-xs">
             <thead class="sticky top-0 z-10 bg-white dark:bg-dark-800">
               <tr class="border-b border-gray-200 text-gray-500 dark:border-dark-700 dark:text-gray-400">
                 <th class="px-3 py-2 font-semibold">
@@ -536,6 +543,12 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
                   <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('samples')">
                     {{ t('admin.ops.anthropicAdaptiveLearning.table.samples') }}
                     <span class="w-3 text-[10px]">{{ sortIndicator('samples') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('error')">
+                    {{ t('admin.ops.anthropicAdaptiveLearning.table.error') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('error') }}</span>
                   </button>
                 </th>
                 <th class="px-3 py-2 font-semibold">
@@ -612,22 +625,25 @@ function sortIndicator(nextSortBy: OpsAnthropicAdaptiveLearningSortBy): string {
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
                     R {{ formatScore(row.reliability_score) }} / C {{ formatScore(row.capacity_score) }} / T {{ formatScore(row.latency_score) }} / $ {{ formatScore(row.cost_score) }}
                   </div>
-                  <div class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                    {{ t('admin.ops.anthropicAdaptiveLearning.successEma') }} {{ formatPercent(row.success_ema, 1) }}
-                  </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatInt(row.health_samples) }}</div>
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
 					{{ t('admin.ops.anthropicAdaptiveLearning.successEma') }} {{ formatPercent(row.success_ema, 1) }}
                   </div>
-				  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
-					{{ t('admin.ops.anthropicAdaptiveLearning.failureStreaks', { count: row.consecutive_failure }) }}
+                </td>
+                <td class="px-3 py-2">
+                  <div class="font-mono font-semibold text-gray-900 dark:text-white">{{ formatPercent(1 - row.success_ema, 1) }}</div>
+                  <div v-if="row.consecutive_failure > 0" class="mt-0.5 text-[11px] text-red-600 dark:text-red-400">
+                    {{ t('admin.ops.anthropicAdaptiveLearning.failureStreaks', { count: row.consecutive_failure }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">
                   <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
                     {{ formatLatency(row.ttft_ema) }}
+                  </div>
+                  <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
+                    {{ t('admin.ops.anthropicAdaptiveLearning.ttftSamples', { count: formatInt(row.ttft_samples) }) }}
                   </div>
                 </td>
                 <td class="px-3 py-2">

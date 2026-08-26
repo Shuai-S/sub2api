@@ -185,6 +185,7 @@ export default {
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
         successEma: 'success EMA',
+        ttftSamples: 'TTFT samples {count}',
         cooldownRemaining: 'cooldown {value}',
         consecutiveFailures: 'fail streak {count}',
         totalAccounts: 'Total accounts: {total}',
@@ -239,8 +240,9 @@ export default {
           capacityHint: 'effective/configured',
           load: 'Load',
           score: 'Current Score',
-          samples: 'Samples',
-          error: 'Error',
+          samples: 'Samples and EMA',
+          error: 'Error Rate',
+          latency: 'TTFT',
           lastEvent: 'Last Event'
         }
       },
@@ -256,6 +258,7 @@ export default {
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
         successEma: 'success EMA',
+        ttftSamples: 'TTFT samples {count}',
         failureStreaks: 'failure streak {count}',
         cooldownRemaining: 'cooldown {value}',
         totalAccounts: 'Total accounts: {total}',
@@ -306,7 +309,8 @@ export default {
           capacityHint: 'effective/configured',
           load: 'Load',
           score: 'Current Score',
-          samples: 'Samples',
+          samples: 'Samples and EMA',
+          error: 'Error Rate',
           latency: 'TTFT',
           lastEvent: 'Last Event'
         }
@@ -323,6 +327,7 @@ export default {
         rateMultiplier: 'rate {value}',
         queued: 'queued {count}',
         successEma: 'success EMA',
+        ttftSamples: 'TTFT samples {count}',
         failureStreaks: 'failure streak {count}',
         cooldownRemaining: 'cooldown {value}',
         totalAccounts: 'Total accounts: {total}',
@@ -395,7 +400,8 @@ export default {
           score: 'Six Scores',
           quota: 'Quota Pace',
           samples: 'Samples and EMA',
-          latency: 'TTFT/Total',
+          error: 'Error Rate',
+          latency: 'TTFT',
           lastEvent: 'Last Event'
         }
       },

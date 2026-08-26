@@ -20,6 +20,8 @@ var errOpenAIAdaptiveSchedulerFallback = errors.New("openai adaptive scheduler f
 
 const openAIAdaptiveStickyCleanupMinInterval = 30 * time.Second
 
+const openAIAdaptiveHealthProbeScanInterval = time.Second
+
 type adaptiveOpenAIAccountScheduler struct {
 	service               *OpenAIGatewayService
 	baseline              *defaultOpenAIAccountScheduler
@@ -27,6 +29,9 @@ type adaptiveOpenAIAccountScheduler struct {
 	metrics               openAIAccountSchedulerMetrics
 	stickyCleanupMu       sync.Mutex
 	stickyCleanupLastByID map[int64]time.Time
+	healthProbeScanMu     sync.Mutex
+	healthProbeScanAt     time.Time
+	healthProbeDueIDs     []int64
 }
 
 type openAIAdaptiveCandidateScore struct {
@@ -213,6 +218,22 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		}
 		return selection, decision, err
 	}
+	probeSelection, probeCandidates, probeErr := s.selectDueHealthProbe(ctx, req, cfg)
+	if probeErr != nil {
+		slog.Warn("openai_adaptive_half_open_probe_selection_failed",
+			"model", req.RequestedModel,
+			"error", probeErr,
+		)
+	} else if probeSelection != nil && probeSelection.Account != nil {
+		decision.Layer = openAIAccountScheduleLayerAdaptive
+		decision.CandidateCount = len(probeCandidates)
+		decision.TopK = len(probeCandidates)
+		decision.SelectedAccountID = probeSelection.Account.ID
+		decision.SelectedAccountType = probeSelection.Account.Type
+		diagnostics := openAIAdaptiveDiagnosticCandidates(probeCandidates, 5, openAIAdaptiveCoreSettings(cfg))
+		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, probeSelection, diagnostics, "half_open_probe", nil, start)
+		return probeSelection, decision, nil
+	}
 	selection, escapedSticky, err := s.selectByAdaptiveSticky(ctx, req, cfg)
 	if err != nil {
 		return nil, decision, err
@@ -260,6 +281,60 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 	}
 	s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "empty_selection", nil, start)
 	return selection, decision, nil
+}
+
+func (s *adaptiveOpenAIAccountScheduler) selectDueHealthProbe(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	cfg OpenAIAdaptiveSchedulerSettings,
+) (*AccountSelectionResult, []openAIAdaptiveCandidateScore, error) {
+	if s == nil || s.core == nil || strings.TrimSpace(req.PreviousResponseID) != "" || req.GuardianParentAccountID > 0 {
+		return nil, nil, nil
+	}
+	coreSettings := openAIAdaptiveCoreSettings(cfg)
+	dueIDs := s.cachedDueHealthProbeAccountIDs(time.Now(), coreSettings)
+	if len(dueIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	plan, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	if err != nil {
+		return nil, nil, nil
+	}
+	probeNow := time.Now()
+	byID := make(map[int64]openAIAdaptiveCandidateScore, len(plan.selectionOrder))
+	for _, candidate := range plan.selectionOrder {
+		if candidate.account != nil && !candidate.coreState.CircuitOpenUntil.IsZero() &&
+			!candidate.coreState.CircuitOpenUntil.After(probeNow) && !candidate.coreState.HealthProbeInFlight {
+			byID[candidate.account.ID] = candidate
+		}
+	}
+	dueCandidates := make([]openAIAdaptiveCandidateScore, 0, len(dueIDs))
+	for _, accountID := range dueIDs {
+		if candidate, ok := byID[accountID]; ok {
+			dueCandidates = append(dueCandidates, candidate)
+		}
+	}
+	if len(dueCandidates) == 0 {
+		return nil, nil, nil
+	}
+
+	probeReq := req
+	probeReq.PreserveStickyBinding = true
+	attemptStats := openAIAdaptiveSelectionAttemptStats{}
+	selection, _, err := s.tryAcquireAdaptiveSelectionOrder(ctx, probeReq, cfg, dueCandidates, &attemptStats)
+	return selection, dueCandidates, err
+}
+
+func (s *adaptiveOpenAIAccountScheduler) cachedDueHealthProbeAccountIDs(now time.Time, settings adaptiveCoreSettings) []int64 {
+	s.healthProbeScanMu.Lock()
+	defer s.healthProbeScanMu.Unlock()
+	if !s.healthProbeScanAt.IsZero() && now.Sub(s.healthProbeScanAt) < openAIAdaptiveHealthProbeScanInterval {
+		return append([]int64(nil), s.healthProbeDueIDs...)
+	}
+	s.healthProbeScanAt = now
+	s.healthProbeDueIDs = s.core.dueHealthProbeAccountIDs(now, settings)
+	return append([]int64(nil), s.healthProbeDueIDs...)
 }
 
 func (s *adaptiveOpenAIAccountScheduler) selectCurrentBaseline(
@@ -952,12 +1027,14 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 				if release != nil {
 					release()
 				}
-				s.core.releaseHealthProbe(fresh.ID, requestID, time.Now())
 				if quotaClaimed {
 					s.core.releaseQuotaProbe(fresh.ID, requestID, time.Now())
 				}
 			}
 			selection, selectErr := s.service.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
+			if selectErr != nil {
+				s.core.releaseHealthProbe(fresh.ID, requestID, time.Now())
+			}
 			return selection, compactBlocked, selectErr
 		}
 		s.core.releaseHealthProbe(fresh.ID, requestID, time.Now())

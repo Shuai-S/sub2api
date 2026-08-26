@@ -189,6 +189,21 @@ describe('OpsGeminiAdaptiveLearningCard', () => {
     expect(wrapper.text()).toContain('admin.ops.geminiAdaptiveLearning.rateMultiplier {"value":"1.25"}')
     expect(wrapper.text()).toContain('R 95 / C 63 / T 70 / $ 40')
     expect(wrapper.text()).toContain('10/100 (10%)')
+    expect(wrapper.text()).toContain('admin.ops.geminiAdaptiveLearning.table.error')
+    expect(wrapper.text()).toContain('5.0%')
+    expect(wrapper.text()).toContain('180ms')
+    expect(wrapper.text()).toContain('admin.ops.geminiAdaptiveLearning.ttftSamples {"count":"12"}')
+
+    const errorButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('admin.ops.geminiAdaptiveLearning.table.error')
+    )
+    expect(errorButton).toBeDefined()
+    await errorButton?.trigger('click')
+    await flushPromises()
+
+    expect(mockGetGeminiAdaptiveLearning).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'error', sort_order: 'desc' })
+    )
 
     const selects = wrapper.findAllComponents(SelectStub)
     await selects[1].vm.$emit('update:modelValue', 'quota_limited')

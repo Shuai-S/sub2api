@@ -44,6 +44,10 @@ type AccountRuntimeBlocker interface {
 	ClearAccountSchedulingBlock(accountID int64)
 }
 
+type successfulAccountTestHealthRecoverer interface {
+	RecoverAccountSchedulingHealth(ctx context.Context, accountID int64)
+}
+
 type openAIInsufficientBalanceAdaptivePolicy interface {
 	ShouldManageOpenAIInsufficientBalance(ctx context.Context, account *Account) bool
 }
@@ -2108,9 +2112,16 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 }
 
 // RecoverAccountAfterSuccessfulTest 将一次成功测试视为正常请求，
-// 按需恢复 error / rate-limit / overload / temp-unsched / model-rate-limit 等运行时状态。
+// 按需恢复 error / rate-limit / overload / temp-unsched / model-rate-limit 和自适应熔断状态。
 func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context, accountID int64) (*SuccessfulTestRecoveryResult, error) {
-	return s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{})
+	result, err := s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if recoverer, ok := s.runtimeBlocker.(successfulAccountTestHealthRecoverer); ok {
+		recoverer.RecoverAccountSchedulingHealth(ctx, accountID)
+	}
+	return result, nil
 }
 
 func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID int64) error {
