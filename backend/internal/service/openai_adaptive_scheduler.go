@@ -392,16 +392,6 @@ func (s *adaptiveOpenAIAccountScheduler) selectDueHealthProbeWithPlanLoader(
 	return selection, dueCandidates, err
 }
 
-func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExploration(
-	ctx context.Context,
-	req OpenAIAccountScheduleRequest,
-	cfg OpenAIAdaptiveSchedulerSettings,
-) (*AccountSelectionResult, []openAIAdaptiveCandidateScore, error) {
-	return s.selectRecoveryExplorationWithPlanLoader(ctx, req, cfg, func() (openAIAdaptiveSelectionPlan, error) {
-		return s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
-	})
-}
-
 func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExplorationWithPlanLoader(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
