@@ -167,15 +167,26 @@ type adaptiveHealthObservation struct {
 	Success bool      `json:"success"`
 }
 
+type adaptiveTTFTObservation struct {
+	At           time.Time `json:"at"`
+	Milliseconds int       `json:"milliseconds"`
+}
+
 type adaptiveAdmission struct {
 	AccountID           int64
 	CapacityGeneration  uint64
+	TTFTBucketKey       string
 	HealthProbe         bool
 	QuotaProbe          bool
 	Admitted            bool
 	ObservedConcurrency int
 	WaitingCount        int
 	ClaimedAt           time.Time
+}
+
+type adaptiveTTFTClaim struct {
+	BucketKey string
+	ClaimedAt time.Time
 }
 
 type adaptiveObservation struct {
@@ -186,6 +197,8 @@ type adaptiveObservation struct {
 	Reason                string
 	Authentication        bool
 	FirstTokenMs          *int
+	TTFTBucketKey         string
+	WindowedTTFT          bool
 	ConfiguredCapacity    int
 	ObservedConcurrency   int
 	WaitingCount          int
@@ -197,39 +210,40 @@ type adaptiveObservation struct {
 }
 
 type adaptiveAccountState struct {
-	Version                   int                         `json:"version"`
-	AccountID                 int64                       `json:"account_id"`
-	ConfiguredCapacity        int                         `json:"configured_capacity"`
-	EffectiveCapacity         int                         `json:"effective_capacity"`
-	SuccessEMA                float64                     `json:"success_ema"`
-	TTFTEMA                   float64                     `json:"ttft_ema"`
-	TTFTSamples               int64                       `json:"ttft_samples"`
-	ConsecutiveFailures       int                         `json:"consecutive_failures"`
-	HealthObservations        []adaptiveHealthObservation `json:"health_observations"`
-	HighError                 bool                        `json:"high_error"`
-	CircuitOpenUntil          time.Time                   `json:"circuit_open_until,omitempty"`
-	CircuitOpenCount          int                         `json:"circuit_open_count"`
-	HealthProbeInFlight       bool                        `json:"-"`
-	HealthProbeUntil          time.Time                   `json:"-"`
-	HealthProbeOwner          string                      `json:"-"`
-	CapacityGeneration        uint64                      `json:"capacity_generation"`
-	CapacityCooldownUntil     time.Time                   `json:"capacity_cooldown_until,omitempty"`
-	CapacityHalfOpen          bool                        `json:"capacity_half_open"`
-	CapacityRecoverySuccesses int                         `json:"capacity_recovery_successes"`
-	CapacityLimitedGeneration bool                        `json:"capacity_limited_generation"`
-	LastCapacityShrinkAt      time.Time                   `json:"last_capacity_shrink_at,omitempty"`
-	LastObservedConcurrency   int                         `json:"last_observed_concurrency"`
-	QuotaLimited              bool                        `json:"quota_limited"`
-	QuotaResetAt              time.Time                   `json:"quota_reset_at,omitempty"`
-	QuotaNextProbeAt          time.Time                   `json:"quota_next_probe_at,omitempty"`
-	QuotaProbeInFlight        bool                        `json:"-"`
-	QuotaProbeOwner           string                      `json:"-"`
-	LastObservationType       adaptiveObservationType     `json:"last_observation_type"`
-	LastReasonCode            string                      `json:"last_reason_code"`
-	LastReason                string                      `json:"last_reason"`
-	LastSuccessAt             time.Time                   `json:"last_success_at,omitempty"`
-	LastFailureAt             time.Time                   `json:"last_failure_at,omitempty"`
-	UpdatedAt                 time.Time                   `json:"updated_at"`
+	Version                   int                                  `json:"version"`
+	AccountID                 int64                                `json:"account_id"`
+	ConfiguredCapacity        int                                  `json:"configured_capacity"`
+	EffectiveCapacity         int                                  `json:"effective_capacity"`
+	SuccessEMA                float64                              `json:"success_ema"`
+	TTFTEMA                   float64                              `json:"ttft_ema"`
+	TTFTSamples               int64                                `json:"ttft_samples"`
+	TTFTWindows               map[string][]adaptiveTTFTObservation `json:"ttft_windows,omitempty"`
+	ConsecutiveFailures       int                                  `json:"consecutive_failures"`
+	HealthObservations        []adaptiveHealthObservation          `json:"health_observations"`
+	HighError                 bool                                 `json:"high_error"`
+	CircuitOpenUntil          time.Time                            `json:"circuit_open_until,omitempty"`
+	CircuitOpenCount          int                                  `json:"circuit_open_count"`
+	HealthProbeInFlight       bool                                 `json:"-"`
+	HealthProbeUntil          time.Time                            `json:"-"`
+	HealthProbeOwner          string                               `json:"-"`
+	CapacityGeneration        uint64                               `json:"capacity_generation"`
+	CapacityCooldownUntil     time.Time                            `json:"capacity_cooldown_until,omitempty"`
+	CapacityHalfOpen          bool                                 `json:"capacity_half_open"`
+	CapacityRecoverySuccesses int                                  `json:"capacity_recovery_successes"`
+	CapacityLimitedGeneration bool                                 `json:"capacity_limited_generation"`
+	LastCapacityShrinkAt      time.Time                            `json:"last_capacity_shrink_at,omitempty"`
+	LastObservedConcurrency   int                                  `json:"last_observed_concurrency"`
+	QuotaLimited              bool                                 `json:"quota_limited"`
+	QuotaResetAt              time.Time                            `json:"quota_reset_at,omitempty"`
+	QuotaNextProbeAt          time.Time                            `json:"quota_next_probe_at,omitempty"`
+	QuotaProbeInFlight        bool                                 `json:"-"`
+	QuotaProbeOwner           string                               `json:"-"`
+	LastObservationType       adaptiveObservationType              `json:"last_observation_type"`
+	LastReasonCode            string                               `json:"last_reason_code"`
+	LastReason                string                               `json:"last_reason"`
+	LastSuccessAt             time.Time                            `json:"last_success_at,omitempty"`
+	LastFailureAt             time.Time                            `json:"last_failure_at,omitempty"`
+	UpdatedAt                 time.Time                            `json:"updated_at"`
 	revision                  uint64
 	persistedRevision         uint64
 }
@@ -241,6 +255,7 @@ type adaptiveStateStore struct {
 	// Kept after an account lease is released so failover cannot spend the same request on another half-open account.
 	healthProbeClaims    map[string]time.Time
 	admissions           map[string]adaptiveAdmission
+	ttftClaims           map[string]adaptiveTTFTClaim
 	lastTransientCleanup time.Time
 }
 
@@ -250,6 +265,7 @@ func newAdaptiveStateStore() *adaptiveStateStore {
 		failureClaims:     make(map[string]time.Time),
 		healthProbeClaims: make(map[string]time.Time),
 		admissions:        make(map[string]adaptiveAdmission),
+		ttftClaims:        make(map[string]adaptiveTTFTClaim),
 	}
 }
 
@@ -274,6 +290,12 @@ func cloneAdaptiveAccountState(state *adaptiveAccountState) adaptiveAccountState
 	}
 	clone := *state
 	clone.HealthObservations = append([]adaptiveHealthObservation(nil), state.HealthObservations...)
+	if len(state.TTFTWindows) > 0 {
+		clone.TTFTWindows = make(map[string][]adaptiveTTFTObservation, len(state.TTFTWindows))
+		for key, observations := range state.TTFTWindows {
+			clone.TTFTWindows[key] = append([]adaptiveTTFTObservation(nil), observations...)
+		}
+	}
 	return clone
 }
 
@@ -412,6 +434,7 @@ func (s *adaptiveStateStore) recoverHealth(accountID int64, now time.Time, setti
 
 func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
 	changed := pruneAdaptiveHealthWindow(state, now, settings)
+	changed = pruneAdaptiveTTFTWindows(state, now, settings) || changed
 	if !state.CapacityCooldownUntil.IsZero() && !state.CapacityCooldownUntil.After(now) && state.EffectiveCapacity < state.ConfiguredCapacity && !state.CapacityHalfOpen {
 		state.CapacityHalfOpen = true
 		state.CapacityRecoverySuccesses = 0
@@ -428,6 +451,37 @@ func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time
 		state.QuotaProbeOwner = ""
 		changed = true
 	}
+	return changed
+}
+
+func pruneAdaptiveTTFTWindows(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
+	if state == nil || len(state.TTFTWindows) == 0 {
+		return false
+	}
+	cutoff := now.Add(-settings.LearningWindow)
+	changed := false
+	for key, observations := range state.TTFTWindows {
+		first := 0
+		for first < len(observations) && observations[first].At.Before(cutoff) {
+			first++
+		}
+		if first == len(observations) {
+			delete(state.TTFTWindows, key)
+			changed = true
+			continue
+		}
+		if first > 0 {
+			state.TTFTWindows[key] = append([]adaptiveTTFTObservation(nil), observations[first:]...)
+			changed = true
+		}
+	}
+	if len(state.TTFTWindows) == 0 {
+		state.TTFTWindows = nil
+		state.TTFTEMA = 0
+		state.TTFTSamples = 0
+		return true
+	}
+	refreshAdaptiveTTFTWindowSummary(state)
 	return changed
 }
 
@@ -475,6 +529,10 @@ func (s *adaptiveStateStore) registerPendingAdmission(accountID int64, requestID
 }
 
 func (s *adaptiveStateStore) registerAdmissionWithLoad(accountID int64, requestID string, configuredCapacity, observedConcurrency, waitingCount int, admitted bool, now time.Time, settings adaptiveCoreSettings) uint64 {
+	return s.registerAdmissionWithLoadAndTTFTBucket(accountID, requestID, configuredCapacity, observedConcurrency, waitingCount, admitted, "", now, settings)
+}
+
+func (s *adaptiveStateStore) registerAdmissionWithLoadAndTTFTBucket(accountID int64, requestID string, configuredCapacity, observedConcurrency, waitingCount int, admitted bool, ttftBucketKey string, now time.Time, settings adaptiveCoreSettings) uint64 {
 	if s == nil || accountID <= 0 {
 		return 0
 	}
@@ -486,17 +544,22 @@ func (s *adaptiveStateStore) registerAdmissionWithLoad(accountID int64, requestI
 	s.refreshLocked(state, now, settings)
 	generation := state.CapacityGeneration
 	if requestID != "" {
+		transientKey := adaptiveTransientKey(accountID, requestID)
 		healthProbe := state.HealthProbeInFlight && (state.HealthProbeOwner == "" || state.HealthProbeOwner == requestID)
 		quotaProbe := state.QuotaProbeInFlight && (state.QuotaProbeOwner == "" || state.QuotaProbeOwner == requestID)
-		s.admissions[adaptiveTransientKey(accountID, requestID)] = adaptiveAdmission{
+		s.admissions[transientKey] = adaptiveAdmission{
 			AccountID:           accountID,
 			CapacityGeneration:  generation,
+			TTFTBucketKey:       strings.TrimSpace(ttftBucketKey),
 			HealthProbe:         healthProbe,
 			QuotaProbe:          quotaProbe,
 			Admitted:            admitted,
 			ObservedConcurrency: observedConcurrency,
 			WaitingCount:        waitingCount,
 			ClaimedAt:           now,
+		}
+		if ttftBucketKey = strings.TrimSpace(ttftBucketKey); ttftBucketKey != "" {
+			s.ttftClaims[transientKey] = adaptiveTTFTClaim{BucketKey: ttftBucketKey, ClaimedAt: now}
 		}
 	}
 	return generation
@@ -619,12 +682,16 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	s.refreshLocked(state, now, settings)
 	quotaProbe := false
 	admitted := true
-	if admission, ok := s.admissions[adaptiveTransientKey(observation.AccountID, observation.RequestID)]; ok {
+	transientKey := adaptiveTransientKey(observation.AccountID, observation.RequestID)
+	if admission, ok := s.admissions[transientKey]; ok {
 		if observation.CapacityGeneration == 0 {
 			observation.CapacityGeneration = admission.CapacityGeneration
 		}
 		quotaProbe = admission.QuotaProbe
 		observation.HealthProbe = admission.HealthProbe
+		if observation.TTFTBucketKey == "" {
+			observation.TTFTBucketKey = admission.TTFTBucketKey
+		}
 		admitted = admission.Admitted
 		if observation.ObservedConcurrency < 0 && admission.ObservedConcurrency >= 0 {
 			observation.ObservedConcurrency = admission.ObservedConcurrency
@@ -632,7 +699,12 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 		if observation.WaitingCount <= 0 {
 			observation.WaitingCount = admission.WaitingCount
 		}
-		delete(s.admissions, adaptiveTransientKey(observation.AccountID, observation.RequestID))
+		delete(s.admissions, transientKey)
+	}
+	if observation.TTFTBucketKey == "" {
+		if claim, ok := s.ttftClaims[transientKey]; ok {
+			observation.TTFTBucketKey = claim.BucketKey
+		}
 	}
 	if quotaProbe && observation.Type != adaptiveObservationHealthSuccess && observation.Type != adaptiveObservationQuotaLimit {
 		observation.Type = adaptiveObservationIgnored
@@ -647,6 +719,7 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	switch observation.Type {
 	case adaptiveObservationHealthSuccess:
 		s.observeHealthLocked(state, true, observation, now, settings)
+		delete(s.ttftClaims, transientKey)
 		if quotaProbe && state.QuotaLimited {
 			state.QuotaLimited = false
 			state.QuotaResetAt = time.Time{}
@@ -728,7 +801,9 @@ func (s *adaptiveStateStore) observeHealthLocked(state *adaptiveAccountState, su
 			state.HealthProbeUntil = time.Time{}
 			state.HealthProbeOwner = ""
 		}
-		if observation.FirstTokenMs != nil {
+		if observation.FirstTokenMs != nil && observation.WindowedTTFT && strings.TrimSpace(observation.TTFTBucketKey) != "" {
+			observeAdaptiveTTFTWindowLocked(state, observation.TTFTBucketKey, *observation.FirstTokenMs, now, settings)
+		} else if observation.FirstTokenMs != nil && !observation.WindowedTTFT {
 			value := *observation.FirstTokenMs
 			if value < 1 {
 				value = 1
@@ -879,6 +954,11 @@ func (s *adaptiveStateStore) cleanupTransientsLocked(now time.Time, settings ada
 			delete(s.admissions, key)
 		}
 	}
+	for key, claim := range s.ttftClaims {
+		if now.Sub(claim.ClaimedAt) > retention {
+			delete(s.ttftClaims, key)
+		}
+	}
 	s.lastTransientCleanup = now
 }
 
@@ -984,9 +1064,13 @@ type adaptiveScoreCandidate struct {
 	Cost               float64
 	CurrentConcurrency int
 	State              adaptiveAccountState
+	TTFTBucketKey      string
 	ReliabilityScore   float64
 	CapacityScore      float64
 	TTFTScore          float64
+	TTFTP50            float64
+	TTFTP90            float64
+	TTFTWindowSamples  int
 	CostScore          float64
 	Score              float64
 	LearningStatus     adaptiveLearningStatus
@@ -1035,12 +1119,15 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 	}
 	minimumCost := math.Inf(1)
 	ttfts := make([]float64, 0, len(candidates))
+	windowedTTFT := false
 	for i := range candidates {
 		if candidates[i].Cost < 0 || math.IsNaN(candidates[i].Cost) || math.IsInf(candidates[i].Cost, 0) {
 			candidates[i].Cost = 1
 		}
 		minimumCost = math.Min(minimumCost, candidates[i].Cost)
-		if candidates[i].State.TTFTSamples > 0 && candidates[i].State.TTFTEMA > 0 {
+		if strings.TrimSpace(candidates[i].TTFTBucketKey) != "" {
+			windowedTTFT = true
+		} else if candidates[i].State.TTFTSamples > 0 && candidates[i].State.TTFTEMA > 0 {
 			ttfts = append(ttfts, candidates[i].State.TTFTEMA)
 		}
 	}
@@ -1052,14 +1139,9 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 	if len(ttfts) >= 2 {
 		minTTFT, maxTTFT = ttfts[0], ttfts[len(ttfts)-1]
 	}
-	ttftEnabled := len(ttfts) >= 2 && maxTTFT > minTTFT
-	weightSum := settings.WeightReliability + settings.WeightCapacity + settings.WeightCost
-	if ttftEnabled {
-		weightSum += settings.WeightTTFT
-	}
-	if weightSum <= 0 {
-		weightSum = 1
-	}
+	legacyTTFTEnabled := !windowedTTFT && len(ttfts) >= 2 && maxTTFT > minTTFT
+	windowTTFTScores := scoreAdaptiveTTFTWindows(candidates, now, settings)
+	baseWeightSum := settings.WeightReliability + settings.WeightCapacity + settings.WeightCost
 	for i := range candidates {
 		candidate := &candidates[i]
 		candidate.LearningStatus, candidate.HealthSamples = adaptiveLearningState(candidate.State, candidate.OAuth, now, settings)
@@ -1078,7 +1160,14 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 		} else {
 			candidate.CostScore = clamp01(minimumCost / candidate.Cost)
 		}
-		if ttftEnabled {
+		ttftEnabled := legacyTTFTEnabled
+		if windowScore, ok := windowTTFTScores[i]; ok {
+			candidate.TTFTP50 = windowScore.P50
+			candidate.TTFTP90 = windowScore.P90
+			candidate.TTFTWindowSamples = windowScore.Samples
+			candidate.TTFTScore = windowScore.Score
+			ttftEnabled = windowScore.Enabled
+		} else if legacyTTFTEnabled {
 			candidate.TTFTScore = 0.5
 			if candidate.State.TTFTSamples > 0 && candidate.State.TTFTEMA > 0 {
 				rawTTFTScore := 1 - normalizeAdaptiveValue(candidate.State.TTFTEMA, minTTFT, maxTTFT, 0.5)
@@ -1086,12 +1175,219 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 				candidate.TTFTScore = 0.5 + ttftConfidence*(rawTTFTScore-0.5)
 			}
 		}
+		weightSum := baseWeightSum
+		if ttftEnabled {
+			weightSum += settings.WeightTTFT
+		}
+		if weightSum <= 0 {
+			weightSum = 1
+		}
 		candidate.Score = (settings.WeightReliability*candidate.ReliabilityScore +
 			settings.WeightCapacity*candidate.CapacityScore +
 			settings.WeightCost*candidate.CostScore +
 			settings.WeightTTFT*candidate.TTFTScore*boolFloat(ttftEnabled)) / weightSum
 	}
 	return candidates
+}
+
+const (
+	adaptiveTTFTMinP50Samples  = 5
+	adaptiveTTFTP50FullSamples = 20
+	adaptiveTTFTMinP90Samples  = 20
+	adaptiveTTFTP90FullSamples = 50
+)
+
+type adaptiveTTFTWindowStats struct {
+	Samples int
+	P50     float64
+	P90     float64
+}
+
+type adaptiveTTFTWindowScore struct {
+	Enabled bool
+	Score   float64
+	Samples int
+	P50     float64
+	P90     float64
+}
+
+func observeAdaptiveTTFTWindowLocked(state *adaptiveAccountState, bucketKey string, value int, now time.Time, settings adaptiveCoreSettings) {
+	bucketKey = strings.TrimSpace(bucketKey)
+	if state == nil || bucketKey == "" {
+		return
+	}
+	if value < 1 {
+		value = 1
+	}
+	if value > 120000 {
+		value = 120000
+	}
+	pruneAdaptiveTTFTWindows(state, now, settings)
+	if state.TTFTWindows == nil {
+		state.TTFTWindows = make(map[string][]adaptiveTTFTObservation)
+	}
+	state.TTFTWindows[bucketKey] = append(state.TTFTWindows[bucketKey], adaptiveTTFTObservation{
+		At:           now,
+		Milliseconds: value,
+	})
+	refreshAdaptiveTTFTWindowSummary(state)
+}
+
+func refreshAdaptiveTTFTWindowSummary(state *adaptiveAccountState) {
+	if state == nil || len(state.TTFTWindows) == 0 {
+		return
+	}
+	values := make([]float64, 0)
+	for _, observations := range state.TTFTWindows {
+		for _, observation := range observations {
+			if observation.Milliseconds > 0 {
+				values = append(values, float64(observation.Milliseconds))
+			}
+		}
+	}
+	if len(values) == 0 {
+		state.TTFTEMA = 0
+		state.TTFTSamples = 0
+		return
+	}
+	sort.Float64s(values)
+	p50 := adaptiveTTFTPercentile(values, 0.50)
+	p90 := adaptiveTTFTPercentile(values, 0.90)
+	state.TTFTEMA = adaptiveTTFTBlend(p50, p90)
+	state.TTFTSamples = int64(len(values))
+}
+
+func adaptiveTTFTWindowStatsForState(state adaptiveAccountState, bucketKey string, now time.Time, settings adaptiveCoreSettings) adaptiveTTFTWindowStats {
+	observations := state.TTFTWindows[strings.TrimSpace(bucketKey)]
+	if len(observations) == 0 {
+		return adaptiveTTFTWindowStats{}
+	}
+	cutoff := now.Add(-settings.LearningWindow)
+	values := make([]float64, 0, len(observations))
+	for _, observation := range observations {
+		if !observation.At.Before(cutoff) && observation.Milliseconds > 0 {
+			values = append(values, float64(observation.Milliseconds))
+		}
+	}
+	if len(values) == 0 {
+		return adaptiveTTFTWindowStats{}
+	}
+	sort.Float64s(values)
+	return adaptiveTTFTWindowStats{
+		Samples: len(values),
+		P50:     adaptiveTTFTPercentile(values, 0.50),
+		P90:     adaptiveTTFTPercentile(values, 0.90),
+	}
+}
+
+func scoreAdaptiveTTFTWindows(candidates []adaptiveScoreCandidate, now time.Time, settings adaptiveCoreSettings) map[int]adaptiveTTFTWindowScore {
+	settings = normalizeAdaptiveCoreSettings(settings)
+	stats := make([]adaptiveTTFTWindowStats, len(candidates))
+	groups := make(map[string][]int)
+	for i := range candidates {
+		key := strings.TrimSpace(candidates[i].TTFTBucketKey)
+		if key == "" {
+			continue
+		}
+		stats[i] = adaptiveTTFTWindowStatsForState(candidates[i].State, key, now, settings)
+		groups[key] = append(groups[key], i)
+	}
+
+	result := make(map[int]adaptiveTTFTWindowScore, len(candidates))
+	for _, indexes := range groups {
+		p50s := make([]float64, 0, len(indexes))
+		p90s := make([]float64, 0, len(indexes))
+		for _, index := range indexes {
+			if stats[index].Samples >= adaptiveTTFTMinP50Samples {
+				p50s = append(p50s, stats[index].P50)
+			}
+			if stats[index].Samples >= adaptiveTTFTMinP90Samples {
+				p90s = append(p90s, stats[index].P90)
+			}
+		}
+		if len(p50s) < 2 {
+			for _, index := range indexes {
+				result[index] = adaptiveTTFTWindowScore{Samples: stats[index].Samples, P50: stats[index].P50, P90: stats[index].P90}
+			}
+			continue
+		}
+		sort.Float64s(p50s)
+		cohortP50 := adaptiveTTFTPercentile(p50s, 0.50)
+		cohortP90 := cohortP50
+		if len(p90s) >= 2 {
+			sort.Float64s(p90s)
+			cohortP90 = adaptiveTTFTPercentile(p90s, 0.50)
+		}
+		cohortEstimate := adaptiveTTFTBlend(cohortP50, cohortP90)
+		estimates := make(map[int]float64, len(indexes))
+		minEstimate, maxEstimate := math.Inf(1), 0.0
+		for _, index := range indexes {
+			adjustedP50, adjustedP90 := cohortP50, cohortP90
+			if stats[index].Samples >= adaptiveTTFTMinP50Samples {
+				confidence := math.Min(1, float64(stats[index].Samples)/adaptiveTTFTP50FullSamples)
+				adjustedP50 = adaptiveTTFTLogShrink(stats[index].P50, cohortP50, confidence)
+			}
+			if stats[index].Samples >= adaptiveTTFTMinP90Samples && len(p90s) >= 2 {
+				confidence := math.Min(1, float64(stats[index].Samples-adaptiveTTFTMinP90Samples)/float64(adaptiveTTFTP90FullSamples-adaptiveTTFTMinP90Samples))
+				adjustedP90 = adaptiveTTFTLogShrink(stats[index].P90, cohortP90, confidence)
+			}
+			estimate := adaptiveTTFTBlend(adjustedP50, adjustedP90)
+			estimates[index] = estimate
+			minEstimate = math.Min(minEstimate, estimate)
+			maxEstimate = math.Max(maxEstimate, estimate)
+		}
+		enabled := cohortEstimate > 0 && minEstimate > 0 && maxEstimate/minEstimate > 1.001
+		for _, index := range indexes {
+			score := 0.0
+			if enabled {
+				ratio := estimates[index] / cohortEstimate
+				score = 1 / (1 + ratio*ratio)
+			}
+			result[index] = adaptiveTTFTWindowScore{
+				Enabled: enabled,
+				Score:   score,
+				Samples: stats[index].Samples,
+				P50:     stats[index].P50,
+				P90:     stats[index].P90,
+			}
+		}
+	}
+	return result
+}
+
+func adaptiveTTFTPercentile(sortedValues []float64, percentile float64) float64 {
+	if len(sortedValues) == 0 {
+		return 0
+	}
+	if len(sortedValues) == 1 {
+		return sortedValues[0]
+	}
+	position := clampFloat(percentile, 0, 1, 0.5) * float64(len(sortedValues)-1)
+	lower := int(math.Floor(position))
+	upper := int(math.Ceil(position))
+	if lower == upper {
+		return sortedValues[lower]
+	}
+	fraction := position - float64(lower)
+	return sortedValues[lower] + fraction*(sortedValues[upper]-sortedValues[lower])
+}
+
+func adaptiveTTFTLogShrink(value, cohort, confidence float64) float64 {
+	if value <= 0 || cohort <= 0 {
+		return cohort
+	}
+	confidence = clamp01(confidence)
+	return math.Exp(confidence*math.Log(value) + (1-confidence)*math.Log(cohort))
+}
+
+func adaptiveTTFTBlend(p50, p90 float64) float64 {
+	if p50 <= 0 {
+		return 0
+	}
+	if p90 <= 0 {
+		p90 = p50
+	}
+	return math.Exp(0.8*math.Log(p50) + 0.2*math.Log(p90))
 }
 
 func orderAdaptiveCandidates(candidates []adaptiveScoreCandidate, newSession bool, shadow bool, now time.Time, settings adaptiveCoreSettings) []adaptiveScoreCandidate {

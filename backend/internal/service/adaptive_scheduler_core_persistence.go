@@ -145,7 +145,15 @@ func (p *adaptiveCoreStatePersistence) restoreOnce(ctx context.Context) (restore
 				stale++
 				continue
 			}
-			loaded[record.AccountID] = persisted.State
+			state := persisted.State
+			if p.namespace == adaptiveSchedulerCoreNamespaceOpenAI && len(state.TTFTWindows) == 0 {
+				// V2 snapshots created before windowed TTFT contain a lifetime EMA.
+				// Preserve health and capacity learning, but do not restore that legacy
+				// latency history into the OpenAI scheduler or diagnostics.
+				state.TTFTEMA = 0
+				state.TTFTSamples = 0
+			}
+			loaded[record.AccountID] = state
 		}
 		cursor = nextCursor
 		if cursor == 0 {
@@ -200,6 +208,24 @@ func validateAdaptiveCoreRestoredState(accountID int64, state adaptiveAccountSta
 	}
 	if !finiteAdaptiveRestoreValue(state.TTFTEMA) || state.TTFTEMA < 0 || state.TTFTSamples < 0 {
 		return fmt.Errorf("invalid adaptive account TTFT state")
+	}
+	for key, observations := range state.TTFTWindows {
+		if key == "" {
+			return fmt.Errorf("invalid adaptive account TTFT bucket key")
+		}
+		var previous time.Time
+		for _, observation := range observations {
+			if observation.At.IsZero() || observation.At.After(now.Add(adaptiveCoreRestoreFutureTolerance)) {
+				return fmt.Errorf("invalid adaptive TTFT observation time")
+			}
+			if !previous.IsZero() && observation.At.Before(previous) {
+				return fmt.Errorf("adaptive TTFT observations are not ordered")
+			}
+			if observation.Milliseconds < 1 || observation.Milliseconds > 120000 {
+				return fmt.Errorf("invalid adaptive TTFT observation value")
+			}
+			previous = observation.At
+		}
 	}
 	if state.ConsecutiveFailures < 0 || state.CircuitOpenCount < 0 {
 		return fmt.Errorf("invalid adaptive account failure counters")

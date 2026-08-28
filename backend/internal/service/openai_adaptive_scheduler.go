@@ -38,12 +38,16 @@ type openAIAdaptiveCandidateScore struct {
 	account           *Account
 	loadInfo          *AccountLoadInfo
 	coreState         adaptiveAccountState
+	ttftBucketKey     string
 	effectiveCapacity int
 	score             float64
 	successScore      float64
 	costScore         float64
 	capacityScore     float64
 	latencyScore      float64
+	ttftP50           float64
+	ttftP90           float64
+	ttftWindowSamples int
 }
 
 type openAIAdaptiveDiagnosticCandidate struct {
@@ -58,6 +62,10 @@ type openAIAdaptiveDiagnosticCandidate struct {
 	CostScore                 float64   `json:"cost_score"`
 	CapacityScore             float64   `json:"capacity_score"`
 	TTFTScore                 float64   `json:"ttft_score"`
+	TTFTBucket                string    `json:"ttft_bucket"`
+	TTFTP50                   float64   `json:"ttft_p50"`
+	TTFTP90                   float64   `json:"ttft_p90"`
+	TTFTWindowSamples         int       `json:"ttft_window_samples"`
 	LearningStatus            string    `json:"learning_status"`
 	HealthSamples             int       `json:"health_samples"`
 	SuccessEMA                float64   `json:"success_ema"`
@@ -194,6 +202,9 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 
 	if cfg.OpenAIAdaptiveSchedulerMode != openAIAdaptiveSchedulerModeEnforce {
 		selection, decision, err := s.selectCurrentBaseline(ctx, req)
+		if selection != nil && selection.Account != nil {
+			s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
+		}
 		s.logShadowDecision(ctx, req, cfg, selection)
 		return selection, decision, err
 	}
@@ -214,7 +225,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		}
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, outcome, err, start)
 		if selection != nil && selection.Account != nil {
-			s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, openAIAdaptiveCoreSettings(cfg))
+			s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
 		}
 		return selection, decision, err
 	}
@@ -239,7 +250,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return nil, decision, err
 	}
 	if selection != nil && selection.Account != nil {
-		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, openAIAdaptiveCoreSettings(cfg))
+		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
 		decision.Layer = openAIAccountScheduleLayerSessionSticky
 		decision.StickySessionHit = true
 		decision.SelectedAccountID = selection.Account.ID
@@ -273,7 +284,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return nil, decision, err
 	}
 	if selection != nil && selection.Account != nil {
-		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, openAIAdaptiveCoreSettings(cfg))
+		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "selected", nil, start)
@@ -350,14 +361,14 @@ func (s *adaptiveOpenAIAccountScheduler) selectCurrentBaseline(
 // registerAdaptiveAdmission records the load observed immediately after a
 // successful slot acquisition. Recovery decisions can then distinguish real
 // admitted traffic from a cached pre-selection snapshot.
-func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmission(ctx context.Context, account *Account, admitted bool, settings adaptiveCoreSettings) {
+func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmission(ctx context.Context, account *Account, admitted bool, ttftBucketKey string, settings adaptiveCoreSettings) {
 	if account == nil {
 		return
 	}
-	s.registerAdaptiveAdmissionWithRequest(ctx, account, openAIAdaptiveRequestID(ctx), admitted, settings)
+	s.registerAdaptiveAdmissionWithRequest(ctx, account, openAIAdaptiveRequestID(ctx), admitted, ttftBucketKey, settings)
 }
 
-func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmissionWithRequest(ctx context.Context, account *Account, requestID string, admitted bool, settings adaptiveCoreSettings) {
+func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmissionWithRequest(ctx context.Context, account *Account, requestID string, admitted bool, ttftBucketKey string, settings adaptiveCoreSettings) {
 	if s == nil || s.core == nil || account == nil {
 		return
 	}
@@ -372,9 +383,9 @@ func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmissionWithRequest(ct
 		}
 	}
 	if admitted {
-		s.core.registerAdmissionWithLoad(account.ID, requestID, account.Concurrency, observed, waiting, true, time.Now(), settings)
+		s.core.registerAdmissionWithLoadAndTTFTBucket(account.ID, requestID, account.Concurrency, observed, waiting, true, ttftBucketKey, time.Now(), settings)
 	} else {
-		s.core.registerPendingAdmission(account.ID, requestID, account.Concurrency, time.Now(), settings)
+		s.core.registerAdmissionWithLoadAndTTFTBucket(account.ID, requestID, account.Concurrency, -1, 0, false, ttftBucketKey, time.Now(), settings)
 	}
 }
 
@@ -482,7 +493,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 		decision.StickyPreviousHit = true
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
-		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, openAIAdaptiveCoreSettings(cfg))
+		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
 		if req.SessionHash != "" {
 			_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, selection.Account.ID)
 		}
@@ -566,7 +577,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		return nil, false, acquireErr
 	}
 	if result != nil && result.Acquired {
-		s.registerAdaptiveAdmission(ctx, account, true, coreSettings)
+		s.registerAdaptiveAdmission(ctx, account, true, s.ttftBucketKey(req, account), coreSettings)
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
 		selection, selectErr := s.service.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 		return selection, false, selectErr
@@ -683,7 +694,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 			_ = stopRelease()
 			releaseProbes()
 		} else {
-			s.registerAdaptiveAdmissionWithRequest(ctx, fresh, requestID, false, coreSettings)
+			s.registerAdaptiveAdmissionWithRequest(ctx, fresh, requestID, false, candidate.ttftBucketKey, coreSettings)
 		}
 		return selection, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, selectErr
 	}
@@ -907,6 +918,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveCandidates(
 			account:           account,
 			loadInfo:          loadInfo,
 			coreState:         coreState,
+			ttftBucketKey:     s.ttftBucketKey(req, account),
 			effectiveCapacity: effectiveCapacity,
 		})
 	}
@@ -926,6 +938,7 @@ func applyOpenAIAdaptiveScores(candidates []openAIAdaptiveCandidateScore, cfg Op
 			Cost:               candidate.account.BillingRateMultiplier(),
 			CurrentConcurrency: candidate.loadInfo.CurrentConcurrency,
 			State:              candidate.coreState,
+			TTFTBucketKey:      candidate.ttftBucketKey,
 		})
 	}
 	scored := scoreAdaptiveCandidates(inputs, time.Now(), openAIAdaptiveCoreSettings(cfg))
@@ -940,6 +953,9 @@ func applyOpenAIAdaptiveScores(candidates []openAIAdaptiveCandidateScore, cfg Op
 		candidates[i].costScore = score.CostScore
 		candidates[i].capacityScore = score.CapacityScore
 		candidates[i].latencyScore = score.TTFTScore
+		candidates[i].ttftP50 = score.TTFTP50
+		candidates[i].ttftP90 = score.TTFTP90
+		candidates[i].ttftWindowSamples = score.TTFTWindowSamples
 	}
 }
 
@@ -1018,7 +1034,7 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 			return nil, compactBlocked, acquireErr
 		}
 		if result != nil && result.Acquired {
-			s.registerAdaptiveAdmissionWithRequest(ctx, fresh, requestID, true, coreSettings)
+			s.registerAdaptiveAdmissionWithRequest(ctx, fresh, requestID, true, candidate.ttftBucketKey, coreSettings)
 			if req.SessionHash != "" && !req.PreserveStickyBinding {
 				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
 			}
@@ -1305,6 +1321,10 @@ func openAIAdaptiveDiagnosticCandidates(
 			CostScore:                 item.costScore,
 			CapacityScore:             item.capacityScore,
 			TTFTScore:                 item.latencyScore,
+			TTFTBucket:                item.ttftBucketKey,
+			TTFTP50:                   item.ttftP50,
+			TTFTP90:                   item.ttftP90,
+			TTFTWindowSamples:         item.ttftWindowSamples,
 			LearningStatus:            string(learning),
 			HealthSamples:             healthSamples,
 			SuccessEMA:                item.coreState.SuccessEMA,
@@ -1416,6 +1436,7 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 		Reason:                report.CooldownReason,
 		Authentication:        authentication,
 		FirstTokenMs:          report.FirstTokenMs,
+		WindowedTTFT:          true,
 		ConfiguredCapacity:    configuredCapacity,
 		ObservedConcurrency:   report.ObservedConcurrency,
 		WaitingCount:          report.WaitingCount,

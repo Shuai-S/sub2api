@@ -68,22 +68,23 @@ type OpenAIAdaptiveSchedulerSettings struct {
 	OpenAIAdaptiveSchedulerShrinkFactorSoft           float64 `json:"openai_adaptive_scheduler_shrink_factor_soft"`
 	OpenAIAdaptiveSchedulerLearningWindowSeconds      int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
 	OpenAIAdaptiveSchedulerSuccessEMAAlpha            float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
-	OpenAIAdaptiveSchedulerTTFTEMAAlpha               float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
-	OpenAIAdaptiveSchedulerCooldownBaseSeconds        int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
-	OpenAIAdaptiveSchedulerCooldownMaxSeconds         int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
-	OpenAIAdaptiveSchedulerWeightSuccess              float64 `json:"openai_adaptive_scheduler_weight_success"`
-	OpenAIAdaptiveSchedulerWeightCost                 float64 `json:"openai_adaptive_scheduler_weight_cost"`
-	OpenAIAdaptiveSchedulerWeightCapacity             float64 `json:"openai_adaptive_scheduler_weight_capacity"`
-	OpenAIAdaptiveSchedulerWeightLatency              float64 `json:"openai_adaptive_scheduler_weight_latency"`
-	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty  float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
-	OpenAIAdaptiveSchedulerLearningMinHealthSamples   int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
-	OpenAIAdaptiveSchedulerHealthFailureThreshold     int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
-	OpenAIAdaptiveSchedulerHighErrorMinSamples        int     `json:"openai_adaptive_scheduler_high_error_min_samples"`
-	OpenAIAdaptiveSchedulerHighErrorMaxSamples        int     `json:"openai_adaptive_scheduler_high_error_max_samples"`
-	OpenAIAdaptiveSchedulerHighErrorEnterRate         float64 `json:"openai_adaptive_scheduler_high_error_enter_rate"`
-	OpenAIAdaptiveSchedulerHighErrorExitRate          float64 `json:"openai_adaptive_scheduler_high_error_exit_rate"`
-	OpenAIAdaptiveSchedulerCapacityRecoverySamples    int     `json:"openai_adaptive_scheduler_capacity_recovery_samples"`
-	OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds  int     `json:"openai_adaptive_scheduler_quota_probe_interval_seconds"`
+	// Retained for API compatibility. OpenAI TTFT scheduling uses rolling-window percentiles.
+	OpenAIAdaptiveSchedulerTTFTEMAAlpha              float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
+	OpenAIAdaptiveSchedulerCooldownBaseSeconds       int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
+	OpenAIAdaptiveSchedulerCooldownMaxSeconds        int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
+	OpenAIAdaptiveSchedulerWeightSuccess             float64 `json:"openai_adaptive_scheduler_weight_success"`
+	OpenAIAdaptiveSchedulerWeightCost                float64 `json:"openai_adaptive_scheduler_weight_cost"`
+	OpenAIAdaptiveSchedulerWeightCapacity            float64 `json:"openai_adaptive_scheduler_weight_capacity"`
+	OpenAIAdaptiveSchedulerWeightLatency             float64 `json:"openai_adaptive_scheduler_weight_latency"`
+	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
+	OpenAIAdaptiveSchedulerLearningMinHealthSamples  int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
+	OpenAIAdaptiveSchedulerHealthFailureThreshold    int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
+	OpenAIAdaptiveSchedulerHighErrorMinSamples       int     `json:"openai_adaptive_scheduler_high_error_min_samples"`
+	OpenAIAdaptiveSchedulerHighErrorMaxSamples       int     `json:"openai_adaptive_scheduler_high_error_max_samples"`
+	OpenAIAdaptiveSchedulerHighErrorEnterRate        float64 `json:"openai_adaptive_scheduler_high_error_enter_rate"`
+	OpenAIAdaptiveSchedulerHighErrorExitRate         float64 `json:"openai_adaptive_scheduler_high_error_exit_rate"`
+	OpenAIAdaptiveSchedulerCapacityRecoverySamples   int     `json:"openai_adaptive_scheduler_capacity_recovery_samples"`
+	OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds int     `json:"openai_adaptive_scheduler_quota_probe_interval_seconds"`
 }
 
 type cachedOpenAIAdaptiveSchedulerSetting struct {

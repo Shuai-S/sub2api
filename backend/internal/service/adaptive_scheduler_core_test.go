@@ -162,6 +162,192 @@ func TestAdaptiveScoreUsesNeutralTTFTForMissingSamplesAndConfidenceForSparseSamp
 	require.InDelta(t, 0.5, scored[2].Score, 1e-9)
 }
 
+func TestAdaptiveTTFTWindowUsesOnlyLearningWindowSamples(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	settings.LearningWindow = 20 * time.Minute
+	store := newAdaptiveStateStore()
+	bucketKey := "gpt-5.1|responses|http"
+
+	oldValue := 60000
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		RequestID:          "old",
+		Type:               adaptiveObservationHealthSuccess,
+		FirstTokenMs:       &oldValue,
+		TTFTBucketKey:      bucketKey,
+		WindowedTTFT:       true,
+		ConfiguredCapacity: 10,
+	}, now.Add(-21*time.Minute), settings)
+	newValue := 4000
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		RequestID:          "new",
+		Type:               adaptiveObservationHealthSuccess,
+		FirstTokenMs:       &newValue,
+		TTFTBucketKey:      bucketKey,
+		WindowedTTFT:       true,
+		ConfiguredCapacity: 10,
+	}, now, settings)
+
+	state := store.snapshot(1, 10, now, settings)
+	stats := adaptiveTTFTWindowStatsForState(state, bucketKey, now, settings)
+	require.Equal(t, 1, stats.Samples)
+	require.Equal(t, 4000.0, stats.P50)
+	require.Equal(t, int64(1), state.TTFTSamples)
+	require.InDelta(t, 4000.0, state.TTFTEMA, 1e-9)
+}
+
+func TestAdaptiveTTFTAdmissionCarriesBucketToObservation(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	bucketKey := "gpt-5.1|responses|ws"
+	store.registerAdmissionWithLoadAndTTFTBucket(1, "request-1", 10, 1, 0, true, bucketKey, now, settings)
+	firstToken := 4200
+
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		RequestID:          "request-1",
+		Type:               adaptiveObservationHealthSuccess,
+		FirstTokenMs:       &firstToken,
+		WindowedTTFT:       true,
+		ConfiguredCapacity: 10,
+	}, now.Add(time.Second), settings)
+
+	state := store.snapshot(1, 10, now.Add(time.Second), settings)
+	stats := adaptiveTTFTWindowStatsForState(state, bucketKey, now.Add(time.Second), settings)
+	require.Equal(t, 1, stats.Samples)
+	require.Equal(t, 4200.0, stats.P50)
+}
+
+func TestAdaptiveTTFTAdmissionSurvivesRetryableObservationUntilSuccess(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	bucketKey := "gpt-5.1|responses|ws"
+	store.registerAdmissionWithLoadAndTTFTBucket(1, "request-1", 10, 1, 0, true, bucketKey, now, settings)
+
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		RequestID:          "request-1",
+		Type:               adaptiveObservationProviderOverload,
+		WindowedTTFT:       true,
+		ConfiguredCapacity: 10,
+	}, now.Add(time.Second), settings)
+	firstToken := 4300
+	store.observe(adaptiveObservation{
+		AccountID:          1,
+		RequestID:          "request-1",
+		Type:               adaptiveObservationHealthSuccess,
+		FirstTokenMs:       &firstToken,
+		WindowedTTFT:       true,
+		ConfiguredCapacity: 10,
+	}, now.Add(2*time.Second), settings)
+
+	state := store.snapshot(1, 10, now.Add(2*time.Second), settings)
+	stats := adaptiveTTFTWindowStatsForState(state, bucketKey, now.Add(2*time.Second), settings)
+	require.Equal(t, 1, stats.Samples)
+	require.Equal(t, 4300.0, stats.P50)
+	store.mu.RLock()
+	require.Empty(t, store.ttftClaims)
+	store.mu.RUnlock()
+}
+
+func TestAdaptiveTTFTWindowScoresP50WithSmallP90TailPenalty(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 0
+	settings.WeightCost = 0
+	settings.WeightTTFT = 1
+	bucketKey := "gpt-5.1|responses|http"
+	fast := newAdaptiveAccountState(1, 10, now)
+	slow := newAdaptiveAccountState(2, 10, now)
+	for i := 0; i < 50; i++ {
+		fastValue := 4000
+		if i == 49 {
+			fastValue = 120000
+		}
+		observeAdaptiveTTFTWindowLocked(fast, bucketKey, fastValue, now.Add(time.Duration(i)*time.Second), settings)
+		observeAdaptiveTTFTWindowLocked(slow, bucketKey, 8000, now.Add(time.Duration(i)*time.Second), settings)
+	}
+
+	scored := scoreAdaptiveCandidates([]adaptiveScoreCandidate{
+		{AccountID: 1, Cost: 1, State: *fast, TTFTBucketKey: bucketKey},
+		{AccountID: 2, Cost: 1, State: *slow, TTFTBucketKey: bucketKey},
+	}, now.Add(time.Minute), settings)
+
+	require.Equal(t, 50, scored[0].TTFTWindowSamples)
+	require.Equal(t, 4000.0, scored[0].TTFTP50)
+	require.Equal(t, 4000.0, scored[0].TTFTP90)
+	require.Greater(t, scored[0].TTFTScore, scored[1].TTFTScore)
+	require.Greater(t, scored[0].Score, scored[1].Score)
+}
+
+func TestAdaptiveTTFTWindowKeepsSparseAccountNeutral(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 0
+	settings.WeightCost = 0
+	settings.WeightTTFT = 1
+	bucketKey := "gpt-5.1|responses|http"
+	states := []*adaptiveAccountState{
+		newAdaptiveAccountState(1, 10, now),
+		newAdaptiveAccountState(2, 10, now),
+		newAdaptiveAccountState(3, 10, now),
+	}
+	for i := 0; i < 4; i++ {
+		observeAdaptiveTTFTWindowLocked(states[0], bucketKey, 1000, now.Add(time.Duration(i)*time.Second), settings)
+	}
+	for i := 0; i < 20; i++ {
+		observeAdaptiveTTFTWindowLocked(states[1], bucketKey, 4000, now.Add(time.Duration(i)*time.Second), settings)
+		observeAdaptiveTTFTWindowLocked(states[2], bucketKey, 8000, now.Add(time.Duration(i)*time.Second), settings)
+	}
+
+	scored := scoreAdaptiveCandidates([]adaptiveScoreCandidate{
+		{AccountID: 1, Cost: 1, State: *states[0], TTFTBucketKey: bucketKey},
+		{AccountID: 2, Cost: 1, State: *states[1], TTFTBucketKey: bucketKey},
+		{AccountID: 3, Cost: 1, State: *states[2], TTFTBucketKey: bucketKey},
+	}, now.Add(time.Minute), settings)
+
+	require.Equal(t, 4, scored[0].TTFTWindowSamples)
+	require.InDelta(t, 0.5, scored[0].TTFTScore, 1e-9)
+	require.Greater(t, scored[1].TTFTScore, scored[2].TTFTScore)
+}
+
+func TestAdaptiveTTFTWindowDoesNotCompareDifferentBuckets(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	settings.WeightReliability = 0
+	settings.WeightCapacity = 1
+	settings.WeightCost = 0
+	settings.WeightTTFT = 1
+	firstKey := "gpt-5.1|responses|http"
+	secondKey := "gpt-5.4-mini|responses|http"
+	first := newAdaptiveAccountState(1, 10, now)
+	second := newAdaptiveAccountState(2, 10, now)
+	for i := 0; i < 20; i++ {
+		observeAdaptiveTTFTWindowLocked(first, firstKey, 1000, now.Add(time.Duration(i)*time.Second), settings)
+		observeAdaptiveTTFTWindowLocked(second, secondKey, 10000, now.Add(time.Duration(i)*time.Second), settings)
+	}
+
+	scored := scoreAdaptiveCandidates([]adaptiveScoreCandidate{
+		{AccountID: 1, Cost: 1, State: *first, TTFTBucketKey: firstKey},
+		{AccountID: 2, Cost: 1, State: *second, TTFTBucketKey: secondKey},
+	}, now.Add(time.Minute), settings)
+
+	require.Zero(t, scored[0].TTFTScore)
+	require.Zero(t, scored[1].TTFTScore)
+	require.Equal(t, 1.0, scored[0].Score)
+	require.Equal(t, 1.0, scored[1].Score)
+}
+
+func TestAdaptiveTTFTBlendMatchesP50P90Design(t *testing.T) {
+	require.InDelta(t, 5027.83, adaptiveTTFTBlend(4120, 11151), 0.01)
+}
+
 func TestAdaptiveCircuitUsesDeduplicatedFailuresAndAuthenticationFastOpen(t *testing.T) {
 	now := time.Now()
 	settings := defaultAdaptiveCoreSettings()

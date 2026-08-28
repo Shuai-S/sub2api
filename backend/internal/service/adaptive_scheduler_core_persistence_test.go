@@ -194,6 +194,73 @@ func TestAdaptiveCorePersistenceRestoresValidV2SnapshotOnceAtStartup(t *testing.
 	require.Equal(t, 1, cache.scanCount(), "periodic persistence must not read Redis again")
 }
 
+func TestAdaptiveCorePersistenceRoundTripsWindowedTTFTSamples(t *testing.T) {
+	now := time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	bucketKey := "gpt-5.1|responses|http"
+	firstToken := 4200
+	store.observe(adaptiveObservation{
+		AccountID:          1004,
+		RequestID:          "windowed-success",
+		Type:               adaptiveObservationHealthSuccess,
+		ConfiguredCapacity: 10,
+		FirstTokenMs:       &firstToken,
+		TTFTBucketKey:      bucketKey,
+		WindowedTTFT:       true,
+	}, now.Add(-time.Minute), settings)
+	cache := &fakeAdaptiveStateCache{}
+	persistence := newAdaptiveCoreStatePersistence(cache, store, adaptiveSchedulerCoreNamespaceOpenAI)
+	persistence.now = func() time.Time { return now }
+
+	require.NoError(t, persistence.flush(t.Context()))
+	require.Len(t, cache.saved, 1)
+	require.Len(t, cache.saved[0], 1)
+
+	restoredStore := newAdaptiveStateStore()
+	restoredCache := &fakeAdaptiveStateCache{scanRecords: []AdaptiveSchedulerStateCacheRecord{{
+		AccountID: 1004,
+		Payload:   cache.saved[0][0].Payload,
+	}}}
+	restoredPersistence := newAdaptiveCoreStatePersistence(restoredCache, restoredStore, adaptiveSchedulerCoreNamespaceOpenAI)
+	restoredPersistence.now = func() time.Time { return now }
+	restored, stale, invalid, err := restoredPersistence.restoreOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, restored)
+	require.Zero(t, stale)
+	require.Zero(t, invalid)
+
+	state := restoredStore.snapshot(1004, 10, now, settings)
+	stats := adaptiveTTFTWindowStatsForState(state, bucketKey, now, settings)
+	require.Equal(t, 1, stats.Samples)
+	require.Equal(t, 4200.0, stats.P50)
+}
+
+func TestAdaptiveCorePersistenceDropsLegacyOpenAITTFTOnly(t *testing.T) {
+	now := time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC)
+	state := *newAdaptiveAccountState(1005, 10, now.Add(-time.Minute))
+	state.SuccessEMA = 0.93
+	state.TTFTEMA = 9000
+	state.TTFTSamples = 5000
+	cache := &fakeAdaptiveStateCache{scanRecords: []AdaptiveSchedulerStateCacheRecord{{
+		AccountID: state.AccountID,
+		Payload:   adaptiveCorePersistenceTestPayload(t, now, state),
+	}}}
+	store := newAdaptiveStateStore()
+	persistence := newAdaptiveCoreStatePersistence(cache, store, adaptiveSchedulerCoreNamespaceOpenAI)
+	persistence.now = func() time.Time { return now }
+
+	restored, stale, invalid, err := persistence.restoreOnce(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, restored)
+	require.Zero(t, stale)
+	require.Zero(t, invalid)
+	restoredState := store.snapshot(state.AccountID, 10, now, defaultAdaptiveCoreSettings())
+	require.Equal(t, 0.93, restoredState.SuccessEMA)
+	require.Zero(t, restoredState.TTFTEMA)
+	require.Zero(t, restoredState.TTFTSamples)
+}
+
 func TestAdaptiveCorePersistenceSkipsStaleAndInvalidSnapshots(t *testing.T) {
 	now := time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC)
 	valid := *newAdaptiveAccountState(1101, 10, now.Add(-time.Minute))
