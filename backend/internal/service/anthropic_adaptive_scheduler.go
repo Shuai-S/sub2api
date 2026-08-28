@@ -216,6 +216,9 @@ func (s *GatewayService) logAnthropicAdaptiveDecision(
 		if diverged {
 			s.anthropicAdaptiveScheduler.shadowDivergeTotal.Add(1)
 		}
+		if !shouldLogAnthropicAdaptiveDiagnostic(ctx, settings, entry.RequestedModel, diverged || entry.StickyWouldBypass || entry.Force) {
+			return
+		}
 		slog.Info("anthropic_adaptive_shadow_decision",
 			"request_id", contextStringValue(ctx, ctxkey.RequestID),
 			"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),

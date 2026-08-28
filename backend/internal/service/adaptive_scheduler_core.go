@@ -190,6 +190,11 @@ type adaptiveTTFTObservation struct {
 	Milliseconds int       `json:"milliseconds"`
 }
 
+const (
+	adaptiveTTFTMaxSamplesPerBucket  = 512
+	adaptiveTTFTMaxBucketsPerAccount = 32
+)
+
 type adaptiveAdmission struct {
 	AccountID           int64
 	CapacityGeneration  uint64
@@ -329,6 +334,23 @@ func cloneAdaptiveAccountState(state *adaptiveAccountState) adaptiveAccountState
 	return clone
 }
 
+func cloneAdaptiveAccountStateForScheduling(state *adaptiveAccountState, ttftBucketKey string) adaptiveAccountState {
+	if state == nil {
+		return adaptiveAccountState{}
+	}
+	clone := *state
+	clone.HealthObservations = append([]adaptiveHealthObservation(nil), state.HealthObservations...)
+	clone.TTFTWindows = nil
+	if ttftBucketKey = strings.TrimSpace(ttftBucketKey); ttftBucketKey != "" {
+		if observations := state.TTFTWindows[ttftBucketKey]; len(observations) > 0 {
+			clone.TTFTWindows = map[string][]adaptiveTTFTObservation{
+				ttftBucketKey: append([]adaptiveTTFTObservation(nil), observations...),
+			}
+		}
+	}
+	return clone
+}
+
 func (s *adaptiveStateStore) ensureLocked(accountID int64, configuredCapacity int, now time.Time) *adaptiveAccountState {
 	state := s.accounts[accountID]
 	if state == nil {
@@ -398,8 +420,63 @@ func (s *adaptiveStateStore) observeLoad(accountID int64, configuredCapacity, cu
 	return cloneAdaptiveAccountState(state)
 }
 
+func (s *adaptiveStateStore) schedulingSnapshot(
+	accountID int64,
+	configuredCapacity int,
+	currentConcurrency int,
+	ttftBucketKey string,
+	now time.Time,
+	settings adaptiveCoreSettings,
+) (adaptiveAccountState, bool) {
+	if s == nil || accountID <= 0 {
+		return adaptiveAccountState{}, false
+	}
+	settings = normalizeAdaptiveCoreSettings(settings)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.ensureLocked(accountID, configuredCapacity, now)
+	changed := s.refreshLocked(state, now, settings)
+	if currentConcurrency >= 0 && state.LastObservedConcurrency != currentConcurrency {
+		state.LastObservedConcurrency = currentConcurrency
+		changed = true
+	}
+	if changed {
+		touchAdaptiveState(state, now)
+	}
+	return cloneAdaptiveAccountStateForScheduling(state, ttftBucketKey), adaptiveStateAllowedForSelection(state, now)
+}
+
+func (s *adaptiveStateStore) summarySnapshot(accountID int64, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) adaptiveAccountState {
+	state, _ := s.schedulingSnapshot(accountID, configuredCapacity, -1, "", now, settings)
+	return state
+}
+
+func (s *adaptiveStateStore) runtimeStatusWithLoad(accountID int64, configuredCapacity, currentConcurrency int, now time.Time, settings adaptiveCoreSettings) (effectiveCapacity int, allowed, circuitTracked, quotaTracked bool) {
+	if s == nil || accountID <= 0 {
+		return 0, false, false, false
+	}
+	settings = normalizeAdaptiveCoreSettings(settings)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.ensureLocked(accountID, configuredCapacity, now)
+	changed := s.refreshLocked(state, now, settings)
+	if currentConcurrency >= 0 && state.LastObservedConcurrency != currentConcurrency {
+		state.LastObservedConcurrency = currentConcurrency
+		changed = true
+	}
+	if changed {
+		touchAdaptiveState(state, now)
+	}
+	return state.EffectiveCapacity, adaptiveStateAllowedForSelection(state, now), !state.CircuitOpenUntil.IsZero(), state.QuotaLimited
+}
+
+func (s *adaptiveStateStore) runtimeStatus(accountID int64, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) (effectiveCapacity int, allowed, circuitTracked, quotaTracked bool) {
+	return s.runtimeStatusWithLoad(accountID, configuredCapacity, -1, now, settings)
+}
+
 func (s *adaptiveStateStore) effectiveCapacity(accountID int64, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) int {
-	return s.snapshot(accountID, configuredCapacity, now, settings).EffectiveCapacity
+	effectiveCapacity, _, _, _ := s.runtimeStatus(accountID, configuredCapacity, now, settings)
+	return effectiveCapacity
 }
 
 func (s *adaptiveStateStore) dueHealthProbeAccountIDs(now time.Time, settings adaptiveCoreSettings) []int64 {
@@ -542,6 +619,14 @@ func pruneAdaptiveTTFTWindows(state *adaptiveAccountState, now time.Time, settin
 			state.TTFTWindows[key] = append([]adaptiveTTFTObservation(nil), observations[first:]...)
 			changed = true
 		}
+		if observations = state.TTFTWindows[key]; len(observations) > adaptiveTTFTMaxSamplesPerBucket {
+			state.TTFTWindows[key] = append([]adaptiveTTFTObservation(nil), observations[len(observations)-adaptiveTTFTMaxSamplesPerBucket:]...)
+			changed = true
+		}
+	}
+	for len(state.TTFTWindows) > adaptiveTTFTMaxBucketsPerAccount {
+		delete(state.TTFTWindows, oldestAdaptiveTTFTBucket(state.TTFTWindows))
+		changed = true
 	}
 	if len(state.TTFTWindows) == 0 {
 		state.TTFTWindows = nil
@@ -549,7 +634,9 @@ func pruneAdaptiveTTFTWindows(state *adaptiveAccountState, now time.Time, settin
 		state.TTFTSamples = 0
 		return true
 	}
-	refreshAdaptiveTTFTWindowSummary(state)
+	if changed {
+		refreshAdaptiveTTFTWindowSummary(state)
+	}
 	return changed
 }
 
@@ -790,14 +877,18 @@ func (s *adaptiveStateStore) releaseHealthProbe(accountID int64, requestID strin
 }
 
 func (s *adaptiveStateStore) allowedForSelection(accountID int64, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) bool {
-	state := s.snapshot(accountID, configuredCapacity, now, settings)
+	_, allowed, _, _ := s.runtimeStatus(accountID, configuredCapacity, now, settings)
+	return allowed
+}
+
+func adaptiveStateAllowedForSelection(state *adaptiveAccountState, now time.Time) bool {
+	if state == nil {
+		return false
+	}
 	if !state.CircuitOpenUntil.IsZero() && (state.CircuitOpenUntil.After(now) || state.HealthProbeInFlight) {
 		return false
 	}
-	if state.QuotaLimited && (!adaptiveQuotaProbeDue(&state, now) || state.QuotaProbeInFlight) {
-		return false
-	}
-	return true
+	return !state.QuotaLimited || (adaptiveQuotaProbeDue(state, now) && !state.QuotaProbeInFlight)
 }
 
 func adaptiveQuotaProbeDue(state *adaptiveAccountState, now time.Time) bool {
@@ -1420,11 +1511,34 @@ func observeAdaptiveTTFTWindowLocked(state *adaptiveAccountState, bucketKey stri
 	if state.TTFTWindows == nil {
 		state.TTFTWindows = make(map[string][]adaptiveTTFTObservation)
 	}
-	state.TTFTWindows[bucketKey] = append(state.TTFTWindows[bucketKey], adaptiveTTFTObservation{
+	if _, exists := state.TTFTWindows[bucketKey]; !exists && len(state.TTFTWindows) >= adaptiveTTFTMaxBucketsPerAccount {
+		delete(state.TTFTWindows, oldestAdaptiveTTFTBucket(state.TTFTWindows))
+	}
+	observations := append(state.TTFTWindows[bucketKey], adaptiveTTFTObservation{
 		At:           now,
 		Milliseconds: value,
 	})
+	if len(observations) > adaptiveTTFTMaxSamplesPerBucket {
+		observations = append([]adaptiveTTFTObservation(nil), observations[len(observations)-adaptiveTTFTMaxSamplesPerBucket:]...)
+	}
+	state.TTFTWindows[bucketKey] = observations
 	refreshAdaptiveTTFTWindowSummary(state)
+}
+
+func oldestAdaptiveTTFTBucket(windows map[string][]adaptiveTTFTObservation) string {
+	oldestKey := ""
+	var oldestAt time.Time
+	for key, observations := range windows {
+		lastAt := time.Time{}
+		if len(observations) > 0 {
+			lastAt = observations[len(observations)-1].At
+		}
+		if oldestKey == "" || lastAt.Before(oldestAt) || (lastAt.Equal(oldestAt) && key < oldestKey) {
+			oldestKey = key
+			oldestAt = lastAt
+		}
+	}
+	return oldestKey
 }
 
 func refreshAdaptiveTTFTWindowSummary(state *adaptiveAccountState) {

@@ -33,7 +33,10 @@ func (s *GatewayService) ReportGeminiAdaptiveResult(ctx context.Context, account
 	report := classifyGeminiAdaptiveResult(ctx, account, requestedModel, action, result, err)
 	now := s.geminiAdaptiveScheduler.now()
 	coreSettings := geminiAdaptiveCoreSettings(settings)
-	beforeCore := s.geminiAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
+	var beforeCore adaptiveAccountState
+	if settings.GeminiAdaptiveSchedulerDiagnosticLogEnabled {
+		beforeCore = s.geminiAdaptiveScheduler.core.summarySnapshot(account.ID, account.Concurrency, now, coreSettings)
+	}
 	observationType, authentication := geminiAdaptiveObservation(report)
 	observation := adaptiveObservation{
 		AccountID:           account.ID,
@@ -52,8 +55,10 @@ func (s *GatewayService) ReportGeminiAdaptiveResult(ctx context.Context, account
 	if decreased {
 		s.geminiAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}
-	afterCore := s.geminiAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
-	s.logGeminiAdaptiveDiagnosticResult(ctx, settings, report, beforeCore, afterCore, increased, decreased, err)
+	if settings.GeminiAdaptiveSchedulerDiagnosticLogEnabled {
+		afterCore := s.geminiAdaptiveScheduler.core.summarySnapshot(account.ID, account.Concurrency, now, coreSettings)
+		s.logGeminiAdaptiveDiagnosticResult(ctx, settings, report, beforeCore, afterCore, increased, decreased, err)
+	}
 }
 
 func geminiAdaptiveObservation(report GeminiAdaptiveScheduleReport) (adaptiveObservationType, bool) {

@@ -27,6 +27,34 @@ func TestAnthropicAdaptiveDiagnosticSamplingRespectsSwitchRateAndForcedEvents(t 
 	require.True(t, shouldLogAnthropicAdaptiveDiagnostic(t.Context(), settings, "claude-sonnet-4", false))
 }
 
+func TestAnthropicAdaptiveShadowDecisionRequiresDiagnosticsAndAlwaysLogsDivergence(t *testing.T) {
+	output := captureAnthropicAdaptiveLogs(t)
+	settings := DefaultAnthropicAdaptiveSchedulerSettings()
+	service := &GatewayService{anthropicAdaptiveScheduler: newAnthropicAdaptiveScheduler()}
+	selected := &Account{ID: 41, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+
+	service.logAnthropicAdaptiveDecision(context.Background(), settings, anthropicAdaptiveDecisionLog{
+		Mode:              AnthropicAdaptiveSchedulerModeShadow,
+		RequestedModel:    "claude-sonnet-4",
+		BaselineAccountID: selected.ID,
+		SelectedAccount:   selected,
+		Decision:          &AnthropicAdaptiveDecision{SelectedAccountID: selected.ID},
+	})
+	require.Empty(t, output.String())
+
+	settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled = true
+	settings.AnthropicAdaptiveSchedulerDiagnosticLogSampleRate = 0
+	service.logAnthropicAdaptiveDecision(context.Background(), settings, anthropicAdaptiveDecisionLog{
+		Mode:              AnthropicAdaptiveSchedulerModeShadow,
+		RequestedModel:    "claude-sonnet-4",
+		BaselineAccountID: selected.ID,
+		SelectedAccount:   selected,
+		Decision:          &AnthropicAdaptiveDecision{SelectedAccountID: 42},
+	})
+	require.Contains(t, output.String(), "anthropic_adaptive_shadow_decision")
+	require.Contains(t, output.String(), "shadow_diverged=true")
+}
+
 func TestAnthropicAdaptiveDiagnosticCandidatesUseAccountCoreState(t *testing.T) {
 	now := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
 	account := &Account{ID: 41, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Concurrency: 20}

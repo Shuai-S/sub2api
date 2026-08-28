@@ -198,6 +198,68 @@ func TestAdaptiveTTFTWindowUsesOnlyLearningWindowSamples(t *testing.T) {
 	require.InDelta(t, 4000.0, state.TTFTEMA, 1e-9)
 }
 
+func TestAdaptiveTTFTWindowCapsSamplesAndBuckets(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	state := newAdaptiveAccountState(1, 10, now)
+	primaryBucket := "gpt-5.1|responses|http"
+	for i := 0; i < adaptiveTTFTMaxSamplesPerBucket+25; i++ {
+		observeAdaptiveTTFTWindowLocked(state, primaryBucket, i+1, now.Add(time.Duration(i)*time.Millisecond), settings)
+	}
+
+	require.Len(t, state.TTFTWindows[primaryBucket], adaptiveTTFTMaxSamplesPerBucket)
+	require.Equal(t, 26, state.TTFTWindows[primaryBucket][0].Milliseconds)
+	require.Equal(t, int64(adaptiveTTFTMaxSamplesPerBucket), state.TTFTSamples)
+
+	for i := 0; i < adaptiveTTFTMaxBucketsPerAccount; i++ {
+		bucket := "model-" + string(rune('a'+i)) + "|responses|http"
+		observeAdaptiveTTFTWindowLocked(state, bucket, 100+i, now.Add(time.Minute+time.Duration(i)*time.Millisecond), settings)
+	}
+
+	require.Len(t, state.TTFTWindows, adaptiveTTFTMaxBucketsPerAccount)
+	require.NotContains(t, state.TTFTWindows, primaryBucket)
+}
+
+func TestAdaptiveSchedulingSnapshotCopiesOnlyRequestedTTFTBucket(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	requestedBucket := "gpt-5.1|responses|http"
+	otherBucket := "gpt-5.1|responses|ws"
+	store.mu.Lock()
+	state := store.ensureLocked(1, 10, now)
+	state.TTFTWindows = map[string][]adaptiveTTFTObservation{
+		requestedBucket: {{At: now, Milliseconds: 100}},
+		otherBucket:     {{At: now, Milliseconds: 200}},
+	}
+	store.mu.Unlock()
+
+	snapshot, allowed := store.schedulingSnapshot(1, 10, 3, requestedBucket, now, settings)
+
+	require.True(t, allowed)
+	require.Equal(t, 3, snapshot.LastObservedConcurrency)
+	require.Len(t, snapshot.TTFTWindows, 1)
+	require.Contains(t, snapshot.TTFTWindows, requestedBucket)
+	require.NotContains(t, snapshot.TTFTWindows, otherBucket)
+	snapshot.TTFTWindows[requestedBucket][0].Milliseconds = 999
+	require.Equal(t, 100, store.snapshot(1, 10, now, settings).TTFTWindows[requestedBucket][0].Milliseconds)
+}
+
+func TestAdaptiveTTFTPruneSkipsSummaryRebuildWhenNothingChanges(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	state := newAdaptiveAccountState(1, 10, now)
+	state.TTFTEMA = 123
+	state.TTFTSamples = 7
+	state.TTFTWindows = map[string][]adaptiveTTFTObservation{
+		"gpt-5.1|responses|http": {{At: now, Milliseconds: 100}},
+	}
+
+	require.False(t, pruneAdaptiveTTFTWindows(state, now, settings))
+	require.Equal(t, 123.0, state.TTFTEMA)
+	require.Equal(t, int64(7), state.TTFTSamples)
+}
+
 func TestAdaptiveTTFTAdmissionCarriesBucketToObservation(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	settings := defaultAdaptiveCoreSettings()

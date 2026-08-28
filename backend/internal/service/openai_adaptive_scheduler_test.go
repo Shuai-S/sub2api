@@ -748,6 +748,31 @@ func TestOpenAIAdaptiveDiagnosticDecisionLogsMeasuredLatency(t *testing.T) {
 	require.Regexp(t, `latency_ms=[1-9][0-9]*`, output.String())
 }
 
+func TestOpenAIAdaptiveShadowDecisionRequiresDiagnosticsAndAlwaysLogsDivergence(t *testing.T) {
+	var output bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&output, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	account := Account{ID: 7101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 10}
+	service := &OpenAIGatewayService{accountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}}}
+	scheduler := newOpenAIAdaptiveTestScheduler(service)
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+	req := OpenAIAccountScheduleRequest{Platform: PlatformOpenAI, RequestedModel: "gpt-5.1", RequiredTransport: OpenAIUpstreamTransportAny}
+
+	scheduler.logShadowDecision(context.Background(), req, cfg, &AccountSelectionResult{Account: &account})
+	require.Empty(t, output.String())
+
+	scheduler.logShadowDecision(context.Background(), req, cfg, &AccountSelectionResult{Account: &Account{ID: 7102}})
+	require.Empty(t, output.String())
+
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
+	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0
+	scheduler.logShadowDecision(context.Background(), req, cfg, &AccountSelectionResult{Account: &Account{ID: 7102}})
+	require.Contains(t, output.String(), "openai_adaptive_shadow_decision")
+	require.Contains(t, output.String(), "diverged=true")
+}
+
 func TestOpenAIAdaptiveDiagnosticResultIncludesFailoverContext(t *testing.T) {
 	var output bytes.Buffer
 	previousLogger := slog.Default()

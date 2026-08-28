@@ -58,8 +58,8 @@ func (s *anthropicAdaptiveScheduler) BuildOrder(req AnthropicAdaptiveScheduleReq
 		if load == nil {
 			load = &AccountLoadInfo{AccountID: item.account.ID}
 		}
-		state := s.core.observeLoad(item.account.ID, item.account.Concurrency, load.CurrentConcurrency, now, coreSettings)
-		if !s.core.allowedForSelection(item.account.ID, item.account.Concurrency, now, coreSettings) {
+		state, allowed := s.core.schedulingSnapshot(item.account.ID, item.account.Concurrency, load.CurrentConcurrency, "", now, coreSettings)
+		if !allowed {
 			continue
 		}
 		if state.EffectiveCapacity > 0 && load.CurrentConcurrency >= state.EffectiveCapacity {

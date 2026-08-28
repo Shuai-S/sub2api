@@ -110,10 +110,10 @@ func (s *geminiAdaptiveScheduler) BuildOrder(req GeminiAdaptiveScheduleRequest) 
 			EffectiveCapacity: input.Account.Concurrency,
 		}
 		if input.Account.Platform == PlatformGemini {
-			state := s.core.observeLoad(input.Account.ID, input.Account.Concurrency, load.CurrentConcurrency, now, coreSettings)
+			state, allowed := s.core.schedulingSnapshot(input.Account.ID, input.Account.Concurrency, load.CurrentConcurrency, "", now, coreSettings)
 			candidate.coreState = state
 			candidate.EffectiveCapacity = state.EffectiveCapacity
-			if !s.core.allowedForSelection(input.Account.ID, input.Account.Concurrency, now, coreSettings) {
+			if !allowed {
 				decision.CircuitRejectedCount++
 				continue
 			}

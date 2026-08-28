@@ -21,7 +21,10 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 	report.RequestID = firstNonEmpty(contextStringValue(ctx, ctxkey.RequestID), contextStringValue(ctx, ctxkey.ClientRequestID))
 	now := s.anthropicAdaptiveScheduler.now()
 	coreSettings := anthropicAdaptiveCoreSettings(settings)
-	beforeCore := s.anthropicAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
+	var beforeCore adaptiveAccountState
+	if settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled {
+		beforeCore = s.anthropicAdaptiveScheduler.core.summarySnapshot(account.ID, account.Concurrency, now, coreSettings)
+	}
 	observationType, authentication := anthropicAdaptiveObservation(report)
 	observation := adaptiveObservation{
 		AccountID:           account.ID,
@@ -37,11 +40,13 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 		observation.QuotaResetAt = account.RateLimitResetAt
 	}
 	_, decreased := s.anthropicAdaptiveScheduler.core.observe(observation, now, coreSettings)
-	afterCore := s.anthropicAdaptiveScheduler.core.snapshot(account.ID, account.Concurrency, now, coreSettings)
 	if decreased {
 		s.anthropicAdaptiveScheduler.capacityDecreaseTotal.Add(1)
 	}
-	s.logAnthropicAdaptiveDiagnosticResult(ctx, settings, report, beforeCore, afterCore, decreased, err)
+	if settings.AnthropicAdaptiveSchedulerDiagnosticLogEnabled {
+		afterCore := s.anthropicAdaptiveScheduler.core.summarySnapshot(account.ID, account.Concurrency, now, coreSettings)
+		s.logAnthropicAdaptiveDiagnosticResult(ctx, settings, report, beforeCore, afterCore, decreased, err)
+	}
 }
 
 func anthropicAdaptiveObservation(report AnthropicAdaptiveScheduleReport) (adaptiveObservationType, bool) {
