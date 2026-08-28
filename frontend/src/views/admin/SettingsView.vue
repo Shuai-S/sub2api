@@ -10030,6 +10030,9 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_mode: string;
   openai_adaptive_scheduler_top_k: number;
   openai_adaptive_scheduler_exploration_rate: number;
+  openai_adaptive_scheduler_recovery_exploration_rate: number;
+  openai_adaptive_scheduler_recovery_max_concurrency: number;
+  openai_adaptive_scheduler_recovery_warmup_successes: number;
   openai_adaptive_scheduler_softmax_temperature: number;
   openai_adaptive_scheduler_capacity_growth_factor: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold: number;
@@ -10303,6 +10306,9 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_diagnostic_log_sample_rate: 0.05,
   openai_adaptive_scheduler_top_k: 8,
   openai_adaptive_scheduler_exploration_rate: 0.02,
+  openai_adaptive_scheduler_recovery_exploration_rate: 0.01,
+  openai_adaptive_scheduler_recovery_max_concurrency: 2,
+  openai_adaptive_scheduler_recovery_warmup_successes: 3,
   openai_adaptive_scheduler_softmax_temperature: 0.35,
   openai_adaptive_scheduler_capacity_growth_factor: 1.25,
   openai_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
@@ -10340,6 +10346,9 @@ const openAIAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "openai_adaptive_scheduler_top_k", label: "topK", min: 1, max: 100, step: 1 },
       { key: "openai_adaptive_scheduler_softmax_temperature", label: "softmaxTemperature", min: 0.01, max: 10, step: 0.01 },
       { key: "openai_adaptive_scheduler_exploration_rate", label: "explorationRate", min: 0, max: 1, step: 0.01 },
+      { key: "openai_adaptive_scheduler_recovery_exploration_rate", label: "recoveryExplorationRate", min: 0, max: 1, step: 0.01 },
+      { key: "openai_adaptive_scheduler_recovery_max_concurrency", label: "recoveryMaxConcurrency", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_recovery_warmup_successes", label: "recoveryWarmupSuccesses", min: 1, step: 1 },
       { key: "openai_adaptive_scheduler_consecutive_failure_penalty", label: "consecutiveFailurePenalty", min: 0, step: 0.01 },
     ],
   },
@@ -12606,6 +12615,12 @@ async function saveSettings() {
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_top_k"),
       openai_adaptive_scheduler_exploration_rate:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_exploration_rate"),
+      openai_adaptive_scheduler_recovery_exploration_rate:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_recovery_exploration_rate"),
+      openai_adaptive_scheduler_recovery_max_concurrency:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_recovery_max_concurrency"),
+      openai_adaptive_scheduler_recovery_warmup_successes:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_recovery_warmup_successes"),
       openai_adaptive_scheduler_softmax_temperature:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_softmax_temperature"),
       openai_adaptive_scheduler_consecutive_failure_penalty:

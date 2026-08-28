@@ -94,6 +94,9 @@ func TestDefaultOpenAIAdaptiveSchedulerSettingsMatchSharedCore(t *testing.T) {
 	require.Equal(t, openAIAdaptiveSchedulerModeShadow, cfg.OpenAIAdaptiveSchedulerMode)
 	require.Equal(t, 8, cfg.OpenAIAdaptiveSchedulerTopK)
 	require.Equal(t, 0.02, cfg.OpenAIAdaptiveSchedulerExplorationRate)
+	require.Equal(t, 0.01, cfg.OpenAIAdaptiveSchedulerRecoveryExplorationRate)
+	require.Equal(t, 2, cfg.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency)
+	require.Equal(t, 3, cfg.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses)
 	require.Equal(t, 0.35, cfg.OpenAIAdaptiveSchedulerSoftmaxTemperature)
 	require.Equal(t, 1.25, cfg.OpenAIAdaptiveSchedulerCapacityGrowthFactor)
 	require.Equal(t, 8, cfg.OpenAIAdaptiveSchedulerCapacityRecoverySamples)
@@ -117,15 +120,24 @@ func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
 	cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled = true
 	cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = 0.25
 	cfg.OpenAIAdaptiveSchedulerTopK = 6
+	cfg.OpenAIAdaptiveSchedulerRecoveryExplorationRate = 0.2
+	cfg.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency = 4
+	cfg.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses = 5
 
 	values := openAIAdaptiveSchedulerSettingsToMap(cfg)
 	require.Equal(t, "true", values[openAIAdaptiveSchedulerDiagnosticLogEnabledKey])
 	require.Equal(t, "0.25", values[openAIAdaptiveSchedulerDiagnosticLogSampleRateKey])
 	require.Equal(t, "6", values[openAIAdaptiveSchedulerTopKKey])
+	require.Equal(t, "0.2", values[openAIAdaptiveSchedulerRecoveryExplorationRateKey])
+	require.Equal(t, "4", values[openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey])
+	require.Equal(t, "5", values[openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey])
 	parsed := parseOpenAIAdaptiveSchedulerSettings(values)
 	require.True(t, parsed.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
 	require.Equal(t, 0.25, parsed.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 	require.Equal(t, 6, parsed.OpenAIAdaptiveSchedulerTopK)
+	require.Equal(t, 0.2, parsed.OpenAIAdaptiveSchedulerRecoveryExplorationRate)
+	require.Equal(t, 4, parsed.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency)
+	require.Equal(t, 5, parsed.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses)
 }
 
 func TestNormalizeOpenAIAdaptiveSchedulerDiagnosticSampleRate(t *testing.T) {

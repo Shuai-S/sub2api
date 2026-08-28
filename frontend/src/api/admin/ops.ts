@@ -275,6 +275,9 @@ export interface OpsOpenAIAdaptiveLearningSettingsSnapshot {
   diagnostic_log_sample_rate: number
   top_k: number
   exploration_rate: number
+  recovery_exploration_rate: number
+  recovery_max_concurrency: number
+  recovery_warmup_successes: number
   softmax_temperature: number
   consecutive_failure_penalty: number
   learning_window_seconds: number
@@ -366,6 +369,11 @@ export interface OpsOpenAIAdaptiveLearningAccount {
   quota_limited: boolean
   quota_reset_at?: string
   quota_next_probe_at?: string
+  last_dispatch_at?: string
+  last_probe_at?: string
+  recovery_status: 'active' | 'stale' | 'probing' | 'warming' | string
+  recovery_successes: number
+  recovery_probe_in_flight: boolean
 }
 
 export interface OpsOpenAIAdaptiveLearningResponse {

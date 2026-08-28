@@ -48,6 +48,15 @@ const (
 	adaptiveRuntimeUnavailable  adaptiveRuntimeStatus = "unavailable"
 )
 
+type adaptiveRecoveryStatus string
+
+const (
+	adaptiveRecoveryActive  adaptiveRecoveryStatus = "active"
+	adaptiveRecoveryStale   adaptiveRecoveryStatus = "stale"
+	adaptiveRecoveryProbing adaptiveRecoveryStatus = "probing"
+	adaptiveRecoveryWarming adaptiveRecoveryStatus = "warming"
+)
+
 type adaptiveCoreSettings struct {
 	Mode                      string
 	TopK                      int
@@ -71,6 +80,9 @@ type adaptiveCoreSettings struct {
 	CapacityRecoverySamples   int
 	CapacityCooldown          time.Duration
 	QuotaProbeInterval        time.Duration
+	RecoveryExplorationRate   float64
+	RecoveryMaxConcurrency    int
+	RecoveryWarmupSuccesses   int
 	WeightReliability         float64
 	WeightCapacity            float64
 	WeightTTFT                float64
@@ -101,6 +113,9 @@ func defaultAdaptiveCoreSettings() adaptiveCoreSettings {
 		CapacityRecoverySamples:   8,
 		CapacityCooldown:          60 * time.Second,
 		QuotaProbeInterval:        5 * time.Minute,
+		RecoveryExplorationRate:   0.01,
+		RecoveryMaxConcurrency:    2,
+		RecoveryWarmupSuccesses:   3,
 		WeightReliability:         0.50,
 		WeightCapacity:            0.20,
 		WeightTTFT:                0.15,
@@ -149,6 +164,9 @@ func normalizeAdaptiveCoreSettings(settings adaptiveCoreSettings) adaptiveCoreSe
 	if settings.QuotaProbeInterval <= 0 {
 		settings.QuotaProbeInterval = defaults.QuotaProbeInterval
 	}
+	settings.RecoveryExplorationRate = clampFloat(settings.RecoveryExplorationRate, 0, 1, defaults.RecoveryExplorationRate)
+	settings.RecoveryMaxConcurrency = clampIntMin(settings.RecoveryMaxConcurrency, 1, defaults.RecoveryMaxConcurrency)
+	settings.RecoveryWarmupSuccesses = clampIntMin(settings.RecoveryWarmupSuccesses, 1, defaults.RecoveryWarmupSuccesses)
 	settings.WeightReliability = nonNegativeFinite(settings.WeightReliability)
 	settings.WeightCapacity = nonNegativeFinite(settings.WeightCapacity)
 	settings.WeightTTFT = nonNegativeFinite(settings.WeightTTFT)
@@ -178,6 +196,7 @@ type adaptiveAdmission struct {
 	TTFTBucketKey       string
 	HealthProbe         bool
 	QuotaProbe          bool
+	RecoveryProbe       bool
 	Admitted            bool
 	ObservedConcurrency int
 	WaitingCount        int
@@ -205,6 +224,7 @@ type adaptiveObservation struct {
 	CapacityGeneration    uint64
 	QuotaResetAt          *time.Time
 	HealthProbe           bool
+	RecoveryProbe         bool
 	AccountHealthEligible *bool
 	Synthetic             bool
 }
@@ -238,6 +258,13 @@ type adaptiveAccountState struct {
 	QuotaNextProbeAt          time.Time                            `json:"quota_next_probe_at,omitempty"`
 	QuotaProbeInFlight        bool                                 `json:"-"`
 	QuotaProbeOwner           string                               `json:"-"`
+	LastDispatchAt            time.Time                            `json:"last_dispatch_at,omitempty"`
+	LastProbeAt               time.Time                            `json:"last_probe_at,omitempty"`
+	RecoveryStatus            adaptiveRecoveryStatus               `json:"recovery_status,omitempty"`
+	RecoverySuccesses         int                                  `json:"recovery_successes"`
+	RecoveryProbeInFlight     bool                                 `json:"-"`
+	RecoveryProbeUntil        time.Time                            `json:"-"`
+	RecoveryProbeOwner        string                               `json:"-"`
 	LastObservationType       adaptiveObservationType              `json:"last_observation_type"`
 	LastReasonCode            string                               `json:"last_reason_code"`
 	LastReason                string                               `json:"last_reason"`
@@ -254,6 +281,7 @@ type adaptiveStateStore struct {
 	failureClaims map[string]time.Time
 	// Kept after an account lease is released so failover cannot spend the same request on another half-open account.
 	healthProbeClaims    map[string]time.Time
+	recoveryProbeClaims  map[string]time.Time
 	admissions           map[string]adaptiveAdmission
 	ttftClaims           map[string]adaptiveTTFTClaim
 	lastTransientCleanup time.Time
@@ -261,11 +289,12 @@ type adaptiveStateStore struct {
 
 func newAdaptiveStateStore() *adaptiveStateStore {
 	return &adaptiveStateStore{
-		accounts:          make(map[int64]*adaptiveAccountState),
-		failureClaims:     make(map[string]time.Time),
-		healthProbeClaims: make(map[string]time.Time),
-		admissions:        make(map[string]adaptiveAdmission),
-		ttftClaims:        make(map[string]adaptiveTTFTClaim),
+		accounts:            make(map[int64]*adaptiveAccountState),
+		failureClaims:       make(map[string]time.Time),
+		healthProbeClaims:   make(map[string]time.Time),
+		recoveryProbeClaims: make(map[string]time.Time),
+		admissions:          make(map[string]adaptiveAdmission),
+		ttftClaims:          make(map[string]adaptiveTTFTClaim),
 	}
 }
 
@@ -280,6 +309,7 @@ func newAdaptiveAccountState(accountID int64, configuredCapacity int, now time.T
 		EffectiveCapacity:  configuredCapacity,
 		SuccessEMA:         0.5,
 		CapacityGeneration: 1,
+		RecoveryStatus:     adaptiveRecoveryActive,
 		UpdatedAt:          now,
 	}
 }
@@ -390,10 +420,22 @@ func (s *adaptiveStateStore) dueHealthProbeAccountIDs(now time.Time, settings ad
 		if s.refreshLocked(state, now, settings) {
 			touchAdaptiveState(state, now)
 		}
-		if state.CircuitOpenUntil.IsZero() || state.CircuitOpenUntil.After(now) || state.HealthProbeInFlight {
-			continue
+		dueAt := time.Time{}
+		if !state.CircuitOpenUntil.IsZero() && !state.CircuitOpenUntil.After(now) && !state.HealthProbeInFlight {
+			dueAt = state.CircuitOpenUntil
 		}
-		due = append(due, dueProbe{accountID: accountID, dueAt: state.CircuitOpenUntil})
+		if state.QuotaLimited && adaptiveQuotaProbeDue(state, now) && !state.QuotaProbeInFlight {
+			quotaDueAt := adaptiveQuotaProbeAt(state)
+			if quotaDueAt.IsZero() {
+				quotaDueAt = now
+			}
+			if dueAt.IsZero() || (!quotaDueAt.IsZero() && quotaDueAt.Before(dueAt)) {
+				dueAt = quotaDueAt
+			}
+		}
+		if !dueAt.IsZero() {
+			due = append(due, dueProbe{accountID: accountID, dueAt: dueAt})
+		}
 	}
 	sort.Slice(due, func(i, j int) bool {
 		if !due[i].dueAt.Equal(due[j].dueAt) {
@@ -450,6 +492,32 @@ func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time
 		state.QuotaProbeInFlight = false
 		state.QuotaProbeOwner = ""
 		changed = true
+	}
+	if state.RecoveryProbeInFlight && !state.RecoveryProbeUntil.After(now) {
+		state.RecoveryProbeInFlight = false
+		state.RecoveryProbeUntil = time.Time{}
+		state.RecoveryProbeOwner = ""
+		state.RecoveryStatus = adaptiveRecoveryStatusAfterProbe(state)
+		changed = true
+	}
+	if !state.RecoveryProbeInFlight && state.RecoveryStatus == adaptiveRecoveryWarming &&
+		!state.LastProbeAt.IsZero() && now.Sub(state.LastProbeAt) >= settings.LearningWindow {
+		state.RecoveryStatus = adaptiveRecoveryStale
+		state.RecoverySuccesses = 0
+		changed = true
+	}
+	if !state.RecoveryProbeInFlight && (state.RecoveryStatus == "" || state.RecoveryStatus == adaptiveRecoveryActive) {
+		status := adaptiveRecoveryActive
+		if state.LastDispatchAt.IsZero() || now.Sub(state.LastDispatchAt) >= settings.LearningWindow {
+			status = adaptiveRecoveryStale
+		}
+		if state.RecoveryStatus != status {
+			state.RecoveryStatus = status
+			if status == adaptiveRecoveryStale {
+				state.RecoverySuccesses = 0
+			}
+			changed = true
+		}
 	}
 	return changed
 }
@@ -547,12 +615,14 @@ func (s *adaptiveStateStore) registerAdmissionWithLoadAndTTFTBucket(accountID in
 		transientKey := adaptiveTransientKey(accountID, requestID)
 		healthProbe := state.HealthProbeInFlight && (state.HealthProbeOwner == "" || state.HealthProbeOwner == requestID)
 		quotaProbe := state.QuotaProbeInFlight && (state.QuotaProbeOwner == "" || state.QuotaProbeOwner == requestID)
+		recoveryProbe := state.RecoveryProbeInFlight && (state.RecoveryProbeOwner == "" || state.RecoveryProbeOwner == requestID)
 		s.admissions[transientKey] = adaptiveAdmission{
 			AccountID:           accountID,
 			CapacityGeneration:  generation,
 			TTFTBucketKey:       strings.TrimSpace(ttftBucketKey),
 			HealthProbe:         healthProbe,
 			QuotaProbe:          quotaProbe,
+			RecoveryProbe:       recoveryProbe,
 			Admitted:            admitted,
 			ObservedConcurrency: observedConcurrency,
 			WaitingCount:        waitingCount,
@@ -562,7 +632,78 @@ func (s *adaptiveStateStore) registerAdmissionWithLoadAndTTFTBucket(accountID in
 			s.ttftClaims[transientKey] = adaptiveTTFTClaim{BucketKey: ttftBucketKey, ClaimedAt: now}
 		}
 	}
+	if admitted {
+		state.LastDispatchAt = now
+		if !state.RecoveryProbeInFlight && state.RecoveryStatus != adaptiveRecoveryWarming {
+			state.RecoveryStatus = adaptiveRecoveryActive
+		}
+		touchAdaptiveState(state, now)
+	}
 	return generation
+}
+
+func (s *adaptiveStateStore) claimRecoveryProbe(accountID int64, requestID string, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	settings = normalizeAdaptiveCoreSettings(settings)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanupTransientsLocked(now, settings)
+	state := s.ensureLocked(accountID, configuredCapacity, now)
+	s.refreshLocked(state, now, settings)
+	if state.RecoveryProbeInFlight || state.RecoveryStatus == adaptiveRecoveryActive || !state.CircuitOpenUntil.IsZero() || state.QuotaLimited {
+		return false
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID != "" {
+		if _, claimed := s.recoveryProbeClaims[requestID]; claimed {
+			return false
+		}
+	}
+	inFlight := 0
+	for _, candidateState := range s.accounts {
+		if candidateState.RecoveryProbeInFlight && candidateState.RecoveryProbeUntil.After(now) {
+			inFlight++
+		}
+	}
+	if inFlight >= settings.RecoveryMaxConcurrency {
+		return false
+	}
+	if requestID != "" {
+		s.recoveryProbeClaims[requestID] = now
+	}
+	state.LastProbeAt = now
+	state.RecoveryProbeInFlight = true
+	state.RecoveryProbeUntil = now.Add(settings.HealthProbeLease)
+	state.RecoveryProbeOwner = requestID
+	state.RecoveryStatus = adaptiveRecoveryProbing
+	touchAdaptiveState(state, now)
+	return true
+}
+
+func (s *adaptiveStateStore) releaseRecoveryProbe(accountID int64, requestID string, now time.Time) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.accounts[accountID]
+	if state == nil || !state.RecoveryProbeInFlight || state.RecoveryProbeOwner != strings.TrimSpace(requestID) {
+		return
+	}
+	state.RecoveryProbeInFlight = false
+	state.RecoveryProbeUntil = time.Time{}
+	state.RecoveryProbeOwner = ""
+	state.RecoveryStatus = adaptiveRecoveryStatusAfterProbe(state)
+	touchAdaptiveState(state, now)
+}
+
+func adaptiveRecoveryStatusAfterProbe(state *adaptiveAccountState) adaptiveRecoveryStatus {
+	if state != nil && state.RecoverySuccesses > 0 {
+		return adaptiveRecoveryWarming
+	}
+	return adaptiveRecoveryStale
 }
 
 func (s *adaptiveStateStore) claimHealthProbe(accountID int64, requestID string, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) bool {
@@ -663,11 +804,19 @@ func adaptiveQuotaProbeDue(state *adaptiveAccountState, now time.Time) bool {
 	if state == nil || !state.QuotaLimited {
 		return false
 	}
+	probeAt := adaptiveQuotaProbeAt(state)
+	return probeAt.IsZero() || !probeAt.After(now)
+}
+
+func adaptiveQuotaProbeAt(state *adaptiveAccountState) time.Time {
+	if state == nil {
+		return time.Time{}
+	}
 	probeAt := state.QuotaNextProbeAt
 	if !state.QuotaResetAt.IsZero() && (probeAt.IsZero() || state.QuotaResetAt.Before(probeAt)) {
 		probeAt = state.QuotaResetAt
 	}
-	return probeAt.IsZero() || !probeAt.After(now)
+	return probeAt
 }
 
 func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.Time, settings adaptiveCoreSettings) (capacityIncreased, capacityDecreased bool) {
@@ -681,14 +830,19 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	state := s.ensureLocked(observation.AccountID, observation.ConfiguredCapacity, now)
 	s.refreshLocked(state, now, settings)
 	quotaProbe := false
+	recoveryProbe := false
 	admitted := true
+	hadAdmission := false
 	transientKey := adaptiveTransientKey(observation.AccountID, observation.RequestID)
 	if admission, ok := s.admissions[transientKey]; ok {
+		hadAdmission = true
 		if observation.CapacityGeneration == 0 {
 			observation.CapacityGeneration = admission.CapacityGeneration
 		}
 		quotaProbe = admission.QuotaProbe
+		recoveryProbe = admission.RecoveryProbe
 		observation.HealthProbe = admission.HealthProbe
+		observation.RecoveryProbe = admission.RecoveryProbe
 		if observation.TTFTBucketKey == "" {
 			observation.TTFTBucketKey = admission.TTFTBucketKey
 		}
@@ -715,6 +869,12 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	if observation.ObservedConcurrency >= 0 {
 		state.LastObservedConcurrency = observation.ObservedConcurrency
 	}
+	if hadAdmission {
+		state.LastDispatchAt = now
+		if !recoveryProbe && state.RecoveryStatus != adaptiveRecoveryWarming {
+			state.RecoveryStatus = adaptiveRecoveryActive
+		}
+	}
 
 	switch observation.Type {
 	case adaptiveObservationHealthSuccess:
@@ -728,13 +888,16 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 			state.QuotaProbeOwner = ""
 		}
 		capacityIncreased = s.observeCapacityRecoveryLocked(state, observation, admitted, now, settings)
+		s.completeRecoveryProbeLocked(state, recoveryProbe, true, true, settings)
 	case adaptiveObservationAccountFailure:
 		if !adaptiveAccountHealthEligible(observation) {
+			s.completeRecoveryProbeLocked(state, recoveryProbe, false, false, settings)
 			break
 		}
 		if s.claimFailureLocked(observation.AccountID, observation.RequestID, now, settings) {
 			s.observeHealthLocked(state, false, observation, now, settings)
 		}
+		s.completeRecoveryProbeLocked(state, recoveryProbe, false, true, settings)
 	case adaptiveObservationCapacityLimit:
 		if adaptiveAccountHealthEligible(observation) {
 			if s.claimFailureLocked(observation.AccountID, observation.RequestID, now, settings) {
@@ -742,6 +905,7 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 			}
 		}
 		capacityDecreased = s.observeCapacityLimitLocked(state, observation, now, settings)
+		s.completeRecoveryProbeLocked(state, recoveryProbe, false, true, settings)
 	case adaptiveObservationQuotaLimit:
 		state.QuotaLimited = true
 		state.QuotaProbeInFlight = false
@@ -753,13 +917,38 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 			state.QuotaResetAt = time.Time{}
 			state.QuotaNextProbeAt = now.Add(settings.QuotaProbeInterval)
 		}
+		s.completeRecoveryProbeLocked(state, recoveryProbe, false, true, settings)
 	case adaptiveObservationProviderOverload, adaptiveObservationIgnored:
 		// Provider-wide and request-local failures do not count against account
 		// health, but an inconclusive half-open probe must still advance the state.
 		s.deferInconclusiveHealthProbeLocked(state, observation, now, settings)
+		s.completeRecoveryProbeLocked(state, recoveryProbe, false, false, settings)
 	}
 	touchAdaptiveState(state, now)
 	return capacityIncreased, capacityDecreased
+}
+
+func (s *adaptiveStateStore) completeRecoveryProbeLocked(state *adaptiveAccountState, recoveryProbe, success, conclusive bool, settings adaptiveCoreSettings) {
+	if state == nil || !recoveryProbe {
+		return
+	}
+	state.RecoveryProbeInFlight = false
+	state.RecoveryProbeUntil = time.Time{}
+	state.RecoveryProbeOwner = ""
+	if success {
+		state.RecoverySuccesses++
+		if state.RecoverySuccesses >= settings.RecoveryWarmupSuccesses {
+			state.RecoverySuccesses = settings.RecoveryWarmupSuccesses
+			state.RecoveryStatus = adaptiveRecoveryActive
+		} else {
+			state.RecoveryStatus = adaptiveRecoveryWarming
+		}
+		return
+	}
+	if conclusive {
+		state.RecoverySuccesses = 0
+	}
+	state.RecoveryStatus = adaptiveRecoveryStatusAfterProbe(state)
 }
 
 func adaptiveAccountHealthEligible(observation adaptiveObservation) bool {
@@ -947,6 +1136,11 @@ func (s *adaptiveStateStore) cleanupTransientsLocked(now time.Time, settings ada
 	for requestID, claimedAt := range s.healthProbeClaims {
 		if now.Sub(claimedAt) > retention {
 			delete(s.healthProbeClaims, requestID)
+		}
+	}
+	for requestID, claimedAt := range s.recoveryProbeClaims {
+		if now.Sub(claimedAt) > retention {
+			delete(s.recoveryProbeClaims, requestID)
 		}
 	}
 	for key, admission := range s.admissions {

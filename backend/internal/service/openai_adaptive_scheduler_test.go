@@ -394,7 +394,7 @@ func TestOpenAIAdaptiveSchedulerOpenCircuitExcludesCandidate(t *testing.T) {
 	require.Empty(t, order)
 }
 
-func TestOpenAIAdaptiveSchedulerDueProbePreemptsStickyAndRecovers(t *testing.T) {
+func TestOpenAIAdaptiveSchedulerStickyPreemptsDueProbe(t *testing.T) {
 	resetOpenAIAdaptiveSchedulerSettingCacheForTest()
 	defer resetOpenAIAdaptiveSchedulerSettingCacheForTest()
 
@@ -441,29 +441,14 @@ func TestOpenAIAdaptiveSchedulerDueProbePreemptsStickyAndRecovers(t *testing.T) 
 
 	require.NoError(t, err)
 	require.NotNil(t, selection)
-	require.Equal(t, halfOpen.ID, selection.Account.ID)
-	require.Equal(t, []int64{halfOpen.ID}, acquiredIDs)
-	require.Equal(t, "half_open_probe_in_flight", adaptiveDiagnosticCircuitStatus(scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg)), time.Now()))
-	require.Equal(t, openAIAccountScheduleLayerAdaptive, decision.Layer)
-	require.False(t, decision.StickySessionHit)
+	require.Equal(t, sticky.ID, selection.Account.ID)
+	require.Equal(t, []int64{sticky.ID}, acquiredIDs)
+	require.False(t, scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg)).HealthProbeInFlight)
+	require.Equal(t, openAIAccountScheduleLayerSessionSticky, decision.Layer)
+	require.True(t, decision.StickySessionHit)
 	require.Equal(t, sticky.ID, cache.sessionBindings["openai:sticky"])
 
 	selection.ReleaseFunc()
-	stateAfterRelease := scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg))
-	require.True(t, stateAfterRelease.HealthProbeInFlight)
-
-	scheduler.ReportScheduleResultWithContext(ctx, OpenAIAccountScheduleReport{
-		AccountID:      halfOpen.ID,
-		Success:        true,
-		HealthSample:   true,
-		TerminalReason: "success_no_result",
-	})
-	recovered := scheduler.core.snapshot(halfOpen.ID, halfOpen.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg))
-	require.True(t, recovered.CircuitOpenUntil.IsZero())
-	require.Zero(t, recovered.CircuitOpenCount)
-	require.Zero(t, recovered.ConsecutiveFailures)
-	require.False(t, recovered.HealthProbeInFlight)
-	require.Equal(t, sticky.ID, cache.sessionBindings["openai:sticky"])
 }
 
 func TestOpenAIAdaptiveSchedulerFailedProbeFallsBackToHealthyAccount(t *testing.T) {
@@ -476,13 +461,11 @@ func TestOpenAIAdaptiveSchedulerFailedProbeFallsBackToHealthyAccount(t *testing.
 	openAIAdaptiveSchedulerSettingCache.Store(&cachedOpenAIAdaptiveSchedulerSetting{settings: cfg, complete: true, expiresAt: time.Now().Add(time.Hour).UnixNano()})
 
 	groupID := int64(11009)
-	healthy := Account{ID: 22023, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Concurrency: 10, GroupIDs: []int64{groupID}}
+	healthy := Account{ID: 22023, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 10, GroupIDs: []int64{groupID}}
 	firstProbe := Account{ID: 22024, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 10, GroupIDs: []int64{groupID}}
 	secondProbe := Account{ID: 22025, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 10, GroupIDs: []int64{groupID}}
-	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:sticky": healthy.ID}}
 	acquiredIDs := make([]int64, 0, 2)
 	service := &OpenAIGatewayService{
-		cache:              cache,
 		accountRepo:        schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{healthy, firstProbe, secondProbe}}},
 		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{acquiredIDs: &acquiredIDs}),
 	}
@@ -501,7 +484,6 @@ func TestOpenAIAdaptiveSchedulerFailedProbeFallsBackToHealthyAccount(t *testing.
 	req := OpenAIAccountScheduleRequest{
 		GroupID:           &groupID,
 		Platform:          PlatformOpenAI,
-		SessionHash:       "sticky",
 		RequestedModel:    "gpt-5.1",
 		RequiredTransport: OpenAIUpstreamTransportAny,
 	}
@@ -522,7 +504,7 @@ func TestOpenAIAdaptiveSchedulerFailedProbeFallsBackToHealthyAccount(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, fallback)
 	require.Equal(t, healthy.ID, fallback.Account.ID)
-	require.True(t, decision.StickySessionHit)
+	require.False(t, decision.StickySessionHit)
 	require.Equal(t, []int64{firstProbe.ID, healthy.ID}, acquiredIDs)
 	require.False(t, scheduler.core.snapshot(secondProbe.ID, secondProbe.Concurrency, time.Now(), openAIAdaptiveCoreSettings(cfg)).HealthProbeInFlight)
 	fallback.ReleaseFunc()

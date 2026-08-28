@@ -77,6 +77,12 @@ func (s *adaptiveStateStore) restoreAtStartup(incoming adaptiveAccountState) boo
 	restored.HealthProbeOwner = ""
 	restored.QuotaProbeInFlight = false
 	restored.QuotaProbeOwner = ""
+	restored.RecoveryProbeInFlight = false
+	restored.RecoveryProbeUntil = time.Time{}
+	restored.RecoveryProbeOwner = ""
+	if restored.RecoveryStatus == adaptiveRecoveryProbing {
+		restored.RecoveryStatus = adaptiveRecoveryStatusAfterProbe(&restored)
+	}
 	restored.CapacityLimitedGeneration = false
 	restored.revision = 1
 	restored.persistedRevision = 1
@@ -229,6 +235,20 @@ func validateAdaptiveCoreRestoredState(accountID int64, state adaptiveAccountSta
 	}
 	if state.ConsecutiveFailures < 0 || state.CircuitOpenCount < 0 {
 		return fmt.Errorf("invalid adaptive account failure counters")
+	}
+	if state.RecoverySuccesses < 0 {
+		return fmt.Errorf("invalid adaptive account recovery successes")
+	}
+	switch state.RecoveryStatus {
+	case "", adaptiveRecoveryActive, adaptiveRecoveryStale, adaptiveRecoveryProbing, adaptiveRecoveryWarming:
+	default:
+		return fmt.Errorf("invalid adaptive account recovery status %q", state.RecoveryStatus)
+	}
+	if err := validateAdaptiveRestoredPastTime("last_dispatch_at", state.LastDispatchAt, now); err != nil {
+		return err
+	}
+	if err := validateAdaptiveRestoredPastTime("last_probe_at", state.LastProbeAt, now); err != nil {
+		return err
 	}
 	if err := validateAdaptiveRestoredPastTime("last_success_at", state.LastSuccessAt, now); err != nil {
 		return err

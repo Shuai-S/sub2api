@@ -772,6 +772,9 @@ export interface SystemSettings {
   openai_adaptive_scheduler_mode?: string;
   openai_adaptive_scheduler_top_k?: number;
   openai_adaptive_scheduler_exploration_rate?: number;
+  openai_adaptive_scheduler_recovery_exploration_rate?: number;
+  openai_adaptive_scheduler_recovery_max_concurrency?: number;
+  openai_adaptive_scheduler_recovery_warmup_successes?: number;
   openai_adaptive_scheduler_softmax_temperature?: number;
   openai_adaptive_scheduler_capacity_growth_factor?: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold?: number;
@@ -1163,6 +1166,9 @@ export interface UpdateSettingsRequest {
   openai_adaptive_scheduler_mode?: string;
   openai_adaptive_scheduler_top_k?: number;
   openai_adaptive_scheduler_exploration_rate?: number;
+  openai_adaptive_scheduler_recovery_exploration_rate?: number;
+  openai_adaptive_scheduler_recovery_max_concurrency?: number;
+  openai_adaptive_scheduler_recovery_warmup_successes?: number;
   openai_adaptive_scheduler_softmax_temperature?: number;
   openai_adaptive_scheduler_capacity_growth_factor?: number;
   openai_adaptive_scheduler_capacity_probe_load_threshold?: number;

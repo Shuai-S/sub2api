@@ -254,6 +254,9 @@ type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerTopK                       *int     `json:"openai_adaptive_scheduler_top_k"`
 	OpenAIAdaptiveSchedulerSoftmaxTemperature         *float64 `json:"openai_adaptive_scheduler_softmax_temperature"`
 	OpenAIAdaptiveSchedulerExplorationRate            *float64 `json:"openai_adaptive_scheduler_exploration_rate"`
+	OpenAIAdaptiveSchedulerRecoveryExplorationRate    *float64 `json:"openai_adaptive_scheduler_recovery_exploration_rate"`
+	OpenAIAdaptiveSchedulerRecoveryMaxConcurrency     *int     `json:"openai_adaptive_scheduler_recovery_max_concurrency"`
+	OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses    *int     `json:"openai_adaptive_scheduler_recovery_warmup_successes"`
 	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty  *float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
 	OpenAIAdaptiveSchedulerLearningWindowSeconds      *int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
 	OpenAIAdaptiveSchedulerLearningMinHealthSamples   *int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
@@ -299,6 +302,15 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	}
 	if req.OpenAIAdaptiveSchedulerExplorationRate != nil {
 		settings.OpenAIAdaptiveSchedulerExplorationRate = *req.OpenAIAdaptiveSchedulerExplorationRate
+	}
+	if req.OpenAIAdaptiveSchedulerRecoveryExplorationRate != nil {
+		settings.OpenAIAdaptiveSchedulerRecoveryExplorationRate = *req.OpenAIAdaptiveSchedulerRecoveryExplorationRate
+	}
+	if req.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency != nil {
+		settings.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency = *req.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency
+	}
+	if req.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses != nil {
+		settings.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses = *req.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses
 	}
 	if req.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty != nil {
 		settings.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty = *req.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty

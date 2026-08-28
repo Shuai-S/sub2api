@@ -25,6 +25,9 @@ const (
 	openAIAdaptiveSchedulerModeKey                       = openAIAdaptiveSchedulerSettingPrefix + "mode"
 	openAIAdaptiveSchedulerTopKKey                       = openAIAdaptiveSchedulerSettingPrefix + "top_k"
 	openAIAdaptiveSchedulerExplorationRateKey            = openAIAdaptiveSchedulerSettingPrefix + "exploration_rate"
+	openAIAdaptiveSchedulerRecoveryExplorationRateKey    = openAIAdaptiveSchedulerSettingPrefix + "recovery_exploration_rate"
+	openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey     = openAIAdaptiveSchedulerSettingPrefix + "recovery_max_concurrency"
+	openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey    = openAIAdaptiveSchedulerSettingPrefix + "recovery_warmup_successes"
 	openAIAdaptiveSchedulerSoftmaxTemperatureKey         = openAIAdaptiveSchedulerSettingPrefix + "softmax_temperature"
 	openAIAdaptiveSchedulerCapacityGrowthFactorKey       = openAIAdaptiveSchedulerSettingPrefix + "capacity_growth_factor"
 	openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey = openAIAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
@@ -62,6 +65,9 @@ type OpenAIAdaptiveSchedulerSettings struct {
 	OpenAIAdaptiveSchedulerMode                       string  `json:"openai_adaptive_scheduler_mode"`
 	OpenAIAdaptiveSchedulerTopK                       int     `json:"openai_adaptive_scheduler_top_k"`
 	OpenAIAdaptiveSchedulerExplorationRate            float64 `json:"openai_adaptive_scheduler_exploration_rate"`
+	OpenAIAdaptiveSchedulerRecoveryExplorationRate    float64 `json:"openai_adaptive_scheduler_recovery_exploration_rate"`
+	OpenAIAdaptiveSchedulerRecoveryMaxConcurrency     int     `json:"openai_adaptive_scheduler_recovery_max_concurrency"`
+	OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses    int     `json:"openai_adaptive_scheduler_recovery_warmup_successes"`
 	OpenAIAdaptiveSchedulerSoftmaxTemperature         float64 `json:"openai_adaptive_scheduler_softmax_temperature"`
 	OpenAIAdaptiveSchedulerCapacityGrowthFactor       float64 `json:"openai_adaptive_scheduler_capacity_growth_factor"`
 	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
@@ -105,6 +111,9 @@ func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 		OpenAIAdaptiveSchedulerMode:                       openAIAdaptiveSchedulerModeShadow,
 		OpenAIAdaptiveSchedulerTopK:                       8,
 		OpenAIAdaptiveSchedulerExplorationRate:            0.02,
+		OpenAIAdaptiveSchedulerRecoveryExplorationRate:    0.01,
+		OpenAIAdaptiveSchedulerRecoveryMaxConcurrency:     2,
+		OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses:    3,
 		OpenAIAdaptiveSchedulerSoftmaxTemperature:         0.35,
 		OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.25,
 		OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.80,
@@ -139,6 +148,9 @@ func NormalizeOpenAIAdaptiveSchedulerSettings(settings OpenAIAdaptiveSchedulerSe
 	settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate = clampFloat(settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate, 0, 1, defaults.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
 	settings.OpenAIAdaptiveSchedulerTopK = clampInt(settings.OpenAIAdaptiveSchedulerTopK, 1, 100, defaults.OpenAIAdaptiveSchedulerTopK)
 	settings.OpenAIAdaptiveSchedulerExplorationRate = clampFloat(settings.OpenAIAdaptiveSchedulerExplorationRate, 0, 1, defaults.OpenAIAdaptiveSchedulerExplorationRate)
+	settings.OpenAIAdaptiveSchedulerRecoveryExplorationRate = clampFloat(settings.OpenAIAdaptiveSchedulerRecoveryExplorationRate, 0, 1, defaults.OpenAIAdaptiveSchedulerRecoveryExplorationRate)
+	settings.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency = clampIntMin(settings.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency, 1, defaults.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency)
+	settings.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses = clampIntMin(settings.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses, 1, defaults.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses)
 	settings.OpenAIAdaptiveSchedulerSoftmaxTemperature = clampFloat(settings.OpenAIAdaptiveSchedulerSoftmaxTemperature, 0.01, 10, defaults.OpenAIAdaptiveSchedulerSoftmaxTemperature)
 	settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor = clampFloat(settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor, 1, 10, defaults.OpenAIAdaptiveSchedulerCapacityGrowthFactor)
 	settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = clampFloat(settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold, 0, 1, defaults.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold)
@@ -191,6 +203,9 @@ func openAIAdaptiveSchedulerSettingsToMap(settings OpenAIAdaptiveSchedulerSettin
 		openAIAdaptiveSchedulerModeKey:                       settings.OpenAIAdaptiveSchedulerMode,
 		openAIAdaptiveSchedulerTopKKey:                       strconv.Itoa(settings.OpenAIAdaptiveSchedulerTopK),
 		openAIAdaptiveSchedulerExplorationRateKey:            formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerExplorationRate),
+		openAIAdaptiveSchedulerRecoveryExplorationRateKey:    formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerRecoveryExplorationRate),
+		openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey:     strconv.Itoa(settings.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency),
+		openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey:    strconv.Itoa(settings.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses),
 		openAIAdaptiveSchedulerSoftmaxTemperatureKey:         formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerSoftmaxTemperature),
 		openAIAdaptiveSchedulerCapacityGrowthFactorKey:       formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor),
 		openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey: formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold),
@@ -224,6 +239,9 @@ func parseOpenAIAdaptiveSchedulerSettings(settings map[string]string) OpenAIAdap
 	result.OpenAIAdaptiveSchedulerMode = firstNonEmpty(settings[openAIAdaptiveSchedulerModeKey], result.OpenAIAdaptiveSchedulerMode)
 	result.OpenAIAdaptiveSchedulerTopK = parseIntSetting(settings, openAIAdaptiveSchedulerTopKKey, result.OpenAIAdaptiveSchedulerTopK)
 	result.OpenAIAdaptiveSchedulerExplorationRate = parseFloatSetting(settings, openAIAdaptiveSchedulerExplorationRateKey, result.OpenAIAdaptiveSchedulerExplorationRate)
+	result.OpenAIAdaptiveSchedulerRecoveryExplorationRate = parseFloatSetting(settings, openAIAdaptiveSchedulerRecoveryExplorationRateKey, result.OpenAIAdaptiveSchedulerRecoveryExplorationRate)
+	result.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency = parseIntSetting(settings, openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey, result.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency)
+	result.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses = parseIntSetting(settings, openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey, result.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses)
 	result.OpenAIAdaptiveSchedulerSoftmaxTemperature = parseFloatSetting(settings, openAIAdaptiveSchedulerSoftmaxTemperatureKey, result.OpenAIAdaptiveSchedulerSoftmaxTemperature)
 	result.OpenAIAdaptiveSchedulerCapacityGrowthFactor = parseFloatSetting(settings, openAIAdaptiveSchedulerCapacityGrowthFactorKey, result.OpenAIAdaptiveSchedulerCapacityGrowthFactor)
 	result.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold = parseFloatSetting(settings, openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey, result.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold)

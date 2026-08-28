@@ -72,6 +72,9 @@ type OpenAIAdaptiveSchedulerLearningSettingsSnapshot struct {
 	DiagnosticLogSampleRate   float64 `json:"diagnostic_log_sample_rate"`
 	TopK                      int     `json:"top_k"`
 	ExplorationRate           float64 `json:"exploration_rate"`
+	RecoveryExplorationRate   float64 `json:"recovery_exploration_rate"`
+	RecoveryMaxConcurrency    int     `json:"recovery_max_concurrency"`
+	RecoveryWarmupSuccesses   int     `json:"recovery_warmup_successes"`
 	SoftmaxTemperature        float64 `json:"softmax_temperature"`
 	ConsecutiveFailurePenalty float64 `json:"consecutive_failure_penalty"`
 	LearningWindowSeconds     int     `json:"learning_window_seconds"`
@@ -166,6 +169,11 @@ type OpenAIAdaptiveSchedulerAccountLearningSnapshot struct {
 	QuotaLimited              bool       `json:"quota_limited"`
 	QuotaResetAt              *time.Time `json:"quota_reset_at,omitempty"`
 	QuotaNextProbeAt          *time.Time `json:"quota_next_probe_at,omitempty"`
+	LastDispatchAt            *time.Time `json:"last_dispatch_at,omitempty"`
+	LastProbeAt               *time.Time `json:"last_probe_at,omitempty"`
+	RecoveryStatus            string     `json:"recovery_status"`
+	RecoverySuccesses         int        `json:"recovery_successes"`
+	RecoveryProbeInFlight     bool       `json:"recovery_probe_in_flight"`
 }
 
 func (s *OpsService) GetOpenAIAdaptiveSchedulerLearningSnapshot(
@@ -367,6 +375,11 @@ func buildOpenAIAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		QuotaLimited:              runtimeState.QuotaLimited,
 		QuotaResetAt:              timePtrIfNotZero(runtimeState.QuotaResetAt),
 		QuotaNextProbeAt:          timePtrIfNotZero(runtimeState.QuotaNextProbeAt),
+		LastDispatchAt:            timePtrIfNotZero(state.LastDispatchAt),
+		LastProbeAt:               timePtrIfNotZero(state.LastProbeAt),
+		RecoveryStatus:            string(state.RecoveryStatus),
+		RecoverySuccesses:         state.RecoverySuccesses,
+		RecoveryProbeInFlight:     state.RecoveryProbeInFlight,
 	}
 	for _, flag := range flags {
 		row.RuntimeFlags = append(row.RuntimeFlags, string(flag))
@@ -748,6 +761,9 @@ func openAIAdaptiveLearningSettingsSnapshot(cfg OpenAIAdaptiveSchedulerSettings)
 		DiagnosticLogSampleRate:   cfg.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate,
 		TopK:                      cfg.OpenAIAdaptiveSchedulerTopK,
 		ExplorationRate:           cfg.OpenAIAdaptiveSchedulerExplorationRate,
+		RecoveryExplorationRate:   cfg.OpenAIAdaptiveSchedulerRecoveryExplorationRate,
+		RecoveryMaxConcurrency:    cfg.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency,
+		RecoveryWarmupSuccesses:   cfg.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses,
 		SoftmaxTemperature:        cfg.OpenAIAdaptiveSchedulerSoftmaxTemperature,
 		ConsecutiveFailurePenalty: cfg.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty,
 		LearningWindowSeconds:     cfg.OpenAIAdaptiveSchedulerLearningWindowSeconds,

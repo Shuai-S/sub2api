@@ -846,3 +846,16 @@ func TestAdaptiveExistingSessionDoesNotExplore(t *testing.T) {
 	require.Equal(t, int64(2), newSession[0].AccountID)
 	require.Equal(t, int64(1), existingSession[0].AccountID)
 }
+
+func TestAdaptiveDueProbeIncludesQuotaReset(t *testing.T) {
+	now := time.Now()
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.mu.Lock()
+	state := store.ensureLocked(77, 10, now)
+	state.QuotaLimited = true
+	state.QuotaNextProbeAt = now.Add(-time.Minute)
+	store.mu.Unlock()
+
+	require.Equal(t, []int64{77}, store.dueHealthProbeAccountIDs(now, settings))
+}

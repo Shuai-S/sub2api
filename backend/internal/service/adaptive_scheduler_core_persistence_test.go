@@ -236,6 +236,40 @@ func TestAdaptiveCorePersistenceRoundTripsWindowedTTFTSamples(t *testing.T) {
 	require.Equal(t, 4200.0, stats.P50)
 }
 
+func TestAdaptiveCorePersistenceRestoresRecoveryHistoryWithoutLease(t *testing.T) {
+	now := time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC)
+	state := *newAdaptiveAccountState(1010, 10, now.Add(-time.Minute))
+	state.LastDispatchAt = now.Add(-2 * time.Minute)
+	state.LastProbeAt = now.Add(-time.Minute)
+	state.RecoveryStatus = adaptiveRecoveryWarming
+	state.RecoverySuccesses = 2
+	state.RecoveryProbeInFlight = true
+	state.RecoveryProbeUntil = now.Add(time.Minute)
+	state.RecoveryProbeOwner = "old-process"
+	cache := &fakeAdaptiveStateCache{scanRecords: []AdaptiveSchedulerStateCacheRecord{{
+		AccountID: state.AccountID,
+		Payload:   adaptiveCorePersistenceTestPayload(t, now, state),
+	}}}
+	store := newAdaptiveStateStore()
+	persistence := newAdaptiveCoreStatePersistence(cache, store, adaptiveSchedulerCoreNamespaceOpenAI)
+	persistence.now = func() time.Time { return now }
+
+	restored, stale, invalid, err := persistence.restoreOnce(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, 1, restored)
+	require.Zero(t, stale)
+	require.Zero(t, invalid)
+	restoredState := store.snapshot(state.AccountID, 10, now, defaultAdaptiveCoreSettings())
+	require.Equal(t, state.LastDispatchAt, restoredState.LastDispatchAt)
+	require.Equal(t, state.LastProbeAt, restoredState.LastProbeAt)
+	require.Equal(t, adaptiveRecoveryWarming, restoredState.RecoveryStatus)
+	require.Equal(t, 2, restoredState.RecoverySuccesses)
+	require.False(t, restoredState.RecoveryProbeInFlight)
+	require.True(t, restoredState.RecoveryProbeUntil.IsZero())
+	require.Empty(t, restoredState.RecoveryProbeOwner)
+}
+
 func TestAdaptiveCorePersistenceDropsLegacyOpenAITTFTOnly(t *testing.T) {
 	now := time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC)
 	state := *newAdaptiveAccountState(1005, 10, now.Add(-time.Minute))
