@@ -773,6 +773,32 @@ func TestOpenAIAdaptiveShadowDecisionRequiresDiagnosticsAndAlwaysLogsDivergence(
 	require.Contains(t, output.String(), "diverged=true")
 }
 
+func TestOpenAIAdaptiveShadowDecisionDisabledSkipsPlanConstruction(t *testing.T) {
+	scheduler := &adaptiveOpenAIAccountScheduler{}
+	cfg := DefaultOpenAIAdaptiveSchedulerSettings()
+
+	require.NotPanics(t, func() {
+		scheduler.logShadowDecision(context.Background(), OpenAIAccountScheduleRequest{}, cfg, nil)
+	})
+}
+
+func TestOpenAIAdaptiveSelectionPlanLoaderLoadsOnce(t *testing.T) {
+	calls := 0
+	want := openAIAdaptiveSelectionPlan{candidateCount: 3, topK: 2}
+	load := memoizeOpenAIAdaptiveSelectionPlanLoader(func() (openAIAdaptiveSelectionPlan, error) {
+		calls++
+		return want, nil
+	})
+
+	for range 3 {
+		got, err := load()
+		require.NoError(t, err)
+		require.Equal(t, want.candidateCount, got.candidateCount)
+		require.Equal(t, want.topK, got.topK)
+	}
+	require.Equal(t, 1, calls)
+}
+
 func TestOpenAIAdaptiveDiagnosticResultIncludesFailoverContext(t *testing.T) {
 	var output bytes.Buffer
 	previousLogger := slog.Default()

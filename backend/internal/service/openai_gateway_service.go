@@ -632,15 +632,15 @@ func (s *OpenAIGatewayService) needsUpstreamChannelRestrictionCheck(ctx context.
 	if groupID == nil || s.channelService == nil {
 		return false
 	}
-	ch, err := s.channelService.GetChannelForGroup(ctx, *groupID)
+	lookup, err := s.channelService.lookupGroupChannel(ctx, *groupID)
 	if err != nil {
 		slog.Warn("failed to check openai channel upstream restriction", "group_id", *groupID, "error", err)
 		return false
 	}
-	if ch == nil || !ch.RestrictModels {
+	if lookup == nil || !lookup.channel.RestrictModels {
 		return false
 	}
-	return ch.BillingModelSource == BillingModelSourceUpstream
+	return lookup.channel.BillingModelSource == BillingModelSourceUpstream
 }
 
 // ReplaceModelInBody 替换请求体中的 JSON model 字段（通用 gjson/sjson 实现）。

@@ -1437,15 +1437,11 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		accounts = modelFiltered
 	}
 
-	// require_privacy_set: 获取分组信息
-	var schedGroup *Group
-	if req.GroupID != nil && s.service.schedulerSnapshot != nil {
-		schedGroup, _ = s.service.schedulerSnapshot.GetGroupByID(ctx, *req.GroupID)
-	}
-
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	filtered := make([]*Account, 0, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
+	needsUpstreamCheck := s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID)
+	parentLookup := s.parentAccountLookupForSelection(ctx, accounts)
 	for i := range accounts {
 		account := &accounts[i]
 		if req.ExcludedIDs != nil {
@@ -1469,11 +1465,11 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		// require_privacy_set is a group-scoped eligibility gate. Do not mutate the
 		// shared account: another group may intentionally allow accounts whose
 		// upstream privacy setting has not been confirmed.
-		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
+		if req.RequirePrivacySet && !account.IsPrivacySet() {
 			filterStats.exclude("privacy_not_set")
 			continue
 		}
-		if compatible, reason := s.isAccountRequestCompatibleReason(ctx, account, req); !compatible {
+		if compatible, reason := s.isAccountRequestCompatibleReasonWithSelectionChecks(ctx, account, req, needsUpstreamCheck, parentLookup); !compatible {
 			filterStats.exclude(reason)
 			continue
 		}
@@ -1778,6 +1774,15 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatible(ctx context.C
 // openAISelectionFilterStats so that "no available accounts" errors state why
 // each candidate was dropped instead of failing silently (#4599).
 func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest) (bool, string) {
+	needsUpstreamCheck := s != nil && s.service != nil && s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID)
+	return s.isAccountRequestCompatibleReasonWithUpstreamCheck(ctx, account, req, needsUpstreamCheck)
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonWithUpstreamCheck(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, needsUpstreamCheck bool) (bool, string) {
+	return s.isAccountRequestCompatibleReasonWithSelectionChecks(ctx, account, req, needsUpstreamCheck, nil)
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReasonWithSelectionChecks(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, needsUpstreamCheck bool, parentLookup func(int64) *Account) (bool, string) {
 	if account == nil {
 		return false, "account_nil"
 	}
@@ -1807,16 +1812,20 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	// 母账号健康联动：影子账号的凭据来自母账号，母账号不可调度时影子也不应被选中。
 	// Parent-health gate: shadow borrows the parent's credentials; an unschedulable
 	// parent must block the shadow across all scheduler paths.
-	if !parentHealthyForShadow(account, func(id int64) *Account {
-		return s.lookupShadowParentAccount(ctx, id)
-	}) {
-		return false, "shadow_parent_unhealthy"
+	if account.IsShadow() {
+		if parentLookup == nil {
+			parentLookup = func(id int64) *Account {
+				return s.lookupShadowParentAccount(ctx, id)
+			}
+		}
+		if !parentHealthyForShadow(account, parentLookup) {
+			return false, "shadow_parent_unhealthy"
+		}
 	}
 	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
 		return false, "model_not_supported"
 	}
-	if req.GroupID != nil && s != nil && s.service != nil &&
-		s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
+	if req.GroupID != nil && s != nil && s.service != nil && needsUpstreamCheck &&
 		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
 		return false, "channel_upstream_restricted"
 	}
@@ -1829,6 +1838,31 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 		return false, reason
 	}
 	return true, ""
+}
+
+func (s *defaultOpenAIAccountScheduler) parentAccountLookupForSelection(ctx context.Context, accounts []Account) func(int64) *Account {
+	hasShadow := false
+	for i := range accounts {
+		if accounts[i].IsShadow() {
+			hasShadow = true
+			break
+		}
+	}
+	if !hasShadow {
+		return nil
+	}
+	byID := make(map[int64]*Account, len(accounts))
+	for i := range accounts {
+		byID[accounts[i].ID] = &accounts[i]
+	}
+	return func(id int64) *Account {
+		if account, ok := byID[id]; ok {
+			return account
+		}
+		account := s.lookupShadowParentAccount(ctx, id)
+		byID[id] = account
+		return account
+	}
 }
 
 func (s *defaultOpenAIAccountScheduler) ReportResult(accountID int64, success bool, firstTokenMs *int) {

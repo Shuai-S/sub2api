@@ -220,7 +220,7 @@ func TestAdaptiveTTFTWindowCapsSamplesAndBuckets(t *testing.T) {
 	require.NotContains(t, state.TTFTWindows, primaryBucket)
 }
 
-func TestAdaptiveSchedulingSnapshotCopiesOnlyRequestedTTFTBucket(t *testing.T) {
+func TestAdaptiveSchedulingSnapshotCarriesOnlyRequestedTTFTStats(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	settings := defaultAdaptiveCoreSettings()
 	store := newAdaptiveStateStore()
@@ -238,11 +238,61 @@ func TestAdaptiveSchedulingSnapshotCopiesOnlyRequestedTTFTBucket(t *testing.T) {
 
 	require.True(t, allowed)
 	require.Equal(t, 3, snapshot.LastObservedConcurrency)
-	require.Len(t, snapshot.TTFTWindows, 1)
-	require.Contains(t, snapshot.TTFTWindows, requestedBucket)
-	require.NotContains(t, snapshot.TTFTWindows, otherBucket)
-	snapshot.TTFTWindows[requestedBucket][0].Milliseconds = 999
-	require.Equal(t, 100, store.snapshot(1, 10, now, settings).TTFTWindows[requestedBucket][0].Milliseconds)
+	require.Empty(t, snapshot.TTFTWindows)
+	require.Empty(t, snapshot.ttftWindowStats)
+	require.Empty(t, snapshot.ttftWindowSortedValues)
+	require.Empty(t, snapshot.ttftSortedValues)
+	require.Equal(t, requestedBucket, snapshot.schedulingTTFTBucketKey)
+	require.Equal(t, adaptiveTTFTWindowStats{Samples: 1, P50: 100, P90: 100},
+		adaptiveTTFTWindowStatsForState(snapshot, requestedBucket, now, settings))
+	require.Empty(t, adaptiveTTFTWindowStatsForState(snapshot, otherBucket, now, settings))
+}
+
+func TestAdaptiveTTFTIncrementalCachesMatchFullRebuild(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	state := newAdaptiveAccountState(1, 10, now)
+	buckets := []string{"gpt-5.4|responses|http", "gpt-5.4|responses|ws"}
+	for i := 0; i < adaptiveTTFTMaxSamplesPerBucket+25; i++ {
+		bucket := buckets[i%len(buckets)]
+		observeAdaptiveTTFTWindowLocked(state, bucket, 100+(i*37)%4000, now.Add(time.Duration(i)*time.Millisecond), settings)
+	}
+
+	wantEMA := state.TTFTEMA
+	wantSamples := state.TTFTSamples
+	wantStats := make(map[string]adaptiveTTFTWindowStats, len(buckets))
+	for _, bucket := range buckets {
+		wantStats[bucket] = state.ttftWindowStats[bucket]
+	}
+
+	state.ttftWindowStats = nil
+	state.ttftWindowSortedValues = nil
+	state.ttftSortedValues = nil
+	refreshAdaptiveTTFTWindowSummary(state)
+
+	require.Equal(t, wantSamples, state.TTFTSamples)
+	require.InDelta(t, wantEMA, state.TTFTEMA, 1e-9)
+	for _, bucket := range buckets {
+		require.Equal(t, wantStats[bucket], state.ttftWindowStats[bucket])
+	}
+}
+
+func TestAdaptiveFullSnapshotOmitsDerivedSortedTTFTCaches(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	bucket := "gpt-5.4|responses|http"
+	store.mu.Lock()
+	state := store.ensureLocked(1, 10, now)
+	observeAdaptiveTTFTWindowLocked(state, bucket, 125, now, settings)
+	store.mu.Unlock()
+
+	snapshot := store.snapshot(1, 10, now, settings)
+
+	require.Equal(t, adaptiveTTFTWindowStats{Samples: 1, P50: 125, P90: 125}, snapshot.ttftWindowStats[bucket])
+	require.Nil(t, snapshot.ttftWindowSortedValues)
+	require.Nil(t, snapshot.ttftSortedValues)
+	require.Equal(t, 125.0, adaptiveTTFTWindowStatsForState(snapshot, bucket, now, settings).P50)
 }
 
 func TestAdaptiveTTFTPruneSkipsSummaryRebuildWhenNothingChanges(t *testing.T) {
@@ -281,6 +331,27 @@ func TestAdaptiveTTFTAdmissionCarriesBucketToObservation(t *testing.T) {
 	stats := adaptiveTTFTWindowStatsForState(state, bucketKey, now.Add(time.Second), settings)
 	require.Equal(t, 1, stats.Samples)
 	require.Equal(t, 4200.0, stats.P50)
+}
+
+func TestAdaptiveAdmissionSuppliesMissingConfiguredCapacity(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	settings := defaultAdaptiveCoreSettings()
+	store := newAdaptiveStateStore()
+	store.registerAdmission(1, "request-1", 10, now, settings)
+
+	store.observe(adaptiveObservation{
+		AccountID:           1,
+		RequestID:           "request-1",
+		Type:                adaptiveObservationHealthSuccess,
+		ConfiguredCapacity:  0,
+		ObservedConcurrency: -1,
+	}, now.Add(time.Second), settings)
+
+	store.mu.RLock()
+	state := cloneAdaptiveAccountState(store.accounts[1])
+	store.mu.RUnlock()
+	require.Equal(t, 10, state.ConfiguredCapacity)
+	require.Equal(t, 10, state.EffectiveCapacity)
 }
 
 func TestAdaptiveTTFTAdmissionSurvivesRetryableObservationUntilSuccess(t *testing.T) {

@@ -197,6 +197,7 @@ const (
 
 type adaptiveAdmission struct {
 	AccountID           int64
+	ConfiguredCapacity  int
 	CapacityGeneration  uint64
 	TTFTBucketKey       string
 	HealthProbe         bool
@@ -278,6 +279,11 @@ type adaptiveAccountState struct {
 	UpdatedAt                 time.Time                            `json:"updated_at"`
 	revision                  uint64
 	persistedRevision         uint64
+	ttftWindowStats           map[string]adaptiveTTFTWindowStats
+	ttftWindowSortedValues    map[string][]int
+	ttftSortedValues          []int
+	schedulingTTFTBucketKey   string
+	schedulingTTFTStats       adaptiveTTFTWindowStats
 }
 
 type adaptiveStateStore struct {
@@ -331,6 +337,18 @@ func cloneAdaptiveAccountState(state *adaptiveAccountState) adaptiveAccountState
 			clone.TTFTWindows[key] = append([]adaptiveTTFTObservation(nil), observations...)
 		}
 	}
+	if len(state.ttftWindowStats) > 0 {
+		clone.ttftWindowStats = make(map[string]adaptiveTTFTWindowStats, len(state.ttftWindowStats))
+		for key, stats := range state.ttftWindowStats {
+			clone.ttftWindowStats[key] = stats
+		}
+	}
+	// Sorted values are derived caches. Full snapshots retain the compact stats,
+	// while rebuilding sorted values only if a snapshot is later reused as state.
+	clone.ttftWindowSortedValues = nil
+	clone.ttftSortedValues = nil
+	clone.schedulingTTFTBucketKey = ""
+	clone.schedulingTTFTStats = adaptiveTTFTWindowStats{}
 	return clone
 }
 
@@ -341,11 +359,15 @@ func cloneAdaptiveAccountStateForScheduling(state *adaptiveAccountState, ttftBuc
 	clone := *state
 	clone.HealthObservations = append([]adaptiveHealthObservation(nil), state.HealthObservations...)
 	clone.TTFTWindows = nil
+	clone.ttftWindowStats = nil
+	clone.ttftWindowSortedValues = nil
+	clone.ttftSortedValues = nil
+	clone.schedulingTTFTBucketKey = ""
+	clone.schedulingTTFTStats = adaptiveTTFTWindowStats{}
 	if ttftBucketKey = strings.TrimSpace(ttftBucketKey); ttftBucketKey != "" {
-		if observations := state.TTFTWindows[ttftBucketKey]; len(observations) > 0 {
-			clone.TTFTWindows = map[string][]adaptiveTTFTObservation{
-				ttftBucketKey: append([]adaptiveTTFTObservation(nil), observations...),
-			}
+		if stats, ok := state.ttftWindowStats[ttftBucketKey]; ok {
+			clone.schedulingTTFTBucketKey = ttftBucketKey
+			clone.schedulingTTFTStats = stats
 		}
 	}
 	return clone
@@ -443,6 +465,7 @@ func (s *adaptiveStateStore) schedulingSnapshot(
 	if changed {
 		touchAdaptiveState(state, now)
 	}
+	ensureAdaptiveTTFTCaches(state)
 	return cloneAdaptiveAccountStateForScheduling(state, ttftBucketKey), adaptiveStateAllowedForSelection(state, now)
 }
 
@@ -600,7 +623,10 @@ func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time
 }
 
 func pruneAdaptiveTTFTWindows(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
-	if state == nil || len(state.TTFTWindows) == 0 {
+	if state == nil {
+		return false
+	}
+	if len(state.TTFTWindows) == 0 {
 		return false
 	}
 	cutoff := now.Add(-settings.LearningWindow)
@@ -630,12 +656,11 @@ func pruneAdaptiveTTFTWindows(state *adaptiveAccountState, now time.Time, settin
 	}
 	if len(state.TTFTWindows) == 0 {
 		state.TTFTWindows = nil
-		state.TTFTEMA = 0
-		state.TTFTSamples = 0
+		clearAdaptiveTTFTCaches(state)
 		return true
 	}
 	if changed {
-		refreshAdaptiveTTFTWindowSummary(state)
+		rebuildAdaptiveTTFTCaches(state)
 	}
 	return changed
 }
@@ -705,6 +730,7 @@ func (s *adaptiveStateStore) registerAdmissionWithLoadAndTTFTBucket(accountID in
 		recoveryProbe := state.RecoveryProbeInFlight && (state.RecoveryProbeOwner == "" || state.RecoveryProbeOwner == requestID)
 		s.admissions[transientKey] = adaptiveAdmission{
 			AccountID:           accountID,
+			ConfiguredCapacity:  configuredCapacity,
 			CapacityGeneration:  generation,
 			TTFTBucketKey:       strings.TrimSpace(ttftBucketKey),
 			HealthProbe:         healthProbe,
@@ -727,6 +753,16 @@ func (s *adaptiveStateStore) registerAdmissionWithLoadAndTTFTBucket(accountID in
 		touchAdaptiveState(state, now)
 	}
 	return generation
+}
+
+func (s *adaptiveStateStore) admissionSnapshot(accountID int64, requestID string) (adaptiveAdmission, bool) {
+	if s == nil || accountID <= 0 || strings.TrimSpace(requestID) == "" {
+		return adaptiveAdmission{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	admission, ok := s.admissions[adaptiveTransientKey(accountID, requestID)]
+	return admission, ok
 }
 
 func (s *adaptiveStateStore) claimRecoveryProbe(accountID int64, requestID string, configuredCapacity int, now time.Time, settings adaptiveCoreSettings) bool {
@@ -918,15 +954,17 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cleanupTransientsLocked(now, settings)
+	transientKey := adaptiveTransientKey(observation.AccountID, observation.RequestID)
+	admission, hadAdmission := s.admissions[transientKey]
+	if hadAdmission && observation.ConfiguredCapacity <= 0 && admission.ConfiguredCapacity > 0 {
+		observation.ConfiguredCapacity = admission.ConfiguredCapacity
+	}
 	state := s.ensureLocked(observation.AccountID, observation.ConfiguredCapacity, now)
 	s.refreshLocked(state, now, settings)
 	quotaProbe := false
 	recoveryProbe := false
 	admitted := true
-	hadAdmission := false
-	transientKey := adaptiveTransientKey(observation.AccountID, observation.RequestID)
-	if admission, ok := s.admissions[transientKey]; ok {
-		hadAdmission = true
+	if hadAdmission {
 		if observation.CapacityGeneration == 0 {
 			observation.CapacityGeneration = admission.CapacityGeneration
 		}
@@ -1368,13 +1406,15 @@ func scoreAdaptiveCandidates(candidates []adaptiveScoreCandidate, now time.Time,
 		return nil
 	}
 	hasOAuth := false
+	hasNonOAuth := false
 	for _, candidate := range candidates {
 		if candidate.OAuth {
 			hasOAuth = true
-			break
+		} else {
+			hasNonOAuth = true
 		}
 	}
-	if hasOAuth {
+	if hasOAuth && hasNonOAuth {
 		oauth := make([]adaptiveScoreCandidate, 0, len(candidates))
 		nonOAuth := make([]adaptiveScoreCandidate, 0, len(candidates))
 		for _, candidate := range candidates {
@@ -1425,7 +1465,10 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 		minTTFT, maxTTFT = ttfts[0], ttfts[len(ttfts)-1]
 	}
 	legacyTTFTEnabled := !windowedTTFT && len(ttfts) >= 2 && maxTTFT > minTTFT
-	windowTTFTScores := scoreAdaptiveTTFTWindows(candidates, now, settings)
+	var windowTTFTScores map[int]adaptiveTTFTWindowScore
+	if windowedTTFT {
+		windowTTFTScores = scoreAdaptiveTTFTWindows(candidates, now, settings)
+	}
 	baseWeightSum := settings.WeightReliability + settings.WeightCapacity + settings.WeightCost
 	for i := range candidates {
 		candidate := &candidates[i]
@@ -1508,21 +1551,45 @@ func observeAdaptiveTTFTWindowLocked(state *adaptiveAccountState, bucketKey stri
 		value = 120000
 	}
 	pruneAdaptiveTTFTWindows(state, now, settings)
+	ensureAdaptiveTTFTCaches(state)
 	if state.TTFTWindows == nil {
 		state.TTFTWindows = make(map[string][]adaptiveTTFTObservation)
 	}
 	if _, exists := state.TTFTWindows[bucketKey]; !exists && len(state.TTFTWindows) >= adaptiveTTFTMaxBucketsPerAccount {
 		delete(state.TTFTWindows, oldestAdaptiveTTFTBucket(state.TTFTWindows))
+		rebuildAdaptiveTTFTCaches(state)
 	}
-	observations := append(state.TTFTWindows[bucketKey], adaptiveTTFTObservation{
+	observation := adaptiveTTFTObservation{
 		At:           now,
 		Milliseconds: value,
-	})
-	if len(observations) > adaptiveTTFTMaxSamplesPerBucket {
-		observations = append([]adaptiveTTFTObservation(nil), observations[len(observations)-adaptiveTTFTMaxSamplesPerBucket:]...)
+	}
+	observations := state.TTFTWindows[bucketKey]
+	var evictedValue *int
+	if len(observations) >= adaptiveTTFTMaxSamplesPerBucket {
+		evicted := observations[0].Milliseconds
+		evictedValue = &evicted
+		copy(observations, observations[1:])
+		observations[len(observations)-1] = observation
+	} else {
+		observations = append(observations, observation)
 	}
 	state.TTFTWindows[bucketKey] = observations
-	refreshAdaptiveTTFTWindowSummary(state)
+	if state.ttftWindowSortedValues == nil {
+		state.ttftWindowSortedValues = make(map[string][]int)
+	}
+	if state.ttftWindowStats == nil {
+		state.ttftWindowStats = make(map[string]adaptiveTTFTWindowStats)
+	}
+	bucketValues, bucketUpdated := updateAdaptiveTTFTSortedValues(state.ttftWindowSortedValues[bucketKey], evictedValue, value)
+	globalValues, globalUpdated := updateAdaptiveTTFTSortedValues(state.ttftSortedValues, evictedValue, value)
+	if !bucketUpdated || !globalUpdated {
+		rebuildAdaptiveTTFTCaches(state)
+		return
+	}
+	state.ttftWindowSortedValues[bucketKey] = bucketValues
+	state.ttftWindowStats[bucketKey] = adaptiveTTFTStatsFromSortedValues(bucketValues)
+	state.ttftSortedValues = globalValues
+	refreshAdaptiveTTFTWindowSummaryFromSortedValues(state)
 }
 
 func oldestAdaptiveTTFTBucket(windows map[string][]adaptiveTTFTObservation) string {
@@ -1542,50 +1609,148 @@ func oldestAdaptiveTTFTBucket(windows map[string][]adaptiveTTFTObservation) stri
 }
 
 func refreshAdaptiveTTFTWindowSummary(state *adaptiveAccountState) {
+	rebuildAdaptiveTTFTCaches(state)
+}
+
+func clearAdaptiveTTFTCaches(state *adaptiveAccountState) {
+	if state == nil {
+		return
+	}
+	state.TTFTEMA = 0
+	state.TTFTSamples = 0
+	state.ttftWindowStats = nil
+	state.ttftWindowSortedValues = nil
+	state.ttftSortedValues = nil
+	state.schedulingTTFTBucketKey = ""
+	state.schedulingTTFTStats = adaptiveTTFTWindowStats{}
+}
+
+func ensureAdaptiveTTFTCaches(state *adaptiveAccountState) {
 	if state == nil || len(state.TTFTWindows) == 0 {
 		return
 	}
-	values := make([]float64, 0)
-	for _, observations := range state.TTFTWindows {
-		for _, observation := range observations {
-			if observation.Milliseconds > 0 {
-				values = append(values, float64(observation.Milliseconds))
-			}
-		}
-	}
-	if len(values) == 0 {
-		state.TTFTEMA = 0
-		state.TTFTSamples = 0
+	if len(state.ttftWindowStats) == len(state.TTFTWindows) &&
+		len(state.ttftWindowSortedValues) == len(state.TTFTWindows) &&
+		len(state.ttftSortedValues) > 0 {
 		return
 	}
-	sort.Float64s(values)
-	p50 := adaptiveTTFTPercentile(values, 0.50)
-	p90 := adaptiveTTFTPercentile(values, 0.90)
+	rebuildAdaptiveTTFTCaches(state)
+}
+
+func rebuildAdaptiveTTFTCaches(state *adaptiveAccountState) {
+	if state == nil || len(state.TTFTWindows) == 0 {
+		clearAdaptiveTTFTCaches(state)
+		return
+	}
+	windowStats := make(map[string]adaptiveTTFTWindowStats, len(state.TTFTWindows))
+	windowSortedValues := make(map[string][]int, len(state.TTFTWindows))
+	total := 0
+	for _, observations := range state.TTFTWindows {
+		total += len(observations)
+	}
+	allValues := make([]int, 0, total)
+	for key, observations := range state.TTFTWindows {
+		values := make([]int, 0, len(observations))
+		for _, observation := range observations {
+			if observation.Milliseconds <= 0 {
+				continue
+			}
+			values = append(values, observation.Milliseconds)
+			allValues = append(allValues, observation.Milliseconds)
+		}
+		sort.Ints(values)
+		windowSortedValues[key] = values
+		windowStats[key] = adaptiveTTFTStatsFromSortedValues(values)
+	}
+	sort.Ints(allValues)
+	state.ttftWindowStats = windowStats
+	state.ttftWindowSortedValues = windowSortedValues
+	state.ttftSortedValues = allValues
+	refreshAdaptiveTTFTWindowSummaryFromSortedValues(state)
+}
+
+func updateAdaptiveTTFTSortedValues(values []int, evictedValue *int, newValue int) ([]int, bool) {
+	if evictedValue != nil {
+		index := sort.SearchInts(values, *evictedValue)
+		if index >= len(values) || values[index] != *evictedValue {
+			return values, false
+		}
+		copy(values[index:], values[index+1:])
+		values = values[:len(values)-1]
+	}
+	insertAt := sort.SearchInts(values, newValue)
+	values = append(values, 0)
+	copy(values[insertAt+1:], values[insertAt:])
+	values[insertAt] = newValue
+	return values, true
+}
+
+func refreshAdaptiveTTFTWindowSummaryFromSortedValues(state *adaptiveAccountState) {
+	if state == nil || len(state.ttftSortedValues) == 0 {
+		if state != nil {
+			state.TTFTEMA = 0
+			state.TTFTSamples = 0
+		}
+		return
+	}
+	p50 := adaptiveTTFTPercentileInts(state.ttftSortedValues, 0.50)
+	p90 := adaptiveTTFTPercentileInts(state.ttftSortedValues, 0.90)
 	state.TTFTEMA = adaptiveTTFTBlend(p50, p90)
-	state.TTFTSamples = int64(len(values))
+	state.TTFTSamples = int64(len(state.ttftSortedValues))
+}
+
+func adaptiveTTFTStatsFromSortedValues(values []int) adaptiveTTFTWindowStats {
+	if len(values) == 0 {
+		return adaptiveTTFTWindowStats{}
+	}
+	return adaptiveTTFTWindowStats{
+		Samples: len(values),
+		P50:     adaptiveTTFTPercentileInts(values, 0.50),
+		P90:     adaptiveTTFTPercentileInts(values, 0.90),
+	}
+}
+
+func adaptiveTTFTPercentileInts(sortedValues []int, percentile float64) float64 {
+	if len(sortedValues) == 0 {
+		return 0
+	}
+	if len(sortedValues) == 1 {
+		return float64(sortedValues[0])
+	}
+	position := clampFloat(percentile, 0, 1, 0.5) * float64(len(sortedValues)-1)
+	lower := int(math.Floor(position))
+	upper := int(math.Ceil(position))
+	if lower == upper {
+		return float64(sortedValues[lower])
+	}
+	fraction := position - float64(lower)
+	return float64(sortedValues[lower]) + fraction*float64(sortedValues[upper]-sortedValues[lower])
 }
 
 func adaptiveTTFTWindowStatsForState(state adaptiveAccountState, bucketKey string, now time.Time, settings adaptiveCoreSettings) adaptiveTTFTWindowStats {
-	observations := state.TTFTWindows[strings.TrimSpace(bucketKey)]
+	bucketKey = strings.TrimSpace(bucketKey)
+	if bucketKey != "" && state.schedulingTTFTBucketKey == bucketKey {
+		return state.schedulingTTFTStats
+	}
+	if stats, ok := state.ttftWindowStats[bucketKey]; ok {
+		return stats
+	}
+	observations := state.TTFTWindows[bucketKey]
 	if len(observations) == 0 {
 		return adaptiveTTFTWindowStats{}
 	}
 	cutoff := now.Add(-settings.LearningWindow)
-	values := make([]float64, 0, len(observations))
+	values := make([]int, 0, len(observations))
 	for _, observation := range observations {
 		if !observation.At.Before(cutoff) && observation.Milliseconds > 0 {
-			values = append(values, float64(observation.Milliseconds))
+			values = append(values, observation.Milliseconds)
 		}
 	}
 	if len(values) == 0 {
 		return adaptiveTTFTWindowStats{}
 	}
-	sort.Float64s(values)
-	return adaptiveTTFTWindowStats{
-		Samples: len(values),
-		P50:     adaptiveTTFTPercentile(values, 0.50),
-		P90:     adaptiveTTFTPercentile(values, 0.90),
-	}
+	sort.Ints(values)
+	return adaptiveTTFTStatsFromSortedValues(values)
 }
 
 func scoreAdaptiveTTFTWindows(candidates []adaptiveScoreCandidate, now time.Time, settings adaptiveCoreSettings) map[int]adaptiveTTFTWindowScore {

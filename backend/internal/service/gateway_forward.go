@@ -1014,15 +1014,15 @@ func (s *GatewayService) needsUpstreamChannelRestrictionCheck(ctx context.Contex
 	if groupID == nil || s.channelService == nil {
 		return false
 	}
-	ch, err := s.channelService.GetChannelForGroup(ctx, *groupID)
+	lookup, err := s.channelService.lookupGroupChannel(ctx, *groupID)
 	if err != nil {
 		slog.Warn("failed to check channel upstream restriction", "group_id", *groupID, "error", err)
 		return false
 	}
-	if ch == nil || !ch.RestrictModels {
+	if lookup == nil || !lookup.channel.RestrictModels {
 		return false
 	}
-	return ch.BillingModelSource == BillingModelSourceUpstream
+	return lookup.channel.BillingModelSource == BillingModelSourceUpstream
 }
 
 // isStickyAccountUpstreamRestricted 检查粘性会话命中的账号是否受 upstream 渠道限制。

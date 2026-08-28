@@ -72,6 +72,40 @@ func TestSchedulerCacheUpdateLastUsedUsesSideKeyWithoutRewritingPayloads(t *test
 	require.Equal(t, latest, *snapshot[0].LastUsedAt)
 }
 
+func TestSchedulerCacheSnapshotCombinedMGetKeepsAccountAndLastUsedOrdering(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	cache.mgetChunkSize = 1
+	bucket := service.SchedulerBucket{
+		GroupID:  91,
+		Platform: service.PlatformGrok,
+		Mode:     service.SchedulerModeSingle,
+	}
+	accounts := []service.Account{
+		{ID: 9211, Name: "first", Platform: service.PlatformGrok, Type: service.AccountTypeOAuth},
+		{ID: 9212, Name: "second", Platform: service.PlatformGrok, Type: service.AccountTypeAPIKey},
+	}
+	token, err := cache.CaptureBucketWriteToken(ctx, bucket)
+	require.NoError(t, err)
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, token, accounts))
+	base := time.Now().UTC().Truncate(time.Millisecond)
+	wantLastUsed := map[int64]time.Time{
+		accounts[0].ID: base.Add(time.Second),
+		accounts[1].ID: base.Add(2 * time.Second),
+	}
+	require.NoError(t, cache.UpdateLastUsed(ctx, wantLastUsed))
+
+	snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
+
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, snapshot, len(accounts))
+	for _, account := range snapshot {
+		require.NotNil(t, account.LastUsedAt)
+		require.Equal(t, wantLastUsed[account.ID], *account.LastUsedAt)
+	}
+}
+
 func TestSchedulerCacheLastUsedSideKeyIsMonotonicAndRequiresAccount(t *testing.T) {
 	ctx := context.Background()
 	cache := newSchedulerCacheUnit(t)

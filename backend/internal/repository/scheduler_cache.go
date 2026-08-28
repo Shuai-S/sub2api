@@ -245,24 +245,24 @@ func newSchedulerCacheWithChunkSizes(rdb *redis.Client, mgetChunkSize, writeChun
 
 func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.SchedulerBucket) ([]*service.Account, bool, error) {
 	readyKey := schedulerBucketKey(schedulerReadyPrefix, bucket)
-	readyVal, err := c.rdb.Get(ctx, readyKey).Result()
-	if err == redis.Nil {
-		return nil, false, nil
-	}
+	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
+	controlValues, err := c.rdb.MGet(ctx, readyKey, activeKey).Result()
 	if err != nil {
 		return nil, false, err
+	}
+	if len(controlValues) != 2 || controlValues[0] == nil || controlValues[1] == nil {
+		return nil, false, nil
+	}
+	readyVal, ok := schedulerCacheString(controlValues[0])
+	if !ok {
+		return nil, false, fmt.Errorf("unexpected scheduler ready cache type: %T", controlValues[0])
 	}
 	if readyVal != "1" {
 		return nil, false, nil
 	}
-
-	activeKey := schedulerBucketKey(schedulerActivePrefix, bucket)
-	activeVal, err := c.rdb.Get(ctx, activeKey).Result()
-	if err == redis.Nil {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
+	activeVal, ok := schedulerCacheString(controlValues[1])
+	if !ok {
+		return nil, false, fmt.Errorf("unexpected scheduler active cache type: %T", controlValues[1])
 	}
 
 	snapshotKey := schedulerSnapshotKey(bucket, activeVal)
@@ -276,23 +276,25 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 		return nil, false, nil
 	}
 
-	keys := make([]string, 0, len(ids))
-	lastUsedKeys := make([]string, 0, len(ids))
+	keys := make([]string, 0, 2*len(ids))
 	for _, id := range ids {
 		keys = append(keys, schedulerAccountMetaKey(id))
-		lastUsedKeys = append(lastUsedKeys, schedulerLastUsedKey(id))
+	}
+	for _, id := range ids {
+		keys = append(keys, schedulerLastUsedKey(id))
 	}
 	values, err := c.mgetChunked(ctx, keys)
 	if err != nil {
 		return nil, false, err
 	}
-	lastUsedValues, err := c.mgetChunked(ctx, lastUsedKeys)
-	if err != nil {
-		return nil, false, err
+	if len(values) != 2*len(ids) {
+		return nil, false, fmt.Errorf("unexpected scheduler snapshot payload count: got %d want %d", len(values), 2*len(ids))
 	}
+	accountValues := values[:len(ids)]
+	lastUsedValues := values[len(ids):]
 
-	accounts := make([]*service.Account, 0, len(values))
-	for i, val := range values {
+	accounts := make([]*service.Account, 0, len(accountValues))
+	for i, val := range accountValues {
 		if val == nil {
 			return nil, false, nil
 		}
@@ -307,6 +309,17 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 	}
 
 	return accounts, true, nil
+}
+
+func schedulerCacheString(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case []byte:
+		return string(typed), true
+	default:
+		return "", false
+	}
 }
 
 func (c *schedulerCache) CaptureBucketWriteToken(ctx context.Context, bucket service.SchedulerBucket) (service.SchedulerBucketWriteToken, error) {

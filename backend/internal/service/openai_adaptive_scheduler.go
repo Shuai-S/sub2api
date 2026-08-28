@@ -101,6 +101,23 @@ type openAIAdaptiveSelectionPlan struct {
 	filterStats    openAISelectionFilterStats
 }
 
+type openAIAdaptiveSelectionPlanLoader func() (openAIAdaptiveSelectionPlan, error)
+
+func memoizeOpenAIAdaptiveSelectionPlanLoader(load openAIAdaptiveSelectionPlanLoader) openAIAdaptiveSelectionPlanLoader {
+	var plan openAIAdaptiveSelectionPlan
+	var err error
+	loaded := false
+	return func() (openAIAdaptiveSelectionPlan, error) {
+		if !loaded {
+			loaded = true
+			if load != nil {
+				plan, err = load()
+			}
+		}
+		return plan, err
+	}
+}
+
 // Attempt statistics are kept separate from initial filter statistics because
 // an account may be retried across cached-load, fresh-load, and wait-plan passes.
 type openAIAdaptiveSelectionAttemptStats struct {
@@ -233,9 +250,6 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 			outcome = "previous_response_empty"
 		}
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, nil, outcome, err, start)
-		if selection != nil && selection.Account != nil {
-			s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
-		}
 		return selection, decision, err
 	}
 	selection, escapedSticky, err := s.selectByAdaptiveSticky(ctx, req, cfg)
@@ -243,7 +257,6 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return nil, decision, err
 	}
 	if selection != nil && selection.Account != nil {
-		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
 		decision.Layer = openAIAccountScheduleLayerSessionSticky
 		decision.StickySessionHit = true
 		decision.SelectedAccountID = selection.Account.ID
@@ -254,8 +267,11 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 	if escapedSticky {
 		req.PreserveStickyBinding = true
 	}
+	loadSharedPlan := memoizeOpenAIAdaptiveSelectionPlanLoader(func() (openAIAdaptiveSelectionPlan, error) {
+		return s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	})
 
-	probeSelection, probeCandidates, probeErr := s.selectDueHealthProbe(ctx, req, cfg)
+	probeSelection, probeCandidates, probeErr := s.selectDueHealthProbeWithPlanLoader(ctx, req, cfg, loadSharedPlan)
 	if probeErr != nil {
 		slog.Warn("openai_adaptive_runtime_probe_selection_failed",
 			"model", req.RequestedModel,
@@ -272,7 +288,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return probeSelection, decision, nil
 	}
 
-	recoverySelection, recoveryCandidates, recoveryErr := s.selectRecoveryExploration(ctx, req, cfg)
+	recoverySelection, recoveryCandidates, recoveryErr := s.selectRecoveryExplorationWithPlanLoader(ctx, req, cfg, loadSharedPlan)
 	if recoveryErr != nil {
 		slog.Warn("openai_adaptive_recovery_probe_selection_failed",
 			"model", req.RequestedModel,
@@ -289,7 +305,7 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return recoverySelection, decision, nil
 	}
 
-	selection, candidateCount, topK, loadSkew, diagnosticCandidates, err := s.selectByAdaptiveLoadBalance(ctx, req, cfg)
+	selection, candidateCount, topK, loadSkew, diagnosticCandidates, err := s.selectByAdaptiveLoadBalanceWithPlanLoader(ctx, req, cfg, loadSharedPlan)
 	decision.Layer = openAIAccountScheduleLayerAdaptive
 	decision.CandidateCount = candidateCount
 	decision.TopK = topK
@@ -311,7 +327,6 @@ func (s *adaptiveOpenAIAccountScheduler) Select(
 		return nil, decision, err
 	}
 	if selection != nil && selection.Account != nil {
-		s.registerAdaptiveAdmission(ctx, selection.Account, selection.Acquired, s.ttftBucketKey(req, selection.Account), openAIAdaptiveCoreSettings(cfg))
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
 		s.logEnforceDiagnosticDecision(ctx, req, cfg, decision, selection, diagnosticCandidates, "selected", nil, start)
@@ -326,6 +341,17 @@ func (s *adaptiveOpenAIAccountScheduler) selectDueHealthProbe(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 ) (*AccountSelectionResult, []openAIAdaptiveCandidateScore, error) {
+	return s.selectDueHealthProbeWithPlanLoader(ctx, req, cfg, func() (openAIAdaptiveSelectionPlan, error) {
+		return s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	})
+}
+
+func (s *adaptiveOpenAIAccountScheduler) selectDueHealthProbeWithPlanLoader(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	loadPlan openAIAdaptiveSelectionPlanLoader,
+) (*AccountSelectionResult, []openAIAdaptiveCandidateScore, error) {
 	if s == nil || s.core == nil || strings.TrimSpace(req.PreviousResponseID) != "" || req.GuardianParentAccountID > 0 || req.StickyAccountID > 0 || req.StickyPreviousAccountID > 0 {
 		return nil, nil, nil
 	}
@@ -335,7 +361,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectDueHealthProbe(
 		return nil, nil, nil
 	}
 
-	plan, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	plan, err := loadPlan()
 	if err != nil {
 		return nil, nil, nil
 	}
@@ -371,6 +397,17 @@ func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExploration(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 ) (*AccountSelectionResult, []openAIAdaptiveCandidateScore, error) {
+	return s.selectRecoveryExplorationWithPlanLoader(ctx, req, cfg, func() (openAIAdaptiveSelectionPlan, error) {
+		return s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	})
+}
+
+func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExplorationWithPlanLoader(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	loadPlan openAIAdaptiveSelectionPlanLoader,
+) (*AccountSelectionResult, []openAIAdaptiveCandidateScore, error) {
 	if s == nil || s.core == nil || strings.TrimSpace(req.PreviousResponseID) != "" || req.GuardianParentAccountID > 0 || req.StickyAccountID > 0 || req.StickyPreviousAccountID > 0 {
 		return nil, nil, nil
 	}
@@ -378,7 +415,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExploration(
 	if coreSettings.RecoveryExplorationRate <= 0 || rand.Float64() >= coreSettings.RecoveryExplorationRate {
 		return nil, nil, nil
 	}
-	plan, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	plan, err := loadPlan()
 	if err != nil {
 		return nil, nil, nil
 	}
@@ -474,11 +511,21 @@ func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmission(ctx context.C
 }
 
 func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmissionWithRequest(ctx context.Context, account *Account, requestID string, admitted bool, ttftBucketKey string, settings adaptiveCoreSettings) {
+	s.registerAdaptiveAdmissionWithRequestAndLoad(ctx, account, requestID, admitted, ttftBucketKey, settings, nil)
+}
+
+func (s *adaptiveOpenAIAccountScheduler) registerAdaptiveAdmissionWithRequestAndLoad(ctx context.Context, account *Account, requestID string, admitted bool, ttftBucketKey string, settings adaptiveCoreSettings, loadInfo *AccountLoadInfo) {
 	if s == nil || s.core == nil || account == nil {
 		return
 	}
 	observed, waiting := -1, 0
-	if admitted && s.service != nil && s.service.concurrencyService != nil {
+	if admitted && loadInfo != nil {
+		observed = max(0, loadInfo.CurrentConcurrency)
+		if account.Concurrency > 0 {
+			observed++
+		}
+		waiting = max(0, loadInfo.WaitingCount)
+	} else if admitted && s.service != nil && s.service.concurrencyService != nil {
 		loads, err := s.service.concurrencyService.GetAccountsLoadBatchFresh(ctx, []AccountWithConcurrency{{ID: account.ID, MaxConcurrency: account.Concurrency}})
 		if err == nil {
 			if load := loads[account.ID]; load != nil {
@@ -579,8 +626,8 @@ func (s *adaptiveOpenAIAccountScheduler) selectByPreviousResponse(
 	}
 	if selection != nil && selection.Account != nil {
 		now := time.Now()
-		state := s.core.snapshot(selection.Account.ID, selection.Account.Concurrency, now, openAIAdaptiveCoreSettings(cfg))
-		if !state.CircuitOpenUntil.IsZero() || state.QuotaLimited {
+		_, _, circuitTracked, quotaTracked := s.core.runtimeStatus(selection.Account.ID, selection.Account.Concurrency, now, openAIAdaptiveCoreSettings(cfg))
+		if circuitTracked || quotaTracked {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
@@ -680,7 +727,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveSticky(
 		return nil, false, acquireErr
 	}
 	if result != nil && result.Acquired {
-		s.registerAdaptiveAdmission(ctx, account, true, s.ttftBucketKey(req, account), coreSettings)
+		s.registerAdaptiveAdmissionWithRequestAndLoad(ctx, account, openAIAdaptiveRequestID(ctx), true, s.ttftBucketKey(req, account), coreSettings, loadInfo)
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
 		selection, selectErr := s.service.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 		return selection, false, selectErr
@@ -694,11 +741,22 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalance(
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
 ) (*AccountSelectionResult, int, int, float64, []openAIAdaptiveDiagnosticCandidate, error) {
+	return s.selectByAdaptiveLoadBalanceWithPlanLoader(ctx, req, cfg, func() (openAIAdaptiveSelectionPlan, error) {
+		return s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	})
+}
+
+func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalanceWithPlanLoader(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	cfg OpenAIAdaptiveSchedulerSettings,
+	loadPlan openAIAdaptiveSelectionPlanLoader,
+) (*AccountSelectionResult, int, int, float64, []openAIAdaptiveDiagnosticCandidate, error) {
 	if s.service.concurrencyService == nil || !s.service.schedulingConfig().LoadBatchEnabled {
 		selection, fallbackErr := s.degradedAdaptiveFallback(ctx, req, "runtime_unavailable", errOpenAIAdaptiveSchedulerFallback)
 		return selection, 0, 0, 0, nil, fallbackErr
 	}
-	plan, err := s.buildAdaptiveSelectionOrderWithLoad(ctx, req, cfg, true)
+	plan, err := loadPlan()
 	diagnosticCandidates := openAIAdaptiveDiagnosticCandidatesForLog(ctx, req, cfg, plan.selectionOrder)
 	if err != nil {
 		reason := dominantAdaptiveSelectionExclusion(plan.filterStats, nil)
@@ -877,7 +935,7 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
 	cfg OpenAIAdaptiveSchedulerSettings,
-	allowSideEffects bool,
+	_ bool,
 ) (openAIAdaptiveSelectionPlan, error) {
 	plan := openAIAdaptiveSelectionPlan{}
 	accounts, err := s.service.listSchedulableAccounts(ctx, req.GroupID, req.Platform)
@@ -889,15 +947,12 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 		return plan, noAvailableOpenAISelectionError(req.RequestedModel, false, plan.filterStats.summary(""))
 	}
 
-	var schedGroup *Group
-	if req.GroupID != nil && s.service.schedulerSnapshot != nil {
-		schedGroup, _ = s.service.schedulerSnapshot.GetGroupByID(ctx, *req.GroupID)
-	}
-
 	plan.filtered = make([]*Account, 0, len(accounts))
 	plan.loadReq = make([]AccountWithConcurrency, 0, len(accounts))
 	coreSettings := openAIAdaptiveCoreSettings(cfg)
 	now := time.Now()
+	needsUpstreamCheck := s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID)
+	parentLookup := s.baseline.parentAccountLookupForSelection(ctx, accounts)
 	for i := range accounts {
 		account := &accounts[i]
 		if req.ExcludedIDs != nil {
@@ -918,16 +973,11 @@ func (s *adaptiveOpenAIAccountScheduler) buildAdaptiveSelectionOrderWithLoad(
 			plan.filterStats.exclude("runtime_blocked")
 			continue
 		}
-		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
-			if allowSideEffects {
-				s.service.BlockAccountScheduling(account, time.Time{}, "privacy_not_set")
-				_ = s.service.accountRepo.SetError(ctx, account.ID,
-					fmt.Sprintf("Privacy not set, required by group [%s]", schedGroup.Name))
-			}
+		if req.RequirePrivacySet && !account.IsPrivacySet() {
 			plan.filterStats.exclude("privacy_not_set")
 			continue
 		}
-		if compatible, reason := s.baseline.isAccountRequestCompatibleReason(ctx, account, req); !compatible {
+		if compatible, reason := s.baseline.isAccountRequestCompatibleReasonWithSelectionChecks(ctx, account, req, needsUpstreamCheck, parentLookup); !compatible {
 			plan.filterStats.exclude(reason)
 			continue
 		}
@@ -1152,7 +1202,7 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 			return nil, compactBlocked, acquireErr
 		}
 		if result != nil && result.Acquired {
-			s.registerAdaptiveAdmissionWithRequest(ctx, fresh, requestID, true, candidate.ttftBucketKey, coreSettings)
+			s.registerAdaptiveAdmissionWithRequestAndLoad(ctx, fresh, requestID, true, candidate.ttftBucketKey, coreSettings, candidate.loadInfo)
 			if req.SessionHash != "" && !req.PreserveStickyBinding {
 				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
 			}
@@ -1217,6 +1267,9 @@ func (s *adaptiveOpenAIAccountScheduler) logShadowDecision(
 	cfg OpenAIAdaptiveSchedulerSettings,
 	baseline *AccountSelectionResult,
 ) {
+	if !cfg.OpenAIAdaptiveSchedulerDiagnosticLogEnabled {
+		return
+	}
 	selectionOrder, candidateCount, topK, err := s.buildAdaptiveSelectionOrder(ctx, req, cfg)
 	if err != nil {
 		slog.Debug("openai_adaptive_shadow_failed", "error", err, "model", req.RequestedModel)
@@ -1565,11 +1618,6 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 	if report.HealthSample && !report.BalanceInsufficient {
 		s.baseline.ReportResult(report.AccountID, report.Success, report.FirstTokenMs)
 	}
-	account := s.reportAccountSnapshot(report.AccountID)
-	configuredCapacity := 0
-	if account != nil {
-		configuredCapacity = account.Concurrency
-	}
 	observationType, authentication := classifyAdaptiveTerminalReason(report.Success, report.TerminalReason)
 	accountHealthEligible := report.TerminalReason == "account_auth" || report.TerminalReason == "transport_error" || report.TerminalReason == "upstream_5xx" || report.TerminalReason == "concurrency_limit"
 	if report.BalanceInsufficient {
@@ -1577,6 +1625,15 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 	}
 	if !report.HealthSample && (observationType == adaptiveObservationHealthSuccess || observationType == adaptiveObservationAccountFailure) {
 		observationType = adaptiveObservationIgnored
+	}
+	admission, hasAdmission := s.core.admissionSnapshot(report.AccountID, requestID)
+	configuredCapacity := admission.ConfiguredCapacity
+	var account *Account
+	if !hasAdmission || observationType == adaptiveObservationQuotaLimit {
+		account = s.reportAccountSnapshot(report.AccountID)
+		if account != nil {
+			configuredCapacity = account.Concurrency
+		}
 	}
 	observation := adaptiveObservation{
 		AccountID:             report.AccountID,
