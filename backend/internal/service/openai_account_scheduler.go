@@ -131,6 +131,17 @@ type OpenAIAccountScheduleReport struct {
 	Err                 error
 }
 
+// OpenAIAccountScheduleSuccessOptions carries request-level failover context
+// into the terminal success report. The retry count is the sum of retries
+// across all accounts used by the request; the limit belongs to the account
+// that produced the successful result.
+type OpenAIAccountScheduleSuccessOptions struct {
+	AccountSwitchCount    int
+	MaxAccountSwitches    int
+	SameAccountRetryCount int
+	SameAccountRetryLimit int
+}
+
 type OpenAIAccountSchedulerMetricsSnapshot struct {
 	SelectTotal              int64
 	StickyPreviousHitTotal   int64
@@ -2580,11 +2591,25 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultWithContext(ctx 
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleSuccessWithContext(ctx context.Context, accountID int64, result *OpenAIForwardResult, modelOverride ...string) {
+	s.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(ctx, accountID, result, OpenAIAccountScheduleSuccessOptions{}, modelOverride...)
+}
+
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+	ctx context.Context,
+	accountID int64,
+	result *OpenAIForwardResult,
+	options OpenAIAccountScheduleSuccessOptions,
+	modelOverride ...string,
+) {
 	report := OpenAIAccountScheduleReport{
-		AccountID:      accountID,
-		Success:        true,
-		HealthSample:   true,
-		TerminalReason: "success",
+		AccountID:             accountID,
+		Success:               true,
+		HealthSample:          true,
+		TerminalReason:        "success",
+		AccountSwitchCount:    options.AccountSwitchCount,
+		MaxAccountSwitches:    options.MaxAccountSwitches,
+		SameAccountRetryCount: options.SameAccountRetryCount,
+		SameAccountRetryLimit: options.SameAccountRetryLimit,
 	}
 	if result != nil {
 		model := ""

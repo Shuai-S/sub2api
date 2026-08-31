@@ -187,7 +187,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, time.Since(forwardStart).Milliseconds())
 
 		if err == nil {
-			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(requestedModel))
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+				c.Request.Context(), account.ID, result,
+				openAIAdaptiveSuccessOptions(account, switchCount, h.maxAccountSwitches, sameAccountRetryCount, false),
+				account.GetMappedModel(requestedModel),
+			)
 			if result != nil {
 				h.recordAlphaSearchUsage(c, apiKey, account, subscription, channelMapping, requestedModel, body, result, subject.UserID)
 			}

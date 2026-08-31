@@ -28,6 +28,35 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+func TestOpenAIAdaptiveSuccessOptionsIncludesRequestFailoverContext(t *testing.T) {
+	account := &service.Account{
+		ID:   2914,
+		Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode":             true,
+			"pool_mode_retry_count": 3,
+		},
+	}
+
+	options := openAIAdaptiveSuccessOptions(account, 1, 10, map[int64]int{
+		2914: 3,
+		2901: 2,
+	}, true)
+
+	require.Equal(t, service.OpenAIAccountScheduleSuccessOptions{
+		AccountSwitchCount:    1,
+		MaxAccountSwitches:    10,
+		SameAccountRetryCount: 5,
+		SameAccountRetryLimit: 3,
+	}, options)
+
+	oauth := &service.Account{ID: 2914, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	streamingOAuthOptions := openAIAdaptiveSuccessOptions(oauth, 0, 10, nil, true)
+	require.Equal(t, 1, streamingOAuthOptions.SameAccountRetryLimit)
+	nonStreamingOAuthOptions := openAIAdaptiveSuccessOptions(oauth, 0, 10, nil, false)
+	require.Zero(t, nonStreamingOAuthOptions.SameAccountRetryLimit)
+}
+
 func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -137,6 +166,74 @@ func TestClaimOpenAISameAccountRetryRejectsNonRetryable(t *testing.T) {
 	_, _, ok := claimOpenAISameAccountRetry(account, &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway}, retryCounts)
 	require.False(t, ok)
 	require.Empty(t, retryCounts)
+}
+
+func TestClaimOpenAIStreamingOAuth429RetryUsesOneSecondBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		account   *service.Account
+		delay     time.Duration
+		wantOK    bool
+		wantCount int
+	}{
+		{
+			name:      "oauth 500ms",
+			account:   &service.Account{ID: 1, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth},
+			delay:     500 * time.Millisecond,
+			wantOK:    true,
+			wantCount: 1,
+		},
+		{
+			name:      "setup token exactly one second",
+			account:   &service.Account{ID: 2, Platform: service.PlatformOpenAI, Type: service.AccountTypeSetupToken},
+			delay:     time.Second,
+			wantOK:    true,
+			wantCount: 1,
+		},
+		{
+			name:      "oauth upstream asks eight seconds",
+			account:   &service.Account{ID: 3, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth},
+			delay:     8 * time.Second,
+			wantOK:    false,
+			wantCount: 0,
+		},
+		{
+			name:      "api key is outside oauth policy",
+			account:   &service.Account{ID: 4, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey},
+			delay:     500 * time.Millisecond,
+			wantOK:    false,
+			wantCount: 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			counts := map[int64]int{}
+			err := &service.UpstreamFailoverError{
+				StatusCode:             http.StatusTooManyRequests,
+				RetryableOnSameAccount: true,
+				SameAccountRetryDelay:  tc.delay,
+			}
+			delay, count, ok := claimOpenAIStreamingOAuth429Retry(tc.account, err, counts)
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.wantCount, count)
+			require.Equal(t, tc.wantCount, counts[tc.account.ID])
+			if tc.wantOK {
+				require.Equal(t, tc.delay, delay)
+			} else if tc.delay > streamingOAuth429RetryBudget {
+				require.Equal(t, tc.delay, delay)
+			}
+		})
+	}
+
+	account := &service.Account{ID: 5, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	counts := map[int64]int{account.ID: 1}
+	delay, count, ok := claimOpenAIStreamingOAuth429Retry(account, &service.UpstreamFailoverError{
+		StatusCode:             http.StatusTooManyRequests,
+		RetryableOnSameAccount: true,
+		SameAccountRetryDelay:  500 * time.Millisecond,
+	}, counts)
+	require.False(t, ok)
+	require.Zero(t, delay)
+	require.Equal(t, 1, count)
 }
 
 func TestOpenAIAdaptiveFailureOptionsIncludesRetryProgress(t *testing.T) {

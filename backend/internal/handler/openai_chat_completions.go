@@ -352,8 +352,45 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					// Pool mode: retry on the same account
-					if failoverErr.RetryableOnSameAccount {
+					// Streaming OAuth/SetupToken 429s use the same TTFT budget as
+					// /v1/responses. Non-streaming requests and API-key pool mode
+					// retain their existing retry policy.
+					if reqStream && isOpenAIStreamingOAuth429(account, failoverErr) {
+						retryDelay, retryCount, ok := claimOpenAIStreamingOAuth429Retry(account, failoverErr, sameAccountRetryCount)
+						if ok {
+							reqLog.Warn("openai.streaming_oauth429_same_account_retry",
+								zap.Int64("account_id", account.ID),
+								zap.String("account_type", string(account.Type)),
+								zap.String("platform", string(account.Platform)),
+								zap.Int("upstream_status", failoverErr.StatusCode),
+								zap.Int("retry_limit", streamingOAuth429RetryLimit),
+								zap.Int("retry_count", retryCount),
+								zap.Duration("retry_delay", retryDelay),
+								zap.Int64("retry_budget_ms", streamingOAuth429RetryBudget.Milliseconds()),
+							)
+							select {
+							case <-c.Request.Context().Done():
+								return
+							case <-time.After(retryDelay):
+							}
+							continue
+						}
+						switchReason := "retry_delay_exceeds_budget"
+						if retryCount >= 1 {
+							switchReason = "same_account_retry_exhausted"
+						}
+						reqLog.Warn("openai.streaming_oauth429_switch_account",
+							zap.Int64("account_id", account.ID),
+							zap.String("account_type", string(account.Type)),
+							zap.String("platform", string(account.Platform)),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_count", retryCount),
+							zap.Duration("retry_delay", retryDelay),
+							zap.Int64("retry_budget_ms", streamingOAuth429RetryBudget.Milliseconds()),
+							zap.Int("next_switch_count", switchCount+1),
+							zap.String("switch_reason", switchReason),
+						)
+					} else if failoverErr.RetryableOnSameAccount {
 						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
 						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
@@ -417,15 +454,23 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(reqModel))
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+				c.Request.Context(), account.ID, result,
+				openAIAdaptiveSuccessOptions(account, switchCount, maxAccountSwitches, sameAccountRetryCount, reqStream),
+				account.GetMappedModel(reqModel),
+			)
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
-				AccountID:      account.ID,
-				Success:        true,
-				DurationMs:     forwardDurationMs,
-				Stream:         reqStream,
-				HealthSample:   true,
-				TerminalReason: "success_no_result",
+				AccountID:             account.ID,
+				Success:               true,
+				DurationMs:            forwardDurationMs,
+				Stream:                reqStream,
+				HealthSample:          true,
+				TerminalReason:        "success_no_result",
+				AccountSwitchCount:    switchCount,
+				MaxAccountSwitches:    maxAccountSwitches,
+				SameAccountRetryCount: totalOpenAISameAccountRetryCount(sameAccountRetryCount),
+				SameAccountRetryLimit: openAISameAccountRetryLimitForLog(account, reqStream),
 			})
 		}
 

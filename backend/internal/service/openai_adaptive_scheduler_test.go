@@ -848,6 +848,7 @@ func TestOpenAIAdaptiveDiagnosticResultIncludesFailoverContext(t *testing.T) {
 	require.Contains(t, logText, "platform=openai")
 	require.Contains(t, logText, "account_switch_count=2")
 	require.Contains(t, logText, "attempt_number=3")
+	require.Contains(t, logText, "request_attempt_number=4")
 	require.Contains(t, logText, "max_account_switches=3")
 	require.Contains(t, logText, "failover_outcome=suppressed")
 	require.Contains(t, logText, "failover_suppressed_reason=next_account_stopped")

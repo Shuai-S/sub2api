@@ -271,7 +271,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 
-		h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(reqModel))
+		h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+			c.Request.Context(), account.ID, result,
+			openAIAdaptiveSuccessOptions(account, switchCount, maxAccountSwitches, nil, false),
+			account.GetMappedModel(reqModel),
+		)
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
 		inboundEndpoint := GetInboundEndpoint(c)

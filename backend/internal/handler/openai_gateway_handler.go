@@ -52,6 +52,13 @@ type openAIWSTurnChannelMappingSnapshot struct {
 
 var errOpenAIWSUnsupportedModelSwitch = errors.New("selected account does not support websocket model switch")
 
+// Streaming OAuth 429s get a request-local TTFT budget. Other request types
+// retain their existing success-oriented retry policies.
+const (
+	streamingOAuth429RetryLimit  = 1
+	streamingOAuth429RetryBudget = time.Second
+)
+
 func newOpenAIWSUnsupportedModelSwitchError(model string) error {
 	cause := fmt.Errorf("%w: model %q", errOpenAIWSUnsupportedModelSwitch, strings.TrimSpace(model))
 	return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "model switch requires reconnect", cause)
@@ -173,6 +180,34 @@ func claimOpenAISameAccountRetry(account *service.Account, failoverErr *service.
 	return retryLimit, retryCounts[account.ID], true
 }
 
+// claimOpenAIStreamingOAuth429Retry applies the request-level TTFT budget to
+// streaming OpenAI OAuth/SetupToken 429s. A retry is useful only when the
+// upstream asks us to wait no more than one second; longer Retry-After values
+// go straight to account failover instead of delaying the first token.
+func claimOpenAIStreamingOAuth429Retry(account *service.Account, failoverErr *service.UpstreamFailoverError, retryCounts map[int64]int) (time.Duration, int, bool) {
+	if account == nil || failoverErr == nil || !account.IsOpenAIOAuthLike() ||
+		failoverErr.StatusCode != http.StatusTooManyRequests || !failoverErr.RetryableOnSameAccount {
+		return 0, 0, false
+	}
+	if retryCounts[account.ID] >= streamingOAuth429RetryLimit {
+		return 0, retryCounts[account.ID], false
+	}
+	retryDelay := failoverErr.SameAccountRetryDelay
+	if retryDelay <= 0 {
+		retryDelay = sameAccountRetryDelay
+	}
+	if retryDelay > streamingOAuth429RetryBudget {
+		return retryDelay, retryCounts[account.ID], false
+	}
+	retryCounts[account.ID]++
+	return retryDelay, retryCounts[account.ID], true
+}
+
+func isOpenAIStreamingOAuth429(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
+	return account != nil && failoverErr != nil && account.IsOpenAIOAuthLike() &&
+		failoverErr.StatusCode == http.StatusTooManyRequests && failoverErr.RetryableOnSameAccount
+}
+
 func openAIAdaptiveFailureOptions(
 	c *gin.Context,
 	account *service.Account,
@@ -191,9 +226,52 @@ func openAIAdaptiveFailureOptions(
 		MaxAccountSwitches:       maxAccountSwitches,
 	}
 	if account != nil && failoverErr != nil && failoverErr.RetryableOnSameAccount {
+		stream := false
+		if c != nil {
+			stream, _ = c.Get(opsStreamKey).(bool)
+		}
 		options.SameAccountRetryCount = retryCounts[account.ID]
-		options.SameAccountRetryLimit = account.GetPoolModeRetryCount()
+		options.SameAccountRetryLimit = openAISameAccountRetryLimitForLog(account, stream)
 	}
+	return options
+}
+
+func totalOpenAISameAccountRetryCount(retryCounts map[int64]int) int {
+	total := 0
+	for _, count := range retryCounts {
+		if count > 0 {
+			total += count
+		}
+	}
+	return total
+}
+
+func openAISameAccountRetryLimitForLog(account *service.Account, stream bool) int {
+	if account == nil {
+		return 0
+	}
+	if stream && account.IsOpenAIOAuthLike() {
+		return streamingOAuth429RetryLimit
+	}
+	if account.IsPoolMode() {
+		return account.GetPoolModeRetryCount()
+	}
+	return 0
+}
+
+func openAIAdaptiveSuccessOptions(
+	account *service.Account,
+	switchCount int,
+	maxAccountSwitches int,
+	retryCounts map[int64]int,
+	stream bool,
+) service.OpenAIAccountScheduleSuccessOptions {
+	options := service.OpenAIAccountScheduleSuccessOptions{
+		AccountSwitchCount:    switchCount,
+		MaxAccountSwitches:    maxAccountSwitches,
+		SameAccountRetryCount: totalOpenAISameAccountRetryCount(retryCounts),
+	}
+	options.SameAccountRetryLimit = openAISameAccountRetryLimitForLog(account, stream)
 	return options
 }
 
@@ -893,8 +971,44 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					// 池模式：同账号重试
-					if retryLimit, retryCount, ok := claimOpenAISameAccountRetry(account, failoverErr, sameAccountRetryCount); ok {
+					// 流式 OAuth/SetupToken 429 使用独立的首字预算；非流式和
+					// API Key 池模式继续使用原有账号级重试策略。
+					if reqStream && isOpenAIStreamingOAuth429(account, failoverErr) {
+						retryDelay, retryCount, ok := claimOpenAIStreamingOAuth429Retry(account, failoverErr, sameAccountRetryCount)
+						if ok {
+							reqLog.Warn("openai.streaming_oauth429_same_account_retry",
+								zap.Int64("account_id", account.ID),
+								zap.String("account_type", string(account.Type)),
+								zap.String("platform", string(account.Platform)),
+								zap.Int("upstream_status", failoverErr.StatusCode),
+								zap.Int("retry_limit", streamingOAuth429RetryLimit),
+								zap.Int("retry_count", retryCount),
+								zap.Duration("retry_delay", retryDelay),
+								zap.Int64("retry_budget_ms", streamingOAuth429RetryBudget.Milliseconds()),
+							)
+							select {
+							case <-c.Request.Context().Done():
+								return
+							case <-time.After(retryDelay):
+							}
+							continue
+						}
+						switchReason := "retry_delay_exceeds_budget"
+						if retryCount >= 1 {
+							switchReason = "same_account_retry_exhausted"
+						}
+						reqLog.Warn("openai.streaming_oauth429_switch_account",
+							zap.Int64("account_id", account.ID),
+							zap.String("account_type", string(account.Type)),
+							zap.String("platform", string(account.Platform)),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_count", retryCount),
+							zap.Duration("retry_delay", retryDelay),
+							zap.Int64("retry_budget_ms", streamingOAuth429RetryBudget.Milliseconds()),
+							zap.Int("next_switch_count", switchCount+1),
+							zap.String("switch_reason", switchReason),
+						)
+					} else if retryLimit, retryCount, ok := claimOpenAISameAccountRetry(account, failoverErr, sameAccountRetryCount); ok {
 						retryDelay := sameAccountRetryDelayFor(failoverErr, retryCount)
 						reqLog.Warn("openai.pool_mode_same_account_retry",
 							zap.Int64("account_id", account.ID),
@@ -1015,18 +1129,26 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
 			if openAIForwardSucceededForScheduling(result) {
-				h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(reqModel))
+				h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+					c.Request.Context(), account.ID, result,
+					openAIAdaptiveSuccessOptions(account, switchCount, maxAccountSwitches, sameAccountRetryCount, reqStream),
+					account.GetMappedModel(reqModel),
+				)
 			} else {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, result.FirstTokenMs)
 			}
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
-				AccountID:      account.ID,
-				Success:        true,
-				DurationMs:     forwardDurationMs,
-				Stream:         reqStream,
-				HealthSample:   true,
-				TerminalReason: "success_no_result",
+				AccountID:             account.ID,
+				Success:               true,
+				DurationMs:            forwardDurationMs,
+				Stream:                reqStream,
+				HealthSample:          true,
+				TerminalReason:        "success_no_result",
+				AccountSwitchCount:    switchCount,
+				MaxAccountSwitches:    maxAccountSwitches,
+				SameAccountRetryCount: totalOpenAISameAccountRetryCount(sameAccountRetryCount),
+				SameAccountRetryLimit: openAISameAccountRetryLimitForLog(account, reqStream),
 			})
 		}
 
@@ -1584,15 +1706,23 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(currentRoutingModel))
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+				c.Request.Context(), account.ID, result,
+				openAIAdaptiveSuccessOptions(account, switchCount, maxAccountSwitches, sameAccountRetryCount, false),
+				account.GetMappedModel(currentRoutingModel),
+			)
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleReportWithContext(c.Request.Context(), service.OpenAIAccountScheduleReport{
-				AccountID:      account.ID,
-				Success:        true,
-				DurationMs:     forwardDurationMs,
-				Stream:         reqStream,
-				HealthSample:   true,
-				TerminalReason: "success_no_result",
+				AccountID:             account.ID,
+				Success:               true,
+				DurationMs:            forwardDurationMs,
+				Stream:                reqStream,
+				HealthSample:          true,
+				TerminalReason:        "success_no_result",
+				AccountSwitchCount:    switchCount,
+				MaxAccountSwitches:    maxAccountSwitches,
+				SameAccountRetryCount: totalOpenAISameAccountRetryCount(sameAccountRetryCount),
+				SameAccountRetryLimit: openAISameAccountRetryLimitForLog(account, false),
 			})
 		}
 
@@ -2667,7 +2797,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					scheduleModel = turnRequestedModel
 				}
 				if openAIForwardSucceededForScheduling(result) {
-					h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, scheduleModel)
+					h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+						c.Request.Context(), account.ID, result,
+						openAIAdaptiveSuccessOptions(account, switchCount, maxAccountSwitches, sameAccountRetryCount, false),
+						scheduleModel,
+					)
 				} else {
 					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, scheduleModel, false, result.FirstTokenMs)
 				}

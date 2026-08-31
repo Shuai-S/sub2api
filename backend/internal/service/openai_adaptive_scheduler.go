@@ -1365,6 +1365,7 @@ func (s *adaptiveOpenAIAccountScheduler) logDiagnosticResult(
 	if contextSwitchCount, ok := AccountSwitchCountFromContext(ctx); ok && contextSwitchCount > accountSwitchCount {
 		accountSwitchCount = contextSwitchCount
 	}
+	requestAttemptNumber := accountSwitchCount + report.SameAccountRetryCount + 1
 	fields := []any{
 		"request_id", contextStringValue(ctx, ctxkey.RequestID),
 		"client_request_id", contextStringValue(ctx, ctxkey.ClientRequestID),
@@ -1373,6 +1374,7 @@ func (s *adaptiveOpenAIAccountScheduler) logDiagnosticResult(
 		"platform", platform,
 		"account_switch_count", accountSwitchCount,
 		"attempt_number", accountSwitchCount + 1,
+		"request_attempt_number", requestAttemptNumber,
 		"max_account_switches", report.MaxAccountSwitches,
 		"success", report.Success,
 		"health_sample", report.HealthSample,

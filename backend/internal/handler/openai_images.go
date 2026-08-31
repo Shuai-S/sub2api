@@ -436,7 +436,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				Err:            partialForwardErr,
 			})
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContext(c.Request.Context(), account.ID, result, account.GetMappedModel(requestModel))
+			h.gatewayService.ReportOpenAIAccountScheduleSuccessWithContextAndOptions(
+				c.Request.Context(), account.ID, result,
+				openAIAdaptiveSuccessOptions(account, switchCount, maxAccountSwitches, sameAccountRetryCount, false),
+				account.GetMappedModel(requestModel),
+			)
 		}
 
 		userAgent := c.GetHeader("User-Agent")
