@@ -228,7 +228,9 @@ func openAIAdaptiveFailureOptions(
 	if account != nil && failoverErr != nil && failoverErr.RetryableOnSameAccount {
 		stream := false
 		if c != nil {
-			stream, _ = c.Get(opsStreamKey).(bool)
+			if value, ok := c.Get(opsStreamKey); ok {
+				stream, _ = value.(bool)
+			}
 		}
 		options.SameAccountRetryCount = retryCounts[account.ID]
 		options.SameAccountRetryLimit = openAISameAccountRetryLimitForLog(account, stream)
