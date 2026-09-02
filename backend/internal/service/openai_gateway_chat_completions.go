@@ -50,7 +50,8 @@ var cursorResponsesUnsupportedFields = []string{
 //   - CN 账号以 credentials.api_protocol 为权威；adaptive/chat_completions 入站 Chat
 //     直转原生 CC，anthropic 走原生 Anthropic，responses 走 Responses
 //   - 其他 APIKey 账号仍按覆盖模式/探测标记分流（详见
-//     openai_compat.ShouldUseResponsesAPI）
+//     openai_compat.ShouldUseResponsesAPI）；显式 follow_ingress 的 OpenAI APIKey
+//     让 Chat 入站保持原生 CC，Responses 入站保持原生 Responses
 func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	ctx context.Context,
 	c *gin.Context,
@@ -133,9 +134,11 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		return s.forwardChatCompletionsViaNativeAnthropic(ctx, c, account, body, defaultMappedModel)
 	}
 
-	// 固定 chat_completions 的 CN 账号，以及强制或已探测确认不支持 Responses
-	// 的其他 APIKey 账号，均走 CC 直转。
-	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
+	// 固定 chat_completions 的 CN 账号、强制或已探测确认不支持 Responses
+	// 的其他 APIKey 账号，以及明确要求按入站协议转发的 OpenAI APIKey，均走
+	// CC 直转。Responses-shaped 请求仍留在 Responses 链，兼容 Cursor 等把
+	// Responses body 发到 /v1/chat/completions URL 的客户端。
+	if !isResponsesShape && shouldForwardOpenAIChatCompletionsViaRawChatCompletions(account) {
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 	}
 

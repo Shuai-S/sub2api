@@ -3393,7 +3393,8 @@ const planTypeOptions = computed(() =>
 const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
-  { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
+  { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') },
+  { value: 'follow_ingress', label: t('admin.accounts.openai.responsesModeFollowIngress') }
 ])
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
@@ -3401,6 +3402,9 @@ const openAITextEndpointCapabilityLabel = computed(() => {
   }
   if (openAIResponsesMode.value === 'force_chat_completions') {
     return t('admin.accounts.openai.capabilityChatCompletions')
+  }
+  if (openAIResponsesMode.value === 'follow_ingress') {
+    return t('admin.accounts.openai.capabilityFollowIngress')
   }
   const extra = props.account?.extra as Record<string, unknown> | undefined
   if (extra?.openai_responses_supported === true) {
@@ -3475,7 +3479,7 @@ const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) =
   credentials.openai_capabilities = capabilities
 }
 const normalizeOpenAIResponsesMode = (mode: unknown): OpenAIResponsesMode => {
-  if (mode === 'force_responses' || mode === 'force_chat_completions') {
+  if (mode === 'force_responses' || mode === 'force_chat_completions' || mode === 'follow_ingress') {
     return mode
   }
   return 'auto'
@@ -3489,6 +3493,9 @@ const openAIResponsesStatusKey = computed(() => {
   }
   if (openAIResponsesMode.value === 'force_chat_completions') {
     return 'admin.accounts.openai.responsesStatusForcedChatCompletions'
+  }
+  if (openAIResponsesMode.value === 'follow_ingress') {
+    return 'admin.accounts.openai.responsesStatusFollowIngress'
   }
   const extra = props.account?.extra as Record<string, unknown> | undefined
   if (extra?.openai_responses_supported === true) {

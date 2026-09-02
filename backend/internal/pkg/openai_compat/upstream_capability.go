@@ -47,11 +47,16 @@ const (
 
 	// ResponsesSupportModeForceChatCompletions 强制使用 /v1/chat/completions。
 	ResponsesSupportModeForceChatCompletions ResponsesSupportMode = "force_chat_completions"
+
+	// ResponsesSupportModeFollowIngress follows the inbound OpenAI protocol:
+	// Chat Completions stays on /v1/chat/completions and Responses stays on
+	// /v1/responses. The upstream must support both endpoints.
+	ResponsesSupportModeFollowIngress ResponsesSupportMode = "follow_ingress"
 )
 
 // ExtraKeyResponsesMode 是 accounts.extra JSON 中存储手动覆盖模式的键名。
 // 值类型为 string：auto=跟随探测，force_responses=强制 Responses，
-// force_chat_completions=强制 Chat Completions。
+// force_chat_completions=强制 Chat Completions，follow_ingress=按入站协议直转。
 const ExtraKeyResponsesMode = "openai_responses_mode"
 
 // ExtraKeyResponsesSupported 是 accounts.extra JSON 中存储自动探测结果的键名。
@@ -66,6 +71,8 @@ func NormalizeResponsesSupportMode(mode string) ResponsesSupportMode {
 		return ResponsesSupportModeForceResponses
 	case ResponsesSupportModeForceChatCompletions:
 		return ResponsesSupportModeForceChatCompletions
+	case ResponsesSupportModeFollowIngress:
+		return ResponsesSupportModeFollowIngress
 	default:
 		return ResponsesSupportModeAuto
 	}
@@ -85,6 +92,10 @@ func ResolveResponsesSupport(extra map[string]any) AccountResponsesSupport {
 			return ResponsesSupportYes
 		case ResponsesSupportModeForceChatCompletions:
 			return ResponsesSupportNo
+		case ResponsesSupportModeFollowIngress:
+			// Explicit follow-ingress mode asserts that both endpoints are
+			// available, overriding a stale or negative probe result.
+			return ResponsesSupportYes
 		}
 	}
 	v, ok := extra[ExtraKeyResponsesSupported]

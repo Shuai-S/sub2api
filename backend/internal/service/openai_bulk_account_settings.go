@@ -133,7 +133,8 @@ func normalizeBulkOpenAIResponsesMode(raw any) (any, bool, error) {
 	case openai_compat.ResponsesSupportModeAuto:
 		return nil, false, nil
 	case openai_compat.ResponsesSupportModeForceResponses,
-		openai_compat.ResponsesSupportModeForceChatCompletions:
+		openai_compat.ResponsesSupportModeForceChatCompletions,
+		openai_compat.ResponsesSupportModeFollowIngress:
 		return mode, true, nil
 	default:
 		return nil, false, invalidBulkOpenAIResponsesMode()
@@ -143,7 +144,7 @@ func normalizeBulkOpenAIResponsesMode(raw any) (any, bool, error) {
 func invalidBulkOpenAIResponsesMode() error {
 	return infraerrors.BadRequest(
 		"OPENAI_RESPONSES_MODE_INVALID",
-		"openai_responses_mode must be auto, force_responses, force_chat_completions, or null",
+		"openai_responses_mode must be auto, force_responses, force_chat_completions, follow_ingress, or null",
 	)
 }
 

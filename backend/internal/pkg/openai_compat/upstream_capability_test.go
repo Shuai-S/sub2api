@@ -18,6 +18,7 @@ func TestResolveResponsesSupport(t *testing.T) {
 		{"value nil", map[string]any{ExtraKeyResponsesSupported: nil}, ResponsesSupportUnknown},
 		{"force responses", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceResponses)}, ResponsesSupportYes},
 		{"force chat completions", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceChatCompletions)}, ResponsesSupportNo},
+		{"follow ingress asserts Responses support", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeFollowIngress), ExtraKeyResponsesSupported: false}, ResponsesSupportYes},
 		{"auto follows probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeAuto), ExtraKeyResponsesSupported: false}, ResponsesSupportNo},
 		{"invalid mode follows probe", map[string]any{ExtraKeyResponsesMode: "bogus", ExtraKeyResponsesSupported: true}, ResponsesSupportYes},
 		{"force responses overrides probe false", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceResponses), ExtraKeyResponsesSupported: false}, ResponsesSupportYes},
@@ -52,6 +53,7 @@ func TestShouldUseResponsesAPI(t *testing.T) {
 		// 手动覆盖：覆盖自动探测结果
 		{"force responses overrides unsupported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceResponses), ExtraKeyResponsesSupported: false}, true},
 		{"force chat completions overrides supported probe", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeForceChatCompletions), ExtraKeyResponsesSupported: true}, false},
+		{"follow ingress keeps Responses endpoint", map[string]any{ExtraKeyResponsesMode: string(ResponsesSupportModeFollowIngress), ExtraKeyResponsesSupported: false}, true},
 	}
 
 	for _, tc := range tests {
@@ -74,6 +76,7 @@ func TestNormalizeResponsesSupportMode(t *testing.T) {
 		{"auto", "auto", ResponsesSupportModeAuto},
 		{"force responses", "force_responses", ResponsesSupportModeForceResponses},
 		{"force chat completions", "force_chat_completions", ResponsesSupportModeForceChatCompletions},
+		{"follow ingress", "follow_ingress", ResponsesSupportModeFollowIngress},
 		{"invalid", "enabled", ResponsesSupportModeAuto},
 	}
 

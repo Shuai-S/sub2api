@@ -1233,6 +1233,22 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 	return !openai_compat.ShouldUseResponsesAPI(account.Extra)
 }
 
+// shouldForwardOpenAIChatCompletionsViaRawChatCompletions reports whether a
+// /v1/chat/completions ingress request should stay on the upstream Chat
+// Completions endpoint. follow_ingress is intentionally checked here rather
+// than in shouldForwardOpenAIResponsesViaRawChatCompletions: the latter is
+// also used by /v1/responses and Anthropic ingress fallback paths, where
+// follow_ingress must preserve the Responses endpoint.
+func shouldForwardOpenAIChatCompletionsViaRawChatCompletions(account *Account) bool {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	if openai_compat.NormalizeResponsesSupportMode(account.GetExtraString(openai_compat.ExtraKeyResponsesMode)) == openai_compat.ResponsesSupportModeFollowIngress {
+		return account.Platform == PlatformOpenAI
+	}
+	return shouldForwardOpenAIResponsesViaRawChatCompletions(account)
+}
+
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
 	// Determine target URL based on account type
 	var targetURL string
