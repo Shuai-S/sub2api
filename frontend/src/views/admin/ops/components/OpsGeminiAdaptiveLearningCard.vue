@@ -167,7 +167,8 @@ const settingsItems = computed(() => {
         settings.weight_reliability,
         settings.weight_capacity,
         settings.weight_ttft,
-        settings.weight_cost
+        settings.weight_cost,
+        settings.weight_cache ?? 0
       ].map((value) => value.toFixed(2)).join('/')
     },
     { key: 'window', label: t('admin.ops.geminiAdaptiveLearning.settings.window'), value: formatDuration(settings.learning_window_seconds) }
@@ -504,7 +505,7 @@ function onNextPage() {
                   v-for="column in ([
                     ['account', 'account'], ['status', 'status'], ['capacity', 'capacity'],
                     ['load', 'load'], ['score', 'score'], ['samples', 'samples'],
-                    ['error', 'error'], ['latency', 'latency'], ['last_event', 'lastEvent']
+                    ['error', 'error'], ['latency', 'latency'], ['cache', 'cacheHitRate'], ['last_event', 'lastEvent']
                   ] as const)"
                   :key="column[0]"
                   class="px-3 py-2 font-semibold"
@@ -599,6 +600,11 @@ function onNextPage() {
                   </div>
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.geminiAdaptiveLearning.ttftSamples', { count: formatInt(row.ttft_samples) }) }}
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
+                    {{ row.cache_samples > 0 ? formatPercent(row.cache_hit_rate, 1) : '-' }}
                   </div>
                 </td>
                 <td class="px-3 py-2">

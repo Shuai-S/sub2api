@@ -34,6 +34,7 @@ func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 		SettingKeyAnthropicAdaptiveSchedulerWeightCapacity:           "0.2",
 		SettingKeyAnthropicAdaptiveSchedulerWeightLatency:            "0.15",
 		SettingKeyAnthropicAdaptiveSchedulerWeightCost:               "0.15",
+		SettingKeyAnthropicAdaptiveSchedulerWeightCache:              "0.1",
 		SettingKeyAnthropicAdaptiveSchedulerLearningMinHealthSamples: "40",
 		SettingKeyAnthropicAdaptiveSchedulerHealthFailureThreshold:   "4",
 		SettingKeyAnthropicAdaptiveSchedulerCooldownMaxSeconds:       "480",
@@ -48,12 +49,14 @@ func TestAnthropicAdaptiveSettingsParseAndSerialize(t *testing.T) {
 	require.Equal(t, 40, settings.AnthropicAdaptiveSchedulerLearningMinHealthSamples)
 	require.Equal(t, 4, settings.AnthropicAdaptiveSchedulerHealthFailureThreshold)
 	require.Equal(t, 480, settings.AnthropicAdaptiveSchedulerCooldownMaxSeconds)
+	require.Equal(t, 0.1, settings.AnthropicAdaptiveSchedulerWeightCache)
 
 	serialized := anthropicAdaptiveSchedulerSettingsToMap(settings)
-	require.Len(t, serialized, 28)
+	require.Len(t, serialized, 29)
 	require.Equal(t, "true", serialized[SettingKeyAnthropicAdaptiveSchedulerEnabled])
 	require.Equal(t, "enforce", serialized[SettingKeyAnthropicAdaptiveSchedulerMode])
 	require.Equal(t, "4", serialized[SettingKeyAnthropicAdaptiveSchedulerTopK])
+	require.Equal(t, "0.1", serialized[SettingKeyAnthropicAdaptiveSchedulerWeightCache])
 }
 
 func TestNormalizeAnthropicAdaptiveSettingsRestoresCoreWeights(t *testing.T) {

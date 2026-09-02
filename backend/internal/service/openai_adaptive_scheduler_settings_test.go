@@ -113,6 +113,7 @@ func TestDefaultOpenAIAdaptiveSchedulerSettingsMatchSharedCore(t *testing.T) {
 	require.Equal(t, 0.15, cfg.OpenAIAdaptiveSchedulerWeightCost)
 	require.Equal(t, 0.20, cfg.OpenAIAdaptiveSchedulerWeightCapacity)
 	require.Equal(t, 0.15, cfg.OpenAIAdaptiveSchedulerWeightLatency)
+	require.Zero(t, cfg.OpenAIAdaptiveSchedulerWeightCache)
 }
 
 func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
@@ -123,6 +124,7 @@ func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
 	cfg.OpenAIAdaptiveSchedulerRecoveryExplorationRate = 0.2
 	cfg.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency = 4
 	cfg.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses = 5
+	cfg.OpenAIAdaptiveSchedulerWeightCache = 0.1
 
 	values := openAIAdaptiveSchedulerSettingsToMap(cfg)
 	require.Equal(t, "true", values[openAIAdaptiveSchedulerDiagnosticLogEnabledKey])
@@ -131,6 +133,7 @@ func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
 	require.Equal(t, "0.2", values[openAIAdaptiveSchedulerRecoveryExplorationRateKey])
 	require.Equal(t, "4", values[openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey])
 	require.Equal(t, "5", values[openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey])
+	require.Equal(t, "0.1", values[openAIAdaptiveSchedulerWeightCacheKey])
 	parsed := parseOpenAIAdaptiveSchedulerSettings(values)
 	require.True(t, parsed.OpenAIAdaptiveSchedulerDiagnosticLogEnabled)
 	require.Equal(t, 0.25, parsed.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate)
@@ -138,6 +141,7 @@ func TestOpenAIAdaptiveSchedulerDiagnosticSettingsRoundTrip(t *testing.T) {
 	require.Equal(t, 0.2, parsed.OpenAIAdaptiveSchedulerRecoveryExplorationRate)
 	require.Equal(t, 4, parsed.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency)
 	require.Equal(t, 5, parsed.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses)
+	require.Equal(t, 0.1, parsed.OpenAIAdaptiveSchedulerWeightCache)
 }
 
 func TestNormalizeOpenAIAdaptiveSchedulerDiagnosticSampleRate(t *testing.T) {

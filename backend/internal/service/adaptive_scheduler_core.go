@@ -87,6 +87,7 @@ type adaptiveCoreSettings struct {
 	WeightCapacity            float64
 	WeightTTFT                float64
 	WeightCost                float64
+	WeightCache               float64
 }
 
 func defaultAdaptiveCoreSettings() adaptiveCoreSettings {
@@ -120,6 +121,7 @@ func defaultAdaptiveCoreSettings() adaptiveCoreSettings {
 		WeightCapacity:            0.20,
 		WeightTTFT:                0.15,
 		WeightCost:                0.15,
+		WeightCache:               0,
 	}
 }
 
@@ -171,7 +173,8 @@ func normalizeAdaptiveCoreSettings(settings adaptiveCoreSettings) adaptiveCoreSe
 	settings.WeightCapacity = nonNegativeFinite(settings.WeightCapacity)
 	settings.WeightTTFT = nonNegativeFinite(settings.WeightTTFT)
 	settings.WeightCost = nonNegativeFinite(settings.WeightCost)
-	if settings.WeightReliability+settings.WeightCapacity+settings.WeightTTFT+settings.WeightCost <= 0 {
+	settings.WeightCache = nonNegativeFinite(settings.WeightCache)
+	if settings.WeightReliability+settings.WeightCapacity+settings.WeightTTFT+settings.WeightCost+settings.WeightCache <= 0 {
 		settings.WeightReliability = defaults.WeightReliability
 		settings.WeightCapacity = defaults.WeightCapacity
 		settings.WeightTTFT = defaults.WeightTTFT
@@ -233,6 +236,20 @@ type adaptiveObservation struct {
 	RecoveryProbe         bool
 	AccountHealthEligible *bool
 	Synthetic             bool
+	CacheInputTokens      int64
+	CacheCreationTokens   int64
+	CacheReadTokens       int64
+}
+
+// adaptiveCacheBucket stores mutually-exclusive prompt token buckets for one
+// minute of the account learning window. It is intentionally optional so v2
+// persisted states written before cache learning remain readable.
+type adaptiveCacheBucket struct {
+	BucketStart         time.Time `json:"bucket_start"`
+	InputTokens         int64     `json:"input_tokens"`
+	CacheCreationTokens int64     `json:"cache_creation_tokens"`
+	CacheReadTokens     int64     `json:"cache_read_tokens"`
+	Samples             int64     `json:"samples"`
 }
 
 type adaptiveAccountState struct {
@@ -246,6 +263,7 @@ type adaptiveAccountState struct {
 	TTFTWindows               map[string][]adaptiveTTFTObservation `json:"ttft_windows,omitempty"`
 	ConsecutiveFailures       int                                  `json:"consecutive_failures"`
 	HealthObservations        []adaptiveHealthObservation          `json:"health_observations"`
+	CacheBuckets              []adaptiveCacheBucket                `json:"cache_buckets,omitempty"`
 	HighError                 bool                                 `json:"high_error"`
 	CircuitOpenUntil          time.Time                            `json:"circuit_open_until,omitempty"`
 	CircuitOpenCount          int                                  `json:"circuit_open_count"`
@@ -331,6 +349,7 @@ func cloneAdaptiveAccountState(state *adaptiveAccountState) adaptiveAccountState
 	}
 	clone := *state
 	clone.HealthObservations = append([]adaptiveHealthObservation(nil), state.HealthObservations...)
+	clone.CacheBuckets = append([]adaptiveCacheBucket(nil), state.CacheBuckets...)
 	if len(state.TTFTWindows) > 0 {
 		clone.TTFTWindows = make(map[string][]adaptiveTTFTObservation, len(state.TTFTWindows))
 		for key, observations := range state.TTFTWindows {
@@ -358,6 +377,9 @@ func cloneAdaptiveAccountStateForScheduling(state *adaptiveAccountState, ttftBuc
 	}
 	clone := *state
 	clone.HealthObservations = append([]adaptiveHealthObservation(nil), state.HealthObservations...)
+	// Scheduling runs outside the store lock. Copy cache buckets so concurrent
+	// observations cannot mutate the snapshot while scores are being computed.
+	clone.CacheBuckets = append([]adaptiveCacheBucket(nil), state.CacheBuckets...)
 	clone.TTFTWindows = nil
 	clone.ttftWindowStats = nil
 	clone.ttftWindowSortedValues = nil
@@ -577,6 +599,7 @@ func (s *adaptiveStateStore) recoverHealth(accountID int64, now time.Time, setti
 func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
 	changed := pruneAdaptiveHealthWindow(state, now, settings)
 	changed = pruneAdaptiveTTFTWindows(state, now, settings) || changed
+	changed = pruneAdaptiveCacheBuckets(state, now, settings) || changed
 	if !state.CapacityCooldownUntil.IsZero() && !state.CapacityCooldownUntil.After(now) && state.EffectiveCapacity < state.ConfiguredCapacity && !state.CapacityHalfOpen {
 		state.CapacityHalfOpen = true
 		state.CapacityRecoverySuccesses = 0
@@ -620,6 +643,90 @@ func (s *adaptiveStateStore) refreshLocked(state *adaptiveAccountState, now time
 		}
 	}
 	return changed
+}
+
+func pruneAdaptiveCacheBuckets(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
+	if state == nil || len(state.CacheBuckets) == 0 {
+		return false
+	}
+	cutoff := now.Add(-settings.LearningWindow)
+	first := 0
+	for first < len(state.CacheBuckets) && state.CacheBuckets[first].BucketStart.Before(cutoff) {
+		first++
+	}
+	if first == 0 {
+		return false
+	}
+	if first >= len(state.CacheBuckets) {
+		state.CacheBuckets = nil
+	} else {
+		state.CacheBuckets = append([]adaptiveCacheBucket(nil), state.CacheBuckets[first:]...)
+	}
+	return true
+}
+
+func observeAdaptiveCacheLocked(state *adaptiveAccountState, input, creation, read int64, now time.Time, settings adaptiveCoreSettings) {
+	if state == nil || input < 0 || creation < 0 || read < 0 {
+		return
+	}
+	denom := input + creation + read
+	if denom <= 0 {
+		return
+	}
+	bucketStart := now.UTC().Truncate(time.Minute)
+	for i := range state.CacheBuckets {
+		if !state.CacheBuckets[i].BucketStart.Equal(bucketStart) {
+			continue
+		}
+		bucket := &state.CacheBuckets[i]
+		bucket.InputTokens += input
+		bucket.CacheCreationTokens += creation
+		bucket.CacheReadTokens += read
+		bucket.Samples++
+		return
+	}
+	state.CacheBuckets = append(state.CacheBuckets, adaptiveCacheBucket{
+		BucketStart: bucketStart, InputTokens: input, CacheCreationTokens: creation,
+		CacheReadTokens: read, Samples: 1,
+	})
+	sort.Slice(state.CacheBuckets, func(i, j int) bool {
+		return state.CacheBuckets[i].BucketStart.Before(state.CacheBuckets[j].BucketStart)
+	})
+	pruneAdaptiveCacheBuckets(state, now, settings)
+}
+
+type adaptiveCacheStats struct {
+	InputTokens         int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
+	Samples             int64
+	HitRate             float64
+}
+
+func adaptiveCacheStatsForState(state adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) adaptiveCacheStats {
+	cutoff := now.Add(-settings.LearningWindow)
+	stats := adaptiveCacheStats{}
+	for _, bucket := range state.CacheBuckets {
+		if bucket.BucketStart.Before(cutoff) {
+			continue
+		}
+		stats.InputTokens += maxInt64(bucket.InputTokens, 0)
+		stats.CacheCreationTokens += maxInt64(bucket.CacheCreationTokens, 0)
+		stats.CacheReadTokens += maxInt64(bucket.CacheReadTokens, 0)
+		stats.Samples += maxInt64(bucket.Samples, 0)
+	}
+	denom := stats.InputTokens + stats.CacheCreationTokens + stats.CacheReadTokens
+	if denom > 0 {
+		stats.HitRate = float64(stats.CacheReadTokens) / float64(denom)
+	}
+	return stats
+}
+
+func maxInt64(value, fallback int64) int64 {
+	if value < fallback {
+		return fallback
+	}
+	return value
 }
 
 func pruneAdaptiveTTFTWindows(state *adaptiveAccountState, now time.Time, settings adaptiveCoreSettings) bool {
@@ -1008,6 +1115,7 @@ func (s *adaptiveStateStore) observe(observation adaptiveObservation, now time.T
 	switch observation.Type {
 	case adaptiveObservationHealthSuccess:
 		s.observeHealthLocked(state, true, observation, now, settings)
+		observeAdaptiveCacheLocked(state, observation.CacheInputTokens, observation.CacheCreationTokens, observation.CacheReadTokens, now, settings)
 		delete(s.ttftClaims, transientKey)
 		if quotaProbe && state.QuotaLimited {
 			state.QuotaLimited = false
@@ -1395,6 +1503,9 @@ type adaptiveScoreCandidate struct {
 	TTFTP90            float64
 	TTFTWindowSamples  int
 	CostScore          float64
+	CacheScore         float64
+	CacheHitRate       float64
+	CacheSamples       int64
 	Score              float64
 	LearningStatus     adaptiveLearningStatus
 	HealthSamples      int
@@ -1470,6 +1581,14 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 		windowTTFTScores = scoreAdaptiveTTFTWindows(candidates, now, settings)
 	}
 	baseWeightSum := settings.WeightReliability + settings.WeightCapacity + settings.WeightCost
+	cacheRates := make([]float64, 0, len(candidates))
+	for i := range candidates {
+		stats := adaptiveCacheStatsForState(candidates[i].State, now, settings)
+		if stats.Samples >= int64(settings.LearningMinHealthSamples) && stats.InputTokens+stats.CacheCreationTokens+stats.CacheReadTokens > 0 {
+			cacheRates = append(cacheRates, stats.HitRate)
+		}
+	}
+	cacheMedian := medianFloat64(cacheRates)
 	for i := range candidates {
 		candidate := &candidates[i]
 		candidate.LearningStatus, candidate.HealthSamples = adaptiveLearningState(candidate.State, candidate.OAuth, now, settings)
@@ -1503,19 +1622,46 @@ func scoreAdaptiveCandidateLayer(candidates []adaptiveScoreCandidate, now time.T
 				candidate.TTFTScore = 0.5 + ttftConfidence*(rawTTFTScore-0.5)
 			}
 		}
-		weightSum := baseWeightSum
+		cacheStats := adaptiveCacheStatsForState(candidate.State, now, settings)
+		candidate.CacheHitRate = cacheStats.HitRate
+		candidate.CacheSamples = cacheStats.Samples
+		candidate.CacheScore = 0.5
+		candidateBaseWeightSum := baseWeightSum
 		if ttftEnabled {
-			weightSum += settings.WeightTTFT
+			candidateBaseWeightSum += settings.WeightTTFT
 		}
+		// Cache is a bonus-only signal. When a mature pool median exists,
+		// unknown/low-hit candidates use that median as a neutral baseline;
+		// only mature candidates above it receive a higher cache score.
+		if len(cacheRates) > 0 {
+			candidate.CacheScore = cacheMedian
+			if candidate.CacheSamples >= int64(settings.LearningMinHealthSamples) && candidate.CacheHitRate > cacheMedian {
+				candidate.CacheScore = candidate.CacheHitRate
+			}
+		}
+		weightSum := candidateBaseWeightSum + settings.WeightCache
 		if weightSum <= 0 {
 			weightSum = 1
 		}
 		candidate.Score = (settings.WeightReliability*candidate.ReliabilityScore +
 			settings.WeightCapacity*candidate.CapacityScore +
 			settings.WeightCost*candidate.CostScore +
-			settings.WeightTTFT*candidate.TTFTScore*boolFloat(ttftEnabled)) / weightSum
+			settings.WeightTTFT*candidate.TTFTScore*boolFloat(ttftEnabled) +
+			settings.WeightCache*candidate.CacheScore) / weightSum
 	}
 	return candidates
+}
+
+func medianFloat64(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sort.Float64s(values)
+	mid := len(values) / 2
+	if len(values)%2 == 1 {
+		return values[mid]
+	}
+	return (values[mid-1] + values[mid]) / 2
 }
 
 const (

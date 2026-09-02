@@ -198,7 +198,7 @@ const settingsItems = computed(() => {
     {
       key: 'weights',
       label: t('admin.ops.openaiAdaptiveLearning.settings.weights'),
-      value: `${settings.weight_reliability}/${settings.weight_capacity}/${settings.weight_ttft}/${settings.weight_cost}`
+      value: `${settings.weight_reliability}/${settings.weight_capacity}/${settings.weight_ttft}/${settings.weight_cost}/${settings.weight_cache ?? 0}`
     }
   ]
 })
@@ -590,6 +590,12 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   </button>
                 </th>
                 <th class="px-3 py-2 font-semibold">
+                  <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('cache')">
+                    {{ t('admin.ops.openaiAdaptiveLearning.table.cacheHitRate') }}
+                    <span class="w-3 text-[10px]">{{ sortIndicator('cache') }}</span>
+                  </button>
+                </th>
+                <th class="px-3 py-2 font-semibold">
                   <button class="inline-flex items-center gap-1 hover:text-gray-900 dark:hover:text-white" @click="setSort('last_event')">
                     {{ t('admin.ops.openaiAdaptiveLearning.table.lastEvent') }}
                     <span class="w-3 text-[10px]">{{ sortIndicator('last_event') }}</span>
@@ -679,6 +685,11 @@ function sortIndicator(nextSortBy: OpsOpenAIAdaptiveLearningSortBy): string {
                   </div>
                   <div class="mt-0.5 whitespace-nowrap text-[11px] text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.openaiAdaptiveLearning.ttftSamples', { count: formatInt(row.ttft_samples) }) }}
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <div class="whitespace-nowrap font-mono font-semibold text-gray-900 dark:text-white">
+                    {{ row.cache_samples > 0 ? formatPercent(row.cache_hit_rate, 1) : '-' }}
                   </div>
                 </td>
                 <td class="px-3 py-2">

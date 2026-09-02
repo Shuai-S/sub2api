@@ -29,6 +29,7 @@ const (
 	SettingKeyGeminiAdaptiveSchedulerWeightReliability          = geminiAdaptiveSchedulerSettingPrefix + "weight_reliability"
 	SettingKeyGeminiAdaptiveSchedulerWeightCapacity             = geminiAdaptiveSchedulerSettingPrefix + "weight_capacity"
 	SettingKeyGeminiAdaptiveSchedulerWeightLatency              = geminiAdaptiveSchedulerSettingPrefix + "weight_latency"
+	SettingKeyGeminiAdaptiveSchedulerWeightCache                = geminiAdaptiveSchedulerSettingPrefix + "weight_cache"
 	SettingKeyGeminiAdaptiveSchedulerWeightCost                 = geminiAdaptiveSchedulerSettingPrefix + "weight_cost"
 	SettingKeyGeminiAdaptiveSchedulerCapacityProbeLoadThreshold = geminiAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
 	SettingKeyGeminiAdaptiveSchedulerShrinkFactorSoft           = geminiAdaptiveSchedulerSettingPrefix + "shrink_factor_soft"
@@ -63,6 +64,7 @@ type GeminiAdaptiveSchedulerSettings struct {
 	GeminiAdaptiveSchedulerWeightReliability          float64 `json:"gemini_adaptive_scheduler_weight_reliability"`
 	GeminiAdaptiveSchedulerWeightCapacity             float64 `json:"gemini_adaptive_scheduler_weight_capacity"`
 	GeminiAdaptiveSchedulerWeightLatency              float64 `json:"gemini_adaptive_scheduler_weight_latency"`
+	GeminiAdaptiveSchedulerWeightCache                float64 `json:"gemini_adaptive_scheduler_weight_cache"`
 	GeminiAdaptiveSchedulerWeightCost                 float64 `json:"gemini_adaptive_scheduler_weight_cost"`
 	GeminiAdaptiveSchedulerCapacityProbeLoadThreshold float64 `json:"gemini_adaptive_scheduler_capacity_probe_load_threshold"`
 	GeminiAdaptiveSchedulerShrinkFactorSoft           float64 `json:"gemini_adaptive_scheduler_shrink_factor_soft"`
@@ -104,6 +106,7 @@ func DefaultGeminiAdaptiveSchedulerSettings() GeminiAdaptiveSchedulerSettings {
 		GeminiAdaptiveSchedulerWeightReliability:          0.50,
 		GeminiAdaptiveSchedulerWeightCapacity:             0.20,
 		GeminiAdaptiveSchedulerWeightLatency:              0.15,
+		GeminiAdaptiveSchedulerWeightCache:                0,
 		GeminiAdaptiveSchedulerWeightCost:                 0.15,
 		GeminiAdaptiveSchedulerCapacityProbeLoadThreshold: 0.80,
 		GeminiAdaptiveSchedulerShrinkFactorSoft:           0.90,
@@ -155,6 +158,7 @@ func NormalizeGeminiAdaptiveSchedulerSettings(settings GeminiAdaptiveSchedulerSe
 		&settings.GeminiAdaptiveSchedulerWeightCapacity,
 		&settings.GeminiAdaptiveSchedulerWeightLatency,
 		&settings.GeminiAdaptiveSchedulerWeightCost,
+		&settings.GeminiAdaptiveSchedulerWeightCache,
 	}
 	weightSum := 0.0
 	for _, weight := range weights {
@@ -166,6 +170,7 @@ func NormalizeGeminiAdaptiveSchedulerSettings(settings GeminiAdaptiveSchedulerSe
 		settings.GeminiAdaptiveSchedulerWeightCapacity = defaults.GeminiAdaptiveSchedulerWeightCapacity
 		settings.GeminiAdaptiveSchedulerWeightLatency = defaults.GeminiAdaptiveSchedulerWeightLatency
 		settings.GeminiAdaptiveSchedulerWeightCost = defaults.GeminiAdaptiveSchedulerWeightCost
+		settings.GeminiAdaptiveSchedulerWeightCache = defaults.GeminiAdaptiveSchedulerWeightCache
 	}
 	return settings
 }
@@ -191,6 +196,7 @@ var geminiAdaptiveSchedulerSettingKeys = []string{
 	SettingKeyGeminiAdaptiveSchedulerWeightCapacity,
 	SettingKeyGeminiAdaptiveSchedulerWeightLatency,
 	SettingKeyGeminiAdaptiveSchedulerWeightCost,
+	SettingKeyGeminiAdaptiveSchedulerWeightCache,
 	SettingKeyGeminiAdaptiveSchedulerCapacityProbeLoadThreshold,
 	SettingKeyGeminiAdaptiveSchedulerShrinkFactorSoft,
 	SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds,
@@ -223,6 +229,7 @@ func parseGeminiAdaptiveSchedulerSettings(values map[string]string) GeminiAdapti
 	s.GeminiAdaptiveSchedulerWeightCapacity = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerWeightCapacity, s.GeminiAdaptiveSchedulerWeightCapacity)
 	s.GeminiAdaptiveSchedulerWeightLatency = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerWeightLatency, s.GeminiAdaptiveSchedulerWeightLatency)
 	s.GeminiAdaptiveSchedulerWeightCost = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerWeightCost, s.GeminiAdaptiveSchedulerWeightCost)
+	s.GeminiAdaptiveSchedulerWeightCache = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerWeightCache, s.GeminiAdaptiveSchedulerWeightCache)
 	s.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerCapacityProbeLoadThreshold, s.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold)
 	s.GeminiAdaptiveSchedulerShrinkFactorSoft = parseFloatSetting(values, SettingKeyGeminiAdaptiveSchedulerShrinkFactorSoft, s.GeminiAdaptiveSchedulerShrinkFactorSoft)
 	s.GeminiAdaptiveSchedulerLearningWindowSeconds = parseIntSetting(values, SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds, s.GeminiAdaptiveSchedulerLearningWindowSeconds)
@@ -257,6 +264,7 @@ func geminiAdaptiveSchedulerSettingsToMap(s GeminiAdaptiveSchedulerSettings) map
 		SettingKeyGeminiAdaptiveSchedulerWeightCapacity:             formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerWeightCapacity),
 		SettingKeyGeminiAdaptiveSchedulerWeightLatency:              formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerWeightLatency),
 		SettingKeyGeminiAdaptiveSchedulerWeightCost:                 formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerWeightCost),
+		SettingKeyGeminiAdaptiveSchedulerWeightCache:                formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerWeightCache),
 		SettingKeyGeminiAdaptiveSchedulerCapacityProbeLoadThreshold: formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerCapacityProbeLoadThreshold),
 		SettingKeyGeminiAdaptiveSchedulerShrinkFactorSoft:           formatOpenAIAdaptiveFloat(s.GeminiAdaptiveSchedulerShrinkFactorSoft),
 		SettingKeyGeminiAdaptiveSchedulerLearningWindowSeconds:      strconv.Itoa(s.GeminiAdaptiveSchedulerLearningWindowSeconds),

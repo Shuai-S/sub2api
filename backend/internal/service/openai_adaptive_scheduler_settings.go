@@ -41,6 +41,7 @@ const (
 	openAIAdaptiveSchedulerWeightCostKey                 = openAIAdaptiveSchedulerSettingPrefix + "weight_cost"
 	openAIAdaptiveSchedulerWeightCapacityKey             = openAIAdaptiveSchedulerSettingPrefix + "weight_capacity"
 	openAIAdaptiveSchedulerWeightLatencyKey              = openAIAdaptiveSchedulerSettingPrefix + "weight_latency"
+	openAIAdaptiveSchedulerWeightCacheKey                = openAIAdaptiveSchedulerSettingPrefix + "weight_cache"
 	openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey  = openAIAdaptiveSchedulerSettingPrefix + "consecutive_failure_penalty"
 	openAIAdaptiveSchedulerLearningMinHealthSamplesKey   = openAIAdaptiveSchedulerSettingPrefix + "learning_min_health_samples"
 	openAIAdaptiveSchedulerHealthFailureThresholdKey     = openAIAdaptiveSchedulerSettingPrefix + "health_failure_threshold"
@@ -82,6 +83,7 @@ type OpenAIAdaptiveSchedulerSettings struct {
 	OpenAIAdaptiveSchedulerWeightCost                float64 `json:"openai_adaptive_scheduler_weight_cost"`
 	OpenAIAdaptiveSchedulerWeightCapacity            float64 `json:"openai_adaptive_scheduler_weight_capacity"`
 	OpenAIAdaptiveSchedulerWeightLatency             float64 `json:"openai_adaptive_scheduler_weight_latency"`
+	OpenAIAdaptiveSchedulerWeightCache               float64 `json:"openai_adaptive_scheduler_weight_cache"`
 	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
 	OpenAIAdaptiveSchedulerLearningMinHealthSamples  int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
 	OpenAIAdaptiveSchedulerHealthFailureThreshold    int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
@@ -127,6 +129,7 @@ func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 		OpenAIAdaptiveSchedulerWeightCost:                 0.15,
 		OpenAIAdaptiveSchedulerWeightCapacity:             0.20,
 		OpenAIAdaptiveSchedulerWeightLatency:              0.15,
+		OpenAIAdaptiveSchedulerWeightCache:                0,
 		OpenAIAdaptiveSchedulerConsecutiveFailurePenalty:  0.25,
 		OpenAIAdaptiveSchedulerLearningMinHealthSamples:   30,
 		OpenAIAdaptiveSchedulerHealthFailureThreshold:     3,
@@ -168,6 +171,7 @@ func NormalizeOpenAIAdaptiveSchedulerSettings(settings OpenAIAdaptiveSchedulerSe
 	settings.OpenAIAdaptiveSchedulerWeightCost = nonNegativeFinite(settings.OpenAIAdaptiveSchedulerWeightCost)
 	settings.OpenAIAdaptiveSchedulerWeightCapacity = nonNegativeFinite(settings.OpenAIAdaptiveSchedulerWeightCapacity)
 	settings.OpenAIAdaptiveSchedulerWeightLatency = nonNegativeFinite(settings.OpenAIAdaptiveSchedulerWeightLatency)
+	settings.OpenAIAdaptiveSchedulerWeightCache = nonNegativeFinite(settings.OpenAIAdaptiveSchedulerWeightCache)
 	settings.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty = nonNegativeFinite(settings.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty)
 	settings.OpenAIAdaptiveSchedulerLearningMinHealthSamples = clampIntMin(settings.OpenAIAdaptiveSchedulerLearningMinHealthSamples, 1, defaults.OpenAIAdaptiveSchedulerLearningMinHealthSamples)
 	settings.OpenAIAdaptiveSchedulerHealthFailureThreshold = clampIntMin(settings.OpenAIAdaptiveSchedulerHealthFailureThreshold, 1, defaults.OpenAIAdaptiveSchedulerHealthFailureThreshold)
@@ -180,7 +184,8 @@ func NormalizeOpenAIAdaptiveSchedulerSettings(settings OpenAIAdaptiveSchedulerSe
 	weightSum := settings.OpenAIAdaptiveSchedulerWeightSuccess +
 		settings.OpenAIAdaptiveSchedulerWeightCost +
 		settings.OpenAIAdaptiveSchedulerWeightCapacity +
-		settings.OpenAIAdaptiveSchedulerWeightLatency
+		settings.OpenAIAdaptiveSchedulerWeightLatency +
+		settings.OpenAIAdaptiveSchedulerWeightCache
 	if weightSum <= 0 {
 		settings.OpenAIAdaptiveSchedulerWeightSuccess = defaults.OpenAIAdaptiveSchedulerWeightSuccess
 		settings.OpenAIAdaptiveSchedulerWeightCost = defaults.OpenAIAdaptiveSchedulerWeightCost
@@ -219,6 +224,7 @@ func openAIAdaptiveSchedulerSettingsToMap(settings OpenAIAdaptiveSchedulerSettin
 		openAIAdaptiveSchedulerWeightCostKey:                 formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCost),
 		openAIAdaptiveSchedulerWeightCapacityKey:             formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCapacity),
 		openAIAdaptiveSchedulerWeightLatencyKey:              formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightLatency),
+		openAIAdaptiveSchedulerWeightCacheKey:                formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCache),
 		openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey:  formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty),
 		openAIAdaptiveSchedulerLearningMinHealthSamplesKey:   strconv.Itoa(settings.OpenAIAdaptiveSchedulerLearningMinHealthSamples),
 		openAIAdaptiveSchedulerHealthFailureThresholdKey:     strconv.Itoa(settings.OpenAIAdaptiveSchedulerHealthFailureThreshold),
@@ -255,6 +261,7 @@ func parseOpenAIAdaptiveSchedulerSettings(settings map[string]string) OpenAIAdap
 	result.OpenAIAdaptiveSchedulerWeightCost = parseFloatSetting(settings, openAIAdaptiveSchedulerWeightCostKey, result.OpenAIAdaptiveSchedulerWeightCost)
 	result.OpenAIAdaptiveSchedulerWeightCapacity = parseFloatSetting(settings, openAIAdaptiveSchedulerWeightCapacityKey, result.OpenAIAdaptiveSchedulerWeightCapacity)
 	result.OpenAIAdaptiveSchedulerWeightLatency = parseFloatSetting(settings, openAIAdaptiveSchedulerWeightLatencyKey, result.OpenAIAdaptiveSchedulerWeightLatency)
+	result.OpenAIAdaptiveSchedulerWeightCache = parseFloatSetting(settings, openAIAdaptiveSchedulerWeightCacheKey, result.OpenAIAdaptiveSchedulerWeightCache)
 	result.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty = parseFloatSetting(settings, openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey, result.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty)
 	result.OpenAIAdaptiveSchedulerLearningMinHealthSamples = parseIntSetting(settings, openAIAdaptiveSchedulerLearningMinHealthSamplesKey, result.OpenAIAdaptiveSchedulerLearningMinHealthSamples)
 	result.OpenAIAdaptiveSchedulerHealthFailureThreshold = parseIntSetting(settings, openAIAdaptiveSchedulerHealthFailureThresholdKey, result.OpenAIAdaptiveSchedulerHealthFailureThreshold)

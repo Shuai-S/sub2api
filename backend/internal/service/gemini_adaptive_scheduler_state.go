@@ -38,24 +38,28 @@ func geminiAdaptiveCoreSettings(settings GeminiAdaptiveSchedulerSettings) adapti
 	core.WeightCapacity = settings.GeminiAdaptiveSchedulerWeightCapacity
 	core.WeightTTFT = settings.GeminiAdaptiveSchedulerWeightLatency
 	core.WeightCost = settings.GeminiAdaptiveSchedulerWeightCost
+	core.WeightCache = settings.GeminiAdaptiveSchedulerWeightCache
 	return normalizeAdaptiveCoreSettings(core)
 }
 
 type GeminiAdaptiveScheduleReport struct {
-	Account           *Account
-	RequestID         string
-	RequestedModel    string
-	MappedModel       string
-	UpstreamRequestID string
-	Stream            bool
-	Action            string
-	Success           bool
-	PathSample        bool
-	Synthetic         bool
-	FirstTokenMs      *int
-	DurationMs        int64
-	TerminalReason    string
-	ctx               context.Context
+	Account             *Account
+	RequestID           string
+	RequestedModel      string
+	MappedModel         string
+	UpstreamRequestID   string
+	Stream              bool
+	Action              string
+	Success             bool
+	PathSample          bool
+	Synthetic           bool
+	FirstTokenMs        *int
+	DurationMs          int64
+	TerminalReason      string
+	CacheInputTokens    int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
+	ctx                 context.Context
 }
 
 func geminiAdaptiveCanonicalModel(account *Account, requestedModel, mappedModel, action string) string {

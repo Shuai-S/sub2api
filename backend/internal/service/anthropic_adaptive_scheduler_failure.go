@@ -35,6 +35,9 @@ func (s *GatewayService) ReportAnthropicAdaptiveResult(ctx context.Context, acco
 		FirstTokenMs:        report.FirstTokenMs,
 		ConfiguredCapacity:  account.Concurrency,
 		ObservedConcurrency: -1,
+		CacheInputTokens:    report.CacheInputTokens,
+		CacheCreationTokens: report.CacheCreationTokens,
+		CacheReadTokens:     report.CacheReadTokens,
 	}
 	if observationType == adaptiveObservationQuotaLimit {
 		observation.QuotaResetAt = account.RateLimitResetAt
@@ -76,6 +79,11 @@ func classifyAnthropicAdaptiveResult(ctx context.Context, account *Account, requ
 		report.Synthetic = result.Synthetic
 		report.FirstTokenMs = result.FirstTokenMs
 		report.DurationMs = result.Duration.Milliseconds()
+		if !IsForceCacheBilling(ctx) {
+			report.CacheInputTokens = int64(result.Usage.InputTokens)
+			report.CacheCreationTokens = int64(result.Usage.CacheCreationInputTokens)
+			report.CacheReadTokens = int64(result.Usage.CacheReadInputTokens)
+		}
 	}
 	if err == nil {
 		if ctx.Err() != nil {

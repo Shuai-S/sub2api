@@ -91,6 +91,7 @@ type AnthropicAdaptiveSchedulerLearningSettingsSnapshot struct {
 	WeightCapacity             float64 `json:"weight_capacity"`
 	WeightLatency              float64 `json:"weight_ttft"`
 	WeightCost                 float64 `json:"weight_cost"`
+	WeightCache                float64 `json:"weight_cache"`
 }
 
 type AnthropicAdaptiveSchedulerLearningSummary struct {
@@ -141,11 +142,17 @@ type AnthropicAdaptiveSchedulerAccountLearningSnapshot struct {
 	CircuitHalfOpen    bool     `json:"circuit_half_open"`
 	CapacityRecovery   bool     `json:"capacity_recovery"`
 
-	SchedulerScore   float64 `json:"scheduler_score"`
-	ReliabilityScore float64 `json:"reliability_score"`
-	CapacityScore    float64 `json:"capacity_score"`
-	LatencyScore     float64 `json:"latency_score"`
-	CostScore        float64 `json:"cost_score"`
+	SchedulerScore      float64 `json:"scheduler_score"`
+	ReliabilityScore    float64 `json:"reliability_score"`
+	CapacityScore       float64 `json:"capacity_score"`
+	LatencyScore        float64 `json:"latency_score"`
+	CostScore           float64 `json:"cost_score"`
+	CacheScore          float64 `json:"cache_score"`
+	CacheHitRate        float64 `json:"cache_hit_rate"`
+	CacheSamples        int64   `json:"cache_samples"`
+	CacheInputTokens    int64   `json:"cache_input_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
 
 	SuccessEMA     float64 `json:"success_ema"`
 	TTFTEMA        float64 `json:"ttft_ema"`
@@ -329,6 +336,7 @@ func buildAnthropicAdaptiveCoreLearningAccountSnapshot(account *Account, state a
 		load = &AccountLoadInfo{AccountID: account.ID}
 	}
 	learning, samples := adaptiveLearningState(state, account.IsOAuth(), now, settings)
+	cacheStats := adaptiveCacheStatsForState(state, now, settings)
 	runtimeStatus, flags, reasonCode, reason := adaptiveRuntimeState(state, account.IsActive() && account.Schedulable, load.CurrentConcurrency, now)
 	row := AnthropicAdaptiveSchedulerAccountLearningSnapshot{
 		AccountID:                 account.ID,
@@ -352,6 +360,11 @@ func buildAnthropicAdaptiveCoreLearningAccountSnapshot(account *Account, state a
 		RuntimeReasonCode:         reasonCode,
 		RuntimeReason:             reason,
 		HealthSamples:             samples,
+		CacheHitRate:              cacheStats.HitRate,
+		CacheSamples:              cacheStats.Samples,
+		CacheInputTokens:          cacheStats.InputTokens,
+		CacheCreationTokens:       cacheStats.CacheCreationTokens,
+		CacheReadTokens:           cacheStats.CacheReadTokens,
 		CapacityGeneration:        state.CapacityGeneration,
 		CapacityHalfOpen:          state.CapacityHalfOpen,
 		CircuitHalfOpen:           containsAdaptiveRuntimeFlag(flags, adaptiveRuntimeCircuitHalfOpen),
@@ -404,6 +417,9 @@ func applyAnthropicAdaptiveCoreScores(rows []AnthropicAdaptiveSchedulerAccountLe
 		rows[i].CapacityScore = score.CapacityScore
 		rows[i].LatencyScore = score.TTFTScore
 		rows[i].CostScore = score.CostScore
+		rows[i].CacheScore = score.CacheScore
+		rows[i].CacheHitRate = score.CacheHitRate
+		rows[i].CacheSamples = score.CacheSamples
 	}
 }
 
@@ -526,7 +542,7 @@ func sortAnthropicAdaptiveLearningRows(
 func normalizeAnthropicAdaptiveLearningSortBy(value string) string {
 	value = strings.TrimSpace(value)
 	switch value {
-	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "last_event":
+	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "cache", "last_event":
 		return value
 	case "default", "":
 		return ""
@@ -578,6 +594,10 @@ func compareAnthropicAdaptiveLearningRows(
 		}
 	case "latency":
 		if cmp := compareAnthropicAdaptiveLearningFloat64(left.TTFTEMA, right.TTFTEMA); cmp != 0 {
+			return cmp
+		}
+	case "cache":
+		if cmp := compareAnthropicAdaptiveLearningFloat64(left.CacheHitRate, right.CacheHitRate); cmp != 0 {
 			return cmp
 		}
 	case "last_event":
@@ -758,6 +778,7 @@ func anthropicAdaptiveLearningSettingsSnapshot(
 		WeightCapacity:             cfg.AnthropicAdaptiveSchedulerWeightCapacity,
 		WeightLatency:              cfg.AnthropicAdaptiveSchedulerWeightLatency,
 		WeightCost:                 cfg.AnthropicAdaptiveSchedulerWeightCost,
+		WeightCache:                cfg.AnthropicAdaptiveSchedulerWeightCache,
 	}
 }
 

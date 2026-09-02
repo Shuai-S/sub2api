@@ -1292,6 +1292,7 @@ export default {
           weightCapacity: '容量权重',
           weightTTFT: '首字延迟权重',
           weightCost: '成本权重',
+          weightCache: '缓存命中权重',
           diagnosticLogSampleRate: '成功决策日志采样率'
         },
         tooltips: {
@@ -1321,6 +1322,7 @@ export default {
           weightCapacity: '账号当前可用有效容量在总分中的权重。',
           weightTTFT: '首字延迟在总分中的权重；可比较样本不足时自动重分配该权重。',
           weightCost: '动态候选层成本权重：当前层最低可用费率除以账号费率。',
+          weightCache: '缓存命中率奖励权重；仅奖励高于候选层成熟账号中位值的账号，不惩罚低命中账号。',
           diagnosticLogSampleRate: '诊断开启时记录成功调度决策的概率，范围 0 到 1。'
         }
       },
@@ -1369,6 +1371,7 @@ export default {
           weightCapacity: '容量权重',
           weightTTFT: '首字延迟权重',
           weightCost: '成本权重',
+          weightCache: '缓存命中权重',
           diagnosticLogSampleRate: '成功决策日志采样率'
         },
         tooltips: {
@@ -1398,6 +1401,7 @@ export default {
           weightCapacity: '账号当前可用有效容量在总分中的权重。',
           weightTTFT: '首字延迟在总分中的权重；可比较样本不足时自动重分配该权重。',
           weightCost: '动态候选层成本权重：当前层最低可用费率除以账号费率。',
+          weightCache: '缓存命中率奖励权重；仅奖励高于候选层成熟账号中位值的账号，不惩罚低命中账号。',
           diagnosticLogSampleRate: '诊断开启时记录成功调度决策的概率，范围 0 到 1。'
         }
       },
@@ -1443,6 +1447,7 @@ export default {
           weightCapacity: '容量权重',
           weightTTFT: '首字延迟权重',
           weightCost: '成本权重',
+          weightCache: '缓存命中权重',
           diagnosticLogSampleRate: '成功决策日志采样率'
         },
         tooltips: {
@@ -1475,6 +1480,7 @@ export default {
           weightCapacity: '账号当前可用有效容量在总分中的权重。',
           weightTTFT: '首字延迟在总分中的权重；可比较样本不足时自动重分配该权重。',
           weightCost: '动态候选层成本权重：当前层最低可用费率除以账号费率。',
+          weightCache: '缓存命中率奖励权重；仅奖励高于候选层成熟账号中位值的账号，不惩罚低命中账号。',
           diagnosticLogSampleRate: '诊断开启时记录成功调度决策的概率，范围 0 到 1。'
         }
       },

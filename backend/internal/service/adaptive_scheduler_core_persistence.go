@@ -233,6 +233,19 @@ func validateAdaptiveCoreRestoredState(accountID int64, state adaptiveAccountSta
 			previous = observation.At
 		}
 	}
+	var previousCacheBucket time.Time
+	for _, bucket := range state.CacheBuckets {
+		if bucket.BucketStart.IsZero() || bucket.BucketStart.After(now.Add(adaptiveCoreRestoreFutureTolerance)) {
+			return fmt.Errorf("invalid adaptive cache bucket time")
+		}
+		if !previousCacheBucket.IsZero() && bucket.BucketStart.Before(previousCacheBucket) {
+			return fmt.Errorf("adaptive cache buckets are not ordered")
+		}
+		if bucket.InputTokens < 0 || bucket.CacheCreationTokens < 0 || bucket.CacheReadTokens < 0 || bucket.Samples < 0 {
+			return fmt.Errorf("invalid adaptive cache bucket counters")
+		}
+		previousCacheBucket = bucket.BucketStart
+	}
 	if state.ConsecutiveFailures < 0 || state.CircuitOpenCount < 0 {
 		return fmt.Errorf("invalid adaptive account failure counters")
 	}

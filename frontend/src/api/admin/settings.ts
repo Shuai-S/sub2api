@@ -719,6 +719,7 @@ export interface SystemSettings {
   anthropic_adaptive_scheduler_weight_reliability?: number;
   anthropic_adaptive_scheduler_weight_capacity?: number;
   anthropic_adaptive_scheduler_weight_latency?: number;
+  anthropic_adaptive_scheduler_weight_cache?: number;
   anthropic_adaptive_scheduler_consecutive_failure_penalty?: number;
   anthropic_adaptive_scheduler_success_ema_alpha?: number;
   anthropic_adaptive_scheduler_latency_ema_alpha?: number;
@@ -749,6 +750,7 @@ export interface SystemSettings {
   gemini_adaptive_scheduler_weight_capacity?: number;
   gemini_adaptive_scheduler_weight_latency?: number;
   gemini_adaptive_scheduler_weight_cost?: number;
+  gemini_adaptive_scheduler_weight_cache?: number;
   gemini_adaptive_scheduler_capacity_probe_load_threshold?: number;
   gemini_adaptive_scheduler_shrink_factor_soft?: number;
   gemini_adaptive_scheduler_learning_window_seconds?: number;
@@ -788,6 +790,7 @@ export interface SystemSettings {
   openai_adaptive_scheduler_weight_cost?: number;
   openai_adaptive_scheduler_weight_capacity?: number;
   openai_adaptive_scheduler_weight_latency?: number;
+  openai_adaptive_scheduler_weight_cache?: number;
   openai_adaptive_scheduler_consecutive_failure_penalty?: number;
   openai_adaptive_scheduler_learning_min_health_samples?: number;
   openai_adaptive_scheduler_health_failure_threshold?: number;
@@ -1113,6 +1116,7 @@ export interface UpdateSettingsRequest {
   anthropic_adaptive_scheduler_weight_reliability?: number;
   anthropic_adaptive_scheduler_weight_capacity?: number;
   anthropic_adaptive_scheduler_weight_latency?: number;
+  anthropic_adaptive_scheduler_weight_cache?: number;
   anthropic_adaptive_scheduler_consecutive_failure_penalty?: number;
   anthropic_adaptive_scheduler_success_ema_alpha?: number;
   anthropic_adaptive_scheduler_latency_ema_alpha?: number;
@@ -1143,6 +1147,7 @@ export interface UpdateSettingsRequest {
   gemini_adaptive_scheduler_weight_capacity?: number;
   gemini_adaptive_scheduler_weight_latency?: number;
   gemini_adaptive_scheduler_weight_cost?: number;
+  gemini_adaptive_scheduler_weight_cache?: number;
   gemini_adaptive_scheduler_capacity_probe_load_threshold?: number;
   gemini_adaptive_scheduler_shrink_factor_soft?: number;
   gemini_adaptive_scheduler_learning_window_seconds?: number;
@@ -1182,6 +1187,7 @@ export interface UpdateSettingsRequest {
   openai_adaptive_scheduler_weight_cost?: number;
   openai_adaptive_scheduler_weight_capacity?: number;
   openai_adaptive_scheduler_weight_latency?: number;
+  openai_adaptive_scheduler_weight_cache?: number;
   openai_adaptive_scheduler_consecutive_failure_penalty?: number;
   openai_adaptive_scheduler_learning_min_health_samples?: number;
   openai_adaptive_scheduler_health_failure_threshold?: number;

@@ -231,7 +231,7 @@ export default {
           minSamples: 'Learning samples',
           topK: 'TopK',
           temperature: 'Softmax temp',
-          weights: 'R/C/T/$ weights'
+          weights: 'R/C/T/$/cache weights'
         },
         table: {
           account: 'Account',
@@ -243,6 +243,7 @@ export default {
           samples: 'Samples and EMA',
           error: 'Error Rate',
           latency: 'TTFT',
+          cacheHitRate: 'Cache Hit Rate',
           lastEvent: 'Last Event'
         }
       },
@@ -298,7 +299,7 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax temp',
-          weights: 'R/C/T/$ weights',
+          weights: 'R/C/T/$/cache weights',
           window: 'Window',
           minSamples: 'Learning samples'
         },
@@ -312,6 +313,7 @@ export default {
           samples: 'Samples and EMA',
           error: 'Error Rate',
           latency: 'TTFT',
+          cacheHitRate: 'Cache Hit Rate',
           lastEvent: 'Last Event'
         }
       },
@@ -367,7 +369,7 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax temp',
-          weights: 'R/C/T/$ weights',
+          weights: 'R/C/T/$/cache weights',
           window: 'Window'
         },
         metrics: {
@@ -402,6 +404,7 @@ export default {
           samples: 'Samples and EMA',
           error: 'Error Rate',
           latency: 'TTFT',
+          cacheHitRate: 'Cache Hit Rate',
           lastEvent: 'Last Event'
         }
       },

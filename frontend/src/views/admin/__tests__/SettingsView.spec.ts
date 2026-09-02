@@ -1281,7 +1281,7 @@ describe("admin SettingsView payment visible method controls", () => {
       wrapper
         .get('[data-testid="anthropic-adaptive-scheduler-parameters"]')
         .findAll("svg.cursor-help"),
-    ).toHaveLength(24);
+    ).toHaveLength(25);
     await topKInput.setValue("6");
     await wrapper
       .get('[data-testid="anthropic-adaptive-mode-enforce"]')

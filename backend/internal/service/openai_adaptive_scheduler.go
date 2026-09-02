@@ -214,6 +214,7 @@ func openAIAdaptiveCoreSettings(settings OpenAIAdaptiveSchedulerSettings) adapti
 	core.WeightCapacity = settings.OpenAIAdaptiveSchedulerWeightCapacity
 	core.WeightTTFT = settings.OpenAIAdaptiveSchedulerWeightLatency
 	core.WeightCost = settings.OpenAIAdaptiveSchedulerWeightCost
+	core.WeightCache = settings.OpenAIAdaptiveSchedulerWeightCache
 	return normalizeAdaptiveCoreSettings(core)
 }
 
@@ -1640,6 +1641,9 @@ func (s *adaptiveOpenAIAccountScheduler) ReportScheduleResultWithContext(ctx con
 		ObservedConcurrency:   report.ObservedConcurrency,
 		WaitingCount:          report.WaitingCount,
 		AccountHealthEligible: &accountHealthEligible,
+		CacheInputTokens:      report.CacheInputTokens,
+		CacheCreationTokens:   report.CacheCreationTokens,
+		CacheReadTokens:       report.CacheReadTokens,
 	}
 	if report.ObservedConcurrency <= 0 {
 		observation.ObservedConcurrency = -1

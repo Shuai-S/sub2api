@@ -47,6 +47,9 @@ func (s *GatewayService) ReportGeminiAdaptiveResult(ctx context.Context, account
 		FirstTokenMs:        report.FirstTokenMs,
 		ConfiguredCapacity:  account.Concurrency,
 		ObservedConcurrency: -1,
+		CacheInputTokens:    report.CacheInputTokens,
+		CacheCreationTokens: report.CacheCreationTokens,
+		CacheReadTokens:     report.CacheReadTokens,
 	}
 	if observationType == adaptiveObservationQuotaLimit {
 		observation.QuotaResetAt = account.RateLimitResetAt
@@ -92,6 +95,11 @@ func classifyGeminiAdaptiveResult(ctx context.Context, account *Account, request
 		report.Stream = result.Stream
 		report.FirstTokenMs = result.FirstTokenMs
 		report.DurationMs = result.Duration.Milliseconds()
+		if !IsForceCacheBilling(ctx) {
+			report.CacheInputTokens = int64(result.Usage.InputTokens)
+			report.CacheCreationTokens = int64(result.Usage.CacheCreationInputTokens)
+			report.CacheReadTokens = int64(result.Usage.CacheReadInputTokens)
+		}
 		report.Synthetic = result.Synthetic
 	}
 	if report.Synthetic {

@@ -300,6 +300,7 @@ export interface OpsOpenAIAdaptiveLearningSettingsSnapshot {
   weight_capacity: number
   weight_ttft: number
   weight_cost: number
+  weight_cache: number
 }
 
 export interface OpsOpenAIAdaptiveLearningSummary {
@@ -353,6 +354,12 @@ export interface OpsOpenAIAdaptiveLearningAccount {
   cost_score: number
   capacity_score: number
   latency_score: number
+  cache_score: number
+  cache_hit_rate: number
+  cache_samples: number
+  cache_input_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   success_ema: number
   ttft_ema: number
   ttft_samples: number
@@ -407,6 +414,7 @@ export type OpsOpenAIAdaptiveLearningSortBy =
   | 'samples'
   | 'error'
   | 'latency'
+  | 'cache'
   | 'last_event'
 
 export type OpsOpenAIAdaptiveLearningSortOrder = 'asc' | 'desc'
@@ -461,6 +469,7 @@ export interface OpsAnthropicAdaptiveLearningSettingsSnapshot {
   weight_capacity: number
   weight_ttft: number
   weight_cost: number
+  weight_cache: number
 }
 
 export interface OpsAnthropicAdaptiveLearningSummary {
@@ -514,6 +523,12 @@ export interface OpsAnthropicAdaptiveLearningAccount {
   capacity_score: number
   latency_score: number
   cost_score: number
+  cache_score: number
+  cache_hit_rate: number
+  cache_samples: number
+  cache_input_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
 
   success_ema: number
   ttft_ema: number
@@ -542,6 +557,7 @@ export type OpsAnthropicAdaptiveLearningSortBy =
   | 'samples'
   | 'error'
   | 'latency'
+  | 'cache'
   | 'last_event'
 
 export type OpsAnthropicAdaptiveLearningSortOrder = 'asc' | 'desc'
@@ -601,6 +617,7 @@ export type OpsGeminiAdaptiveLearningSortBy =
   | 'samples'
   | 'error'
   | 'latency'
+  | 'cache'
   | 'last_event'
 
 export type OpsGeminiAdaptiveLearningSortOrder = 'asc' | 'desc'
@@ -630,6 +647,7 @@ export interface OpsGeminiAdaptiveLearningSettingsSnapshot {
   weight_capacity: number
   weight_ttft: number
   weight_cost: number
+  weight_cache: number
   learning_window_seconds: number
   learning_min_health_samples: number
   success_ema_alpha: number
@@ -710,6 +728,12 @@ export interface OpsGeminiAdaptiveLearningAccount {
   capacity_score: number
   latency_score: number
   cost_score: number
+  cache_score: number
+  cache_hit_rate: number
+  cache_samples: number
+  cache_input_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
 
   path_success_ema: number
   ttft_ema: number

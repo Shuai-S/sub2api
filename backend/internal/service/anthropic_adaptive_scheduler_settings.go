@@ -28,6 +28,7 @@ const (
 	SettingKeyAnthropicAdaptiveSchedulerWeightReliability          = anthropicAdaptiveSchedulerSettingPrefix + "weight_reliability"
 	SettingKeyAnthropicAdaptiveSchedulerWeightCapacity             = anthropicAdaptiveSchedulerSettingPrefix + "weight_capacity"
 	SettingKeyAnthropicAdaptiveSchedulerWeightLatency              = anthropicAdaptiveSchedulerSettingPrefix + "weight_latency"
+	SettingKeyAnthropicAdaptiveSchedulerWeightCache                = anthropicAdaptiveSchedulerSettingPrefix + "weight_cache"
 	SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty  = anthropicAdaptiveSchedulerSettingPrefix + "consecutive_failure_penalty"
 	SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha            = anthropicAdaptiveSchedulerSettingPrefix + "success_ema_alpha"
 	SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha            = anthropicAdaptiveSchedulerSettingPrefix + "latency_ema_alpha"
@@ -62,6 +63,7 @@ type AnthropicAdaptiveSchedulerSettings struct {
 	AnthropicAdaptiveSchedulerWeightReliability          float64 `json:"anthropic_adaptive_scheduler_weight_reliability"`
 	AnthropicAdaptiveSchedulerWeightCapacity             float64 `json:"anthropic_adaptive_scheduler_weight_capacity"`
 	AnthropicAdaptiveSchedulerWeightLatency              float64 `json:"anthropic_adaptive_scheduler_weight_latency"`
+	AnthropicAdaptiveSchedulerWeightCache                float64 `json:"anthropic_adaptive_scheduler_weight_cache"`
 	AnthropicAdaptiveSchedulerConsecutiveFailurePenalty  float64 `json:"anthropic_adaptive_scheduler_consecutive_failure_penalty"`
 	AnthropicAdaptiveSchedulerSuccessEMAAlpha            float64 `json:"anthropic_adaptive_scheduler_success_ema_alpha"`
 	AnthropicAdaptiveSchedulerLatencyEMAAlpha            float64 `json:"anthropic_adaptive_scheduler_latency_ema_alpha"`
@@ -103,6 +105,7 @@ func DefaultAnthropicAdaptiveSchedulerSettings() AnthropicAdaptiveSchedulerSetti
 		AnthropicAdaptiveSchedulerWeightReliability:          0.50,
 		AnthropicAdaptiveSchedulerWeightCapacity:             0.20,
 		AnthropicAdaptiveSchedulerWeightLatency:              0.15,
+		AnthropicAdaptiveSchedulerWeightCache:                0,
 		AnthropicAdaptiveSchedulerConsecutiveFailurePenalty:  0.25,
 		AnthropicAdaptiveSchedulerSuccessEMAAlpha:            0.05,
 		AnthropicAdaptiveSchedulerLatencyEMAAlpha:            0.05,
@@ -153,10 +156,12 @@ func NormalizeAnthropicAdaptiveSchedulerSettings(settings AnthropicAdaptiveSched
 	settings.AnthropicAdaptiveSchedulerWeightReliability = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightReliability)
 	settings.AnthropicAdaptiveSchedulerWeightCapacity = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightCapacity)
 	settings.AnthropicAdaptiveSchedulerWeightLatency = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightLatency)
+	settings.AnthropicAdaptiveSchedulerWeightCache = nonNegativeFinite(settings.AnthropicAdaptiveSchedulerWeightCache)
 	weightSum := settings.AnthropicAdaptiveSchedulerWeightReliability +
 		settings.AnthropicAdaptiveSchedulerWeightCapacity +
 		settings.AnthropicAdaptiveSchedulerWeightLatency +
-		settings.AnthropicAdaptiveSchedulerWeightCost
+		settings.AnthropicAdaptiveSchedulerWeightCost +
+		settings.AnthropicAdaptiveSchedulerWeightCache
 	if weightSum <= 0 {
 		settings.AnthropicAdaptiveSchedulerWeightReliability = defaults.AnthropicAdaptiveSchedulerWeightReliability
 		settings.AnthropicAdaptiveSchedulerWeightCapacity = defaults.AnthropicAdaptiveSchedulerWeightCapacity
@@ -188,6 +193,7 @@ func parseAnthropicAdaptiveSchedulerSettings(values map[string]string) Anthropic
 	settings.AnthropicAdaptiveSchedulerWeightReliability = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightReliability, settings.AnthropicAdaptiveSchedulerWeightReliability)
 	settings.AnthropicAdaptiveSchedulerWeightCapacity = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightCapacity, settings.AnthropicAdaptiveSchedulerWeightCapacity)
 	settings.AnthropicAdaptiveSchedulerWeightLatency = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightLatency, settings.AnthropicAdaptiveSchedulerWeightLatency)
+	settings.AnthropicAdaptiveSchedulerWeightCache = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerWeightCache, settings.AnthropicAdaptiveSchedulerWeightCache)
 	settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty, settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty)
 	settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha, settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha)
 	settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha = parseFloatSetting(values, SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha, settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha)
@@ -222,6 +228,7 @@ func anthropicAdaptiveSchedulerSettingsToMap(settings AnthropicAdaptiveScheduler
 		SettingKeyAnthropicAdaptiveSchedulerWeightReliability:          formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightReliability),
 		SettingKeyAnthropicAdaptiveSchedulerWeightCapacity:             formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightCapacity),
 		SettingKeyAnthropicAdaptiveSchedulerWeightLatency:              formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightLatency),
+		SettingKeyAnthropicAdaptiveSchedulerWeightCache:                formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerWeightCache),
 		SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty:  formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerConsecutiveFailurePenalty),
 		SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerSuccessEMAAlpha),
 		SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha:            formatOpenAIAdaptiveFloat(settings.AnthropicAdaptiveSchedulerLatencyEMAAlpha),
@@ -270,6 +277,7 @@ func (s *SettingService) GetAnthropicAdaptiveSchedulerSettings(ctx context.Conte
 			SettingKeyAnthropicAdaptiveSchedulerWeightReliability,
 			SettingKeyAnthropicAdaptiveSchedulerWeightCapacity,
 			SettingKeyAnthropicAdaptiveSchedulerWeightLatency,
+			SettingKeyAnthropicAdaptiveSchedulerWeightCache,
 			SettingKeyAnthropicAdaptiveSchedulerConsecutiveFailurePenalty,
 			SettingKeyAnthropicAdaptiveSchedulerSuccessEMAAlpha,
 			SettingKeyAnthropicAdaptiveSchedulerLatencyEMAAlpha,

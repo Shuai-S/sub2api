@@ -227,7 +227,7 @@ export default {
           minSamples: '学习样本',
           topK: 'TopK',
           temperature: 'Softmax 温度',
-          weights: 'R/C/T/$ 权重'
+          weights: 'R/C/T/$/缓存 权重'
         },
         table: {
           account: '账号',
@@ -239,6 +239,7 @@ export default {
           samples: '样本与 EMA',
           error: '错误率',
           latency: '首字延迟',
+          cacheHitRate: '缓存命中率',
           lastEvent: '最近事件'
         }
       },
@@ -294,7 +295,7 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax 温度',
-          weights: 'R/C/T/$ 权重',
+          weights: 'R/C/T/$/缓存 权重',
           window: '学习窗口',
           minSamples: '学习样本'
         },
@@ -308,6 +309,7 @@ export default {
           samples: '样本与 EMA',
           error: '错误率',
           latency: '首字延迟',
+          cacheHitRate: '缓存命中率',
           lastEvent: '最近事件'
         }
       },
@@ -363,7 +365,7 @@ export default {
         settings: {
           topK: 'TopK',
           temperature: 'Softmax 温度',
-          weights: 'R/C/T/$ 权重',
+          weights: 'R/C/T/$/缓存 权重',
           window: '学习窗口'
         },
         metrics: {
@@ -398,6 +400,7 @@ export default {
           samples: '样本与 EMA',
           error: '错误率',
           latency: '首字延迟',
+          cacheHitRate: '缓存命中率',
           lastEvent: '最近事件'
         }
       },

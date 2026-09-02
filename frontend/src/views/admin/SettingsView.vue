@@ -9977,6 +9977,7 @@ type SettingsForm = Omit<
   anthropic_adaptive_scheduler_weight_reliability: number;
   anthropic_adaptive_scheduler_weight_capacity: number;
   anthropic_adaptive_scheduler_weight_latency: number;
+  anthropic_adaptive_scheduler_weight_cache: number;
   anthropic_adaptive_scheduler_consecutive_failure_penalty: number;
   anthropic_adaptive_scheduler_success_ema_alpha: number;
   anthropic_adaptive_scheduler_latency_ema_alpha: number;
@@ -10007,6 +10008,7 @@ type SettingsForm = Omit<
   gemini_adaptive_scheduler_weight_capacity: number;
   gemini_adaptive_scheduler_weight_latency: number;
   gemini_adaptive_scheduler_weight_cost: number;
+  gemini_adaptive_scheduler_weight_cache: number;
   gemini_adaptive_scheduler_capacity_probe_load_threshold: number;
   gemini_adaptive_scheduler_shrink_factor_soft: number;
   gemini_adaptive_scheduler_learning_window_seconds: number;
@@ -10046,6 +10048,7 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_weight_cost: number;
   openai_adaptive_scheduler_weight_capacity: number;
   openai_adaptive_scheduler_weight_latency: number;
+  openai_adaptive_scheduler_weight_cache: number;
   openai_adaptive_scheduler_consecutive_failure_penalty: number;
   openai_adaptive_scheduler_learning_min_health_samples: number;
   openai_adaptive_scheduler_health_failure_threshold: number;
@@ -10068,6 +10071,7 @@ const anthropicAdaptiveSchedulerRecommendedValues = {
   anthropic_adaptive_scheduler_weight_capacity: 0.2,
   anthropic_adaptive_scheduler_weight_latency: 0.15,
   anthropic_adaptive_scheduler_weight_cost: 0.15,
+  anthropic_adaptive_scheduler_weight_cache: 0,
   anthropic_adaptive_scheduler_exploration_rate: 0.02,
   anthropic_adaptive_scheduler_consecutive_failure_penalty: 0.25,
   anthropic_adaptive_scheduler_success_ema_alpha: 0.05,
@@ -10141,6 +10145,7 @@ const anthropicAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "anthropic_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_weight_latency", label: "weightTTFT", min: 0, step: 0.01 },
       { key: "anthropic_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
+      { key: "anthropic_adaptive_scheduler_weight_cache", label: "weightCache", min: 0, step: 0.01 },
     ],
   },
   {
@@ -10188,6 +10193,7 @@ const geminiAdaptiveSchedulerRecommendedValues = {
   gemini_adaptive_scheduler_weight_capacity: 0.2,
   gemini_adaptive_scheduler_weight_latency: 0.15,
   gemini_adaptive_scheduler_weight_cost: 0.15,
+  gemini_adaptive_scheduler_weight_cache: 0,
   gemini_adaptive_scheduler_capacity_probe_load_threshold: 0.8,
   gemini_adaptive_scheduler_shrink_factor_soft: 0.85,
   gemini_adaptive_scheduler_learning_window_seconds: 1200,
@@ -10265,6 +10271,7 @@ const geminiAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "gemini_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
       { key: "gemini_adaptive_scheduler_weight_latency", label: "weightTTFT", min: 0, step: 0.01 },
       { key: "gemini_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
+      { key: "gemini_adaptive_scheduler_weight_cache", label: "weightCache", min: 0, step: 0.01 },
     ],
   },
   {
@@ -10322,6 +10329,7 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_weight_cost: 0.15,
   openai_adaptive_scheduler_weight_capacity: 0.2,
   openai_adaptive_scheduler_weight_latency: 0.15,
+  openai_adaptive_scheduler_weight_cache: 0,
   openai_adaptive_scheduler_consecutive_failure_penalty: 0.25,
   openai_adaptive_scheduler_learning_min_health_samples: 30,
   openai_adaptive_scheduler_health_failure_threshold: 3,
@@ -10389,6 +10397,7 @@ const openAIAdaptiveSchedulerSections: ReadonlyArray<{
       { key: "openai_adaptive_scheduler_weight_capacity", label: "weightCapacity", min: 0, step: 0.01 },
       { key: "openai_adaptive_scheduler_weight_latency", label: "weightTTFT", min: 0, step: 0.01 },
       { key: "openai_adaptive_scheduler_weight_cost", label: "weightCost", min: 0, step: 0.01 },
+      { key: "openai_adaptive_scheduler_weight_cache", label: "weightCache", min: 0, step: 0.01 },
     ],
   },
   {
@@ -12547,6 +12556,8 @@ async function saveSettings() {
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_latency"),
       anthropic_adaptive_scheduler_weight_cost:
         anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_cost"),
+      anthropic_adaptive_scheduler_weight_cache:
+        anthropicAdaptiveSchedulerNumber("anthropic_adaptive_scheduler_weight_cache"),
       gemini_adaptive_scheduler_enabled:
         form.gemini_adaptive_scheduler_enabled,
       gemini_adaptive_scheduler_mode:
@@ -12599,6 +12610,8 @@ async function saveSettings() {
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_latency"),
       gemini_adaptive_scheduler_weight_cost:
         geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_cost"),
+      gemini_adaptive_scheduler_weight_cache:
+        geminiAdaptiveSchedulerNumber("gemini_adaptive_scheduler_weight_cache"),
       gemini_adaptive_scheduler_diagnostic_log_enabled:
         form.gemini_adaptive_scheduler_diagnostic_log_enabled,
       gemini_adaptive_scheduler_diagnostic_log_sample_rate:
@@ -12665,6 +12678,8 @@ async function saveSettings() {
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_capacity"),
       openai_adaptive_scheduler_weight_latency:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_latency"),
+      openai_adaptive_scheduler_weight_cache:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_cache"),
       // 余额、订阅到期与账号限额通知
       balance_low_notify_enabled: form.balance_low_notify_enabled,
       balance_low_notify_threshold:

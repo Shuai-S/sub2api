@@ -129,6 +129,9 @@ type OpenAIAccountScheduleReport struct {
 	ObservedConcurrency int
 	WaitingCount        int
 	Err                 error
+	CacheInputTokens    int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
 }
 
 // OpenAIAccountScheduleSuccessOptions carries request-level failover context
@@ -2631,6 +2634,14 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleSuccessWithContextAndO
 		report.FirstTokenMs = result.FirstTokenMs
 		report.DurationMs = result.Duration.Milliseconds()
 		report.Stream = result.Stream || result.OpenAIWSMode
+		if !IsForceCacheBilling(ctx) {
+			report.CacheInputTokens = int64(result.Usage.InputTokens - result.Usage.CacheReadInputTokens - result.Usage.CacheCreationInputTokens)
+			if report.CacheInputTokens < 0 {
+				report.CacheInputTokens = 0
+			}
+			report.CacheCreationTokens = int64(result.Usage.CacheCreationInputTokens)
+			report.CacheReadTokens = int64(result.Usage.CacheReadInputTokens)
+		}
 	}
 	s.ReportOpenAIAccountScheduleReportWithContext(ctx, report)
 }

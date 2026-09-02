@@ -29,21 +29,25 @@ func anthropicAdaptiveCoreSettings(settings AnthropicAdaptiveSchedulerSettings) 
 	core.WeightCapacity = settings.AnthropicAdaptiveSchedulerWeightCapacity
 	core.WeightTTFT = settings.AnthropicAdaptiveSchedulerWeightLatency
 	core.WeightCost = settings.AnthropicAdaptiveSchedulerWeightCost
+	core.WeightCache = settings.AnthropicAdaptiveSchedulerWeightCache
 	return normalizeAdaptiveCoreSettings(core)
 }
 
 type AnthropicAdaptiveScheduleReport struct {
-	Account           *Account
-	RequestID         string
-	RequestedModel    string
-	UpstreamRequestID string
-	MappedModel       string
-	Stream            bool
-	Synthetic         bool
-	Success           bool
-	HealthSample      bool
-	HealthScope       string
-	FirstTokenMs      *int
-	DurationMs        int64
-	TerminalReason    string
+	Account             *Account
+	RequestID           string
+	RequestedModel      string
+	UpstreamRequestID   string
+	MappedModel         string
+	Stream              bool
+	Synthetic           bool
+	Success             bool
+	HealthSample        bool
+	HealthScope         string
+	FirstTokenMs        *int
+	DurationMs          int64
+	TerminalReason      string
+	CacheInputTokens    int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
 }

@@ -1298,6 +1298,7 @@ export default {
           weightCapacity: 'Capacity weight',
           weightTTFT: 'TTFT weight',
           weightCost: 'Cost weight',
+          weightCache: 'Cache hit weight',
           diagnosticLogSampleRate: 'Successful decision log sample rate'
         },
         tooltips: {
@@ -1327,6 +1328,7 @@ export default {
           weightCapacity: 'Weight for currently available effective capacity.',
           weightTTFT: 'Weight for TTFT. It is redistributed when there are not enough comparable samples.',
           weightCost: 'Weight for dynamic candidate-layer cost: lowest available rate divided by account rate.',
+          weightCache: 'Cache-hit bonus weight. Only accounts above the mature candidate-layer median are rewarded; lower hit rates are not penalized.',
           diagnosticLogSampleRate: 'Probability of logging a successful scheduling decision when diagnostics are enabled, from 0 to 1. Failures and important bypasses are not limited by this rate.'
         }
       },
@@ -1374,6 +1376,7 @@ export default {
           weightReliability: 'Reliability weight',
           weightCapacity: 'Capacity weight',
           weightCost: 'Cost weight',
+          weightCache: 'Cache hit weight',
           weightTTFT: 'TTFT weight',
           diagnosticLogSampleRate: 'Successful decision log sample rate'
         },
@@ -1403,6 +1406,7 @@ export default {
           weightReliability: 'Weight for account reliability after the consecutive-failure penalty.',
           weightCapacity: 'Weight for currently available effective capacity.',
           weightCost: 'Weight for dynamic candidate-layer cost: lowest available rate divided by account rate.',
+          weightCache: 'Cache-hit bonus weight. Only accounts above the mature candidate-layer median are rewarded; lower hit rates are not penalized.',
           weightTTFT: 'Weight for TTFT. It is redistributed when there are not enough comparable samples.',
           diagnosticLogSampleRate: 'Probability of logging a successful scheduling decision when diagnostics are enabled, from 0 to 1.'
         }
@@ -1449,6 +1453,7 @@ export default {
           weightCapacity: 'Capacity weight',
           weightTTFT: 'TTFT weight',
           weightCost: 'Cost weight',
+          weightCache: 'Cache hit weight',
           diagnosticLogSampleRate: 'Successful decision log sample rate'
         },
         tooltips: {
@@ -1481,6 +1486,7 @@ export default {
           weightCapacity: 'Weight for currently available effective capacity.',
           weightTTFT: 'Weight for TTFT. It is redistributed when there are not enough comparable samples.',
           weightCost: 'Weight for dynamic candidate-layer cost: lowest available rate divided by account rate.',
+          weightCache: 'Cache-hit bonus weight. Only accounts above the mature candidate-layer median are rewarded; lower hit rates are not penalized.',
           diagnosticLogSampleRate: 'Probability of logging a successful scheduling decision when diagnostics are enabled.'
         }
       },

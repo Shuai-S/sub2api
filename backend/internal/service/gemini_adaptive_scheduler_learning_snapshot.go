@@ -75,6 +75,7 @@ type GeminiAdaptiveSchedulerLearningSettingsSnapshot struct {
 	WeightCapacity            float64 `json:"weight_capacity"`
 	WeightLatency             float64 `json:"weight_ttft"`
 	WeightCost                float64 `json:"weight_cost"`
+	WeightCache               float64 `json:"weight_cache"`
 	LearningWindowSeconds     int     `json:"learning_window_seconds"`
 	LearningMinHealthSamples  int     `json:"learning_min_health_samples"`
 	SuccessEMAAlpha           float64 `json:"success_ema_alpha"`
@@ -142,11 +143,17 @@ type GeminiAdaptiveSchedulerAccountLearningSnapshot struct {
 	CircuitHalfOpen    bool     `json:"circuit_half_open"`
 	CapacityRecovery   bool     `json:"capacity_recovery"`
 
-	SchedulerScore   float64 `json:"scheduler_score"`
-	ReliabilityScore float64 `json:"reliability_score"`
-	CapacityScore    float64 `json:"capacity_score"`
-	LatencyScore     float64 `json:"latency_score"`
-	CostScore        float64 `json:"cost_score"`
+	SchedulerScore      float64 `json:"scheduler_score"`
+	ReliabilityScore    float64 `json:"reliability_score"`
+	CapacityScore       float64 `json:"capacity_score"`
+	LatencyScore        float64 `json:"latency_score"`
+	CostScore           float64 `json:"cost_score"`
+	CacheScore          float64 `json:"cache_score"`
+	CacheHitRate        float64 `json:"cache_hit_rate"`
+	CacheSamples        int64   `json:"cache_samples"`
+	CacheInputTokens    int64   `json:"cache_input_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
 
 	PathSuccessEMA float64 `json:"path_success_ema"`
 	TTFTEMA        float64 `json:"ttft_ema"`
@@ -286,6 +293,7 @@ func buildGeminiAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		load = &AccountLoadInfo{AccountID: account.ID}
 	}
 	learning, samples := adaptiveLearningState(state, account.IsOAuth(), now, settings)
+	cacheStats := adaptiveCacheStatsForState(state, now, settings)
 	runtimeStatus, flags, reasonCode, reason := adaptiveRuntimeState(state, account.IsActive() && account.Schedulable, load.CurrentConcurrency, now)
 	row := GeminiAdaptiveSchedulerAccountLearningSnapshot{
 		AccountID:                 account.ID,
@@ -309,6 +317,11 @@ func buildGeminiAdaptiveCoreLearningAccountSnapshot(account *Account, state adap
 		RuntimeReasonCode:         reasonCode,
 		RuntimeReason:             reason,
 		HealthSamples:             samples,
+		CacheHitRate:              cacheStats.HitRate,
+		CacheSamples:              cacheStats.Samples,
+		CacheInputTokens:          cacheStats.InputTokens,
+		CacheCreationTokens:       cacheStats.CacheCreationTokens,
+		CacheReadTokens:           cacheStats.CacheReadTokens,
 		CapacityGeneration:        state.CapacityGeneration,
 		CapacityHalfOpen:          state.CapacityHalfOpen,
 		CircuitHalfOpen:           containsAdaptiveRuntimeFlag(flags, adaptiveRuntimeCircuitHalfOpen),
@@ -361,6 +374,9 @@ func applyGeminiAdaptiveCoreScores(rows []GeminiAdaptiveSchedulerAccountLearning
 		rows[i].CapacityScore = score.CapacityScore
 		rows[i].LatencyScore = score.TTFTScore
 		rows[i].CostScore = score.CostScore
+		rows[i].CacheScore = score.CacheScore
+		rows[i].CacheHitRate = score.CacheHitRate
+		rows[i].CacheSamples = score.CacheSamples
 	}
 }
 
@@ -481,7 +497,7 @@ func sortGeminiAdaptiveLearningRows(rows []GeminiAdaptiveSchedulerAccountLearnin
 
 func normalizeGeminiAdaptiveLearningSortBy(value string) string {
 	switch strings.TrimSpace(value) {
-	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "last_event":
+	case "account", "status", "capacity", "load", "score", "samples", "error", "latency", "cache", "last_event":
 		return strings.TrimSpace(value)
 	default:
 		return ""
@@ -527,6 +543,10 @@ func compareGeminiAdaptiveLearningRows(left, right GeminiAdaptiveSchedulerAccoun
 		}
 	case "latency":
 		if cmp := compareFloat64(left.TTFTEMA, right.TTFTEMA); cmp != 0 {
+			return cmp
+		}
+	case "cache":
+		if cmp := compareFloat64(left.CacheHitRate, right.CacheHitRate); cmp != 0 {
 			return cmp
 		}
 	case "last_event":
@@ -637,6 +657,7 @@ func geminiAdaptiveLearningSettingsSnapshot(cfg GeminiAdaptiveSchedulerSettings)
 		WeightCapacity:            cfg.GeminiAdaptiveSchedulerWeightCapacity,
 		WeightLatency:             cfg.GeminiAdaptiveSchedulerWeightLatency,
 		WeightCost:                cfg.GeminiAdaptiveSchedulerWeightCost,
+		WeightCache:               cfg.GeminiAdaptiveSchedulerWeightCache,
 		LearningWindowSeconds:     cfg.GeminiAdaptiveSchedulerLearningWindowSeconds,
 		LearningMinHealthSamples:  cfg.GeminiAdaptiveSchedulerLearningMinHealthSamples,
 		SuccessEMAAlpha:           cfg.GeminiAdaptiveSchedulerSuccessEMAAlpha,
