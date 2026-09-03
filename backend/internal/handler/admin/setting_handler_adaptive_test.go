@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -47,4 +48,52 @@ func TestMergeGeminiAdaptiveSchedulerSettingsIncludesAccountCircuitFields(t *tes
 	require.Equal(t, cooldownMaxSeconds, merged.GeminiAdaptiveSchedulerCooldownMaxSeconds)
 	require.Equal(t, accountFailureThreshold, merged.GeminiAdaptiveSchedulerAccountFailureThreshold)
 	require.Equal(t, quotaProbeIntervalSeconds, merged.GeminiAdaptiveSchedulerQuotaProbeIntervalSeconds)
+}
+
+func TestAdaptiveSchedulerWeightCacheUpdateRequestBindingAndMerge(t *testing.T) {
+	var req UpdateSettingsRequest
+	err := json.Unmarshal([]byte(`{
+		"anthropic_adaptive_scheduler_weight_cache": 0.11,
+		"gemini_adaptive_scheduler_weight_cache": 0.22,
+		"openai_adaptive_scheduler_weight_cache": 0.33
+	}`), &req)
+	require.NoError(t, err)
+
+	require.NotNil(t, req.AnthropicAdaptiveSchedulerWeightCache)
+	require.NotNil(t, req.GeminiAdaptiveSchedulerWeightCache)
+	require.NotNil(t, req.OpenAIAdaptiveSchedulerWeightCache)
+
+	anthropic := mergeAnthropicAdaptiveSchedulerSettings(
+		service.DefaultAnthropicAdaptiveSchedulerSettings(),
+		req.AnthropicAdaptiveSchedulerSettingsUpdateRequest,
+	)
+	gemini := mergeGeminiAdaptiveSchedulerSettings(
+		service.DefaultGeminiAdaptiveSchedulerSettings(),
+		req.GeminiAdaptiveSchedulerSettingsUpdateRequest,
+	)
+	openAI := mergeOpenAIAdaptiveSchedulerSettings(
+		service.DefaultOpenAIAdaptiveSchedulerSettings(),
+		req.OpenAIAdaptiveSchedulerSettingsUpdateRequest,
+	)
+
+	require.Equal(t, 0.11, anthropic.AnthropicAdaptiveSchedulerWeightCache)
+	require.Equal(t, 0.22, gemini.GeminiAdaptiveSchedulerWeightCache)
+	require.Equal(t, 0.33, openAI.OpenAIAdaptiveSchedulerWeightCache)
+}
+
+func TestAdaptiveSchedulerWeightCacheMergePreservesOmittedValues(t *testing.T) {
+	anthropicPrevious := service.DefaultAnthropicAdaptiveSchedulerSettings()
+	anthropicPrevious.AnthropicAdaptiveSchedulerWeightCache = 0.11
+	geminiPrevious := service.DefaultGeminiAdaptiveSchedulerSettings()
+	geminiPrevious.GeminiAdaptiveSchedulerWeightCache = 0.22
+	openAIPrevious := service.DefaultOpenAIAdaptiveSchedulerSettings()
+	openAIPrevious.OpenAIAdaptiveSchedulerWeightCache = 0.33
+
+	anthropic := mergeAnthropicAdaptiveSchedulerSettings(anthropicPrevious, AnthropicAdaptiveSchedulerSettingsUpdateRequest{})
+	gemini := mergeGeminiAdaptiveSchedulerSettings(geminiPrevious, GeminiAdaptiveSchedulerSettingsUpdateRequest{})
+	openAI := mergeOpenAIAdaptiveSchedulerSettings(openAIPrevious, OpenAIAdaptiveSchedulerSettingsUpdateRequest{})
+
+	require.Equal(t, 0.11, anthropic.AnthropicAdaptiveSchedulerWeightCache)
+	require.Equal(t, 0.22, gemini.GeminiAdaptiveSchedulerWeightCache)
+	require.Equal(t, 0.33, openAI.OpenAIAdaptiveSchedulerWeightCache)
 }

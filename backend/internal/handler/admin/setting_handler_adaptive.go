@@ -35,6 +35,7 @@ type AnthropicAdaptiveSchedulerSettingsUpdateRequest struct {
 	AnthropicAdaptiveSchedulerWeightCapacity             *float64 `json:"anthropic_adaptive_scheduler_weight_capacity"`
 	AnthropicAdaptiveSchedulerWeightLatency              *float64 `json:"anthropic_adaptive_scheduler_weight_latency"`
 	AnthropicAdaptiveSchedulerWeightCost                 *float64 `json:"anthropic_adaptive_scheduler_weight_cost"`
+	AnthropicAdaptiveSchedulerWeightCache                *float64 `json:"anthropic_adaptive_scheduler_weight_cache"`
 }
 
 func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveSchedulerSettings, req AnthropicAdaptiveSchedulerSettingsUpdateRequest) service.AnthropicAdaptiveSchedulerSettings {
@@ -123,6 +124,9 @@ func mergeAnthropicAdaptiveSchedulerSettings(previous service.AnthropicAdaptiveS
 	if req.AnthropicAdaptiveSchedulerWeightCost != nil {
 		settings.AnthropicAdaptiveSchedulerWeightCost = *req.AnthropicAdaptiveSchedulerWeightCost
 	}
+	if req.AnthropicAdaptiveSchedulerWeightCache != nil {
+		settings.AnthropicAdaptiveSchedulerWeightCache = *req.AnthropicAdaptiveSchedulerWeightCache
+	}
 	return service.NormalizeAnthropicAdaptiveSchedulerSettings(settings)
 }
 
@@ -155,6 +159,7 @@ type GeminiAdaptiveSchedulerSettingsUpdateRequest struct {
 	GeminiAdaptiveSchedulerWeightCapacity             *float64 `json:"gemini_adaptive_scheduler_weight_capacity"`
 	GeminiAdaptiveSchedulerWeightLatency              *float64 `json:"gemini_adaptive_scheduler_weight_latency"`
 	GeminiAdaptiveSchedulerWeightCost                 *float64 `json:"gemini_adaptive_scheduler_weight_cost"`
+	GeminiAdaptiveSchedulerWeightCache                *float64 `json:"gemini_adaptive_scheduler_weight_cache"`
 }
 
 func mergeGeminiAdaptiveSchedulerSettings(previous service.GeminiAdaptiveSchedulerSettings, req GeminiAdaptiveSchedulerSettingsUpdateRequest) service.GeminiAdaptiveSchedulerSettings {
@@ -243,6 +248,9 @@ func mergeGeminiAdaptiveSchedulerSettings(previous service.GeminiAdaptiveSchedul
 	if req.GeminiAdaptiveSchedulerWeightCost != nil {
 		settings.GeminiAdaptiveSchedulerWeightCost = *req.GeminiAdaptiveSchedulerWeightCost
 	}
+	if req.GeminiAdaptiveSchedulerWeightCache != nil {
+		settings.GeminiAdaptiveSchedulerWeightCache = *req.GeminiAdaptiveSchedulerWeightCache
+	}
 	return service.NormalizeGeminiAdaptiveSchedulerSettings(settings)
 }
 
@@ -278,6 +286,7 @@ type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
 	OpenAIAdaptiveSchedulerWeightCapacity             *float64 `json:"openai_adaptive_scheduler_weight_capacity"`
 	OpenAIAdaptiveSchedulerWeightLatency              *float64 `json:"openai_adaptive_scheduler_weight_latency"`
 	OpenAIAdaptiveSchedulerWeightCost                 *float64 `json:"openai_adaptive_scheduler_weight_cost"`
+	OpenAIAdaptiveSchedulerWeightCache                *float64 `json:"openai_adaptive_scheduler_weight_cache"`
 }
 
 func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedulerSettings, req OpenAIAdaptiveSchedulerSettingsUpdateRequest) service.OpenAIAdaptiveSchedulerSettings {
@@ -374,6 +383,9 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	}
 	if req.OpenAIAdaptiveSchedulerWeightCost != nil {
 		settings.OpenAIAdaptiveSchedulerWeightCost = *req.OpenAIAdaptiveSchedulerWeightCost
+	}
+	if req.OpenAIAdaptiveSchedulerWeightCache != nil {
+		settings.OpenAIAdaptiveSchedulerWeightCache = *req.OpenAIAdaptiveSchedulerWeightCache
 	}
 	return service.NormalizeOpenAIAdaptiveSchedulerSettings(settings)
 }
