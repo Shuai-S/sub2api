@@ -1549,6 +1549,27 @@ describe("admin SettingsView payment visible method controls", () => {
         .get('[data-testid="upstream-billing-probe-settings"]')
         .attributes("style"),
     ).toContain("display: none");
+
+    const openaiPanel = wrapper.get(
+      '[data-testid="openai-adaptive-scheduler-settings"]',
+    );
+    expect(
+      openaiPanel.find('[data-testid="openai-adaptive-mode-shadow"]').exists(),
+    ).toBe(true);
+    expect(
+      openaiPanel.find('[data-testid="openai-adaptive-mode-enforce"]').exists(),
+    ).toBe(true);
+    expect(openaiPanel.find("select").exists()).toBe(false);
+    expect(
+      openaiPanel
+        .find('[data-testid="openai-adaptive-diagnostic-log-toggle"]')
+        .exists(),
+    ).toBe(true);
+    expect(
+      openaiPanel
+        .find('[data-testid="openai-adaptive-scheduler-parameters"]')
+        .exists(),
+    ).toBe(true);
   });
 
   it("fills OpenAI adaptive scheduler inputs with defaults and saves defaults when cleared", async () => {

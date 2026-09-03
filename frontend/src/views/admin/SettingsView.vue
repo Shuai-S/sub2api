@@ -5464,11 +5464,11 @@
 
               <div
                 v-show="activeTab === 'adaptive'"
-                class="space-y-4 border-t border-gray-200 pt-5 dark:border-dark-700"
+                class="space-y-4 border-t border-gray-100 pt-5 dark:border-dark-700"
                 data-testid="openai-adaptive-scheduler-settings"
               >
                 <div class="flex items-center justify-between gap-4">
-                  <div>
+                  <div class="min-w-0">
                     <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {{ t("admin.settings.openaiAdaptiveScheduler.title") }}
                     </label>
@@ -5483,44 +5483,86 @@
                 </div>
 
                 <div
-                  class="space-y-4"
+                  class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                  :class="{
+                    'opacity-60': !form.openai_adaptive_scheduler_enabled,
+                  }"
+                >
+                  <span class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>{{ t("admin.settings.openaiAdaptiveScheduler.mode") }}</span>
+                    <SchedulerParamHelp
+                      :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.mode')"
+                    />
+                  </span>
+                  <div
+                    class="inline-flex w-full overflow-hidden rounded-md border border-gray-300 sm:w-auto dark:border-dark-600"
+                    role="group"
+                    :aria-label="t('admin.settings.openaiAdaptiveScheduler.mode')"
+                  >
+                    <button
+                      v-for="mode in (['shadow', 'enforce'] as const)"
+                      :key="mode"
+                      type="button"
+                      class="min-w-0 flex-1 px-3 py-1.5 text-sm transition-colors sm:min-w-28"
+                      :class="
+                        form.openai_adaptive_scheduler_mode === mode
+                          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                          : 'bg-white text-gray-600 hover:bg-gray-50 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700'
+                      "
+                      :disabled="!form.openai_adaptive_scheduler_enabled"
+                      :aria-pressed="form.openai_adaptive_scheduler_mode === mode"
+                      :data-testid="`openai-adaptive-mode-${mode}`"
+                      @click="form.openai_adaptive_scheduler_mode = mode"
+                    >
+                      {{ t(`admin.settings.openaiAdaptiveScheduler.modes.${mode}`) }}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  class="flex items-center justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700"
                   :class="{ 'opacity-60': !form.openai_adaptive_scheduler_enabled }"
                 >
-                  <div class="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.mode") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.mode')" />
-                      </label>
-                      <select v-model="form.openai_adaptive_scheduler_mode" class="input" :disabled="!form.openai_adaptive_scheduler_enabled">
-                        <option value="shadow">{{ t("admin.settings.openaiAdaptiveScheduler.modes.shadow") }}</option>
-                        <option value="enforce">{{ t("admin.settings.openaiAdaptiveScheduler.modes.enforce") }}</option>
-                      </select>
-                    </div>
-                    <div class="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 dark:border-dark-600">
-                      <div class="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                        <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticLog") }}</span>
-                        <SchedulerParamHelp :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.diagnosticLog')" />
-                      </div>
-                      <Toggle v-model="form.openai_adaptive_scheduler_diagnostic_log_enabled" :disabled="!form.openai_adaptive_scheduler_enabled" />
-                    </div>
-                  </div>
+                  <span class="flex min-w-0 items-center text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <span>{{ t("admin.settings.openaiAdaptiveScheduler.diagnosticLog") }}</span>
+                    <SchedulerParamHelp
+                      :content="t('admin.settings.openaiAdaptiveScheduler.tooltips.diagnosticLog')"
+                    />
+                  </span>
+                  <Toggle
+                    v-model="form.openai_adaptive_scheduler_diagnostic_log_enabled"
+                    :disabled="!form.openai_adaptive_scheduler_enabled"
+                    data-testid="openai-adaptive-diagnostic-log-toggle"
+                  />
+                </div>
 
-                  <div
+                <div
+                  class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700"
+                  :class="{ 'opacity-60': !form.openai_adaptive_scheduler_enabled }"
+                  data-testid="openai-adaptive-scheduler-parameters"
+                >
+                  <section
                     v-for="section in openAIAdaptiveSchedulerSections"
                     :key="section.key"
                     class="space-y-3"
                   >
-                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-200">
                       {{ t(`admin.settings.openaiAdaptiveScheduler.sections.${section.key}`) }}
                     </h3>
-                    <div class="grid gap-4 md:grid-cols-3">
+                    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       <div v-for="field in section.fields" :key="field.key">
-                        <label class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300">
-                          <span>{{ t(`admin.settings.openaiAdaptiveScheduler.parameters.${field.label}`) }}</span>
-                          <SchedulerParamHelp :content="t(`admin.settings.openaiAdaptiveScheduler.tooltips.${field.label}`)" />
+                        <label
+                          class="mb-1 flex items-center text-sm font-medium text-gray-700 dark:text-gray-300"
+                          :for="field.key"
+                        >
+                          <span>
+                            {{ t(`admin.settings.openaiAdaptiveScheduler.parameters.${field.label}`) }}
+                          </span>
+                          <SchedulerParamHelp
+                            :content="t(`admin.settings.openaiAdaptiveScheduler.tooltips.${field.label}`)"
+                          />
                         </label>
                         <input
+                          :id="field.key"
                           v-model.number="form[field.key]"
                           class="input"
                           type="number"
@@ -5528,11 +5570,16 @@
                           :max="field.max"
                           :step="field.step"
                           :placeholder="openAIAdaptiveSchedulerPlaceholder(field.key)"
-                          :disabled="!form.openai_adaptive_scheduler_enabled || (section.key === 'diagnostics' && !form.openai_adaptive_scheduler_diagnostic_log_enabled)"
+                          :disabled="
+                            !form.openai_adaptive_scheduler_enabled ||
+                            (section.key === 'diagnostics' &&
+                              !form.openai_adaptive_scheduler_diagnostic_log_enabled)
+                          "
+                          :data-testid="field.key.replace(/_/g, '-')"
                         />
                       </div>
                     </div>
-                  </div>
+                  </section>
                 </div>
 
               </div>

@@ -14,6 +14,12 @@ const geminiParameterKeys = [
   'cooldownMaxSeconds'
 ] as const
 
+const openaiRecoveryParameterKeys = [
+  'recoveryExplorationRate',
+  'recoveryMaxConcurrency',
+  'recoveryWarmupSuccesses'
+] as const
+
 describe.each([
   ['zh', zhSettings],
   ['en', enSettings]
@@ -37,6 +43,12 @@ describe.each([
     for (const key of geminiParameterKeys) {
       expect(gemini.parameters[key], `${locale}.geminiAdaptiveScheduler.parameters.${key} is missing`).toBeTypeOf('string')
       expect(gemini.tooltips[key], `${locale}.geminiAdaptiveScheduler.tooltips.${key} is missing`).toBeTypeOf('string')
+    }
+
+    const openai = messages.settings.openaiAdaptiveScheduler
+    for (const key of openaiRecoveryParameterKeys) {
+      expect(openai.parameters[key], `${locale}.openaiAdaptiveScheduler.parameters.${key} is missing`).toBeTypeOf('string')
+      expect(openai.tooltips[key], `${locale}.openaiAdaptiveScheduler.tooltips.${key} is missing`).toBeTypeOf('string')
     }
   })
 })
