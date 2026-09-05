@@ -608,6 +608,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		imageCounter.AddSSEData(message)
 
+		if eventType == "error" || eventType == "response.failed" {
+			markOpenAICyberPolicyEvent(c, message, http.StatusOK, usage)
+		}
 		if eventType == "response.failed" {
 			failedErr := s.newOpenAIWSResponseFailedError(
 				c,

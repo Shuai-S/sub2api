@@ -105,14 +105,17 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
 // (failover, or a protocol-correct error once failover is exhausted).
 //
 // passthrough tags the Ops error event for the OpenAI passthrough forward path.
-func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, passthrough bool) error {
+func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, passthrough bool, upstreamURL ...string) error {
 	safeErr := sanitizeUpstreamErrorMessage(err.Error())
 	setOpsUpstreamError(c, 0, safeErr, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           account.Platform,
 		AccountID:          account.ID,
 		AccountName:        account.Name,
 		UpstreamStatusCode: 0,
+		UpstreamURL:        safeUpstreamURL(firstNonEmpty(upstreamURL...)),
 		Passthrough:        passthrough,
 		Kind:               "request_error",
 		Message:            safeErr,
