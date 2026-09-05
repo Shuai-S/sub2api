@@ -1251,6 +1251,8 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_UpstreamRequest
 	require.NotContains(t, string(failoverErr.ResponseBody), "account-secret.example")
 	require.NotContains(t, string(failoverErr.ResponseBody), "1.1.1.1")
 	require.NotContains(t, string(failoverErr.ResponseBody), "no such host")
+	// 传输层错误交给 handler failover，service 不得写响应。
+	require.False(t, c.Writer.Written())
 }
 
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardDirect_EmptyResponseBody(t *testing.T) {

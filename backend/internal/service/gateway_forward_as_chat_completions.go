@@ -139,7 +139,9 @@ func (s *GatewayService) ForwardAsChatCompletions(
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		return nil, newGatewayTransportFailoverError(ctx, c, account, upstreamReq.URL.String(), false, err)
+		return nil, s.handleUpstreamTransportError(ctx, c, account, err, OpsUpstreamErrorEvent{
+			UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
+		})
 	}
 	defer func() { _ = resp.Body.Close() }()
 

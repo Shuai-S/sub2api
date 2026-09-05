@@ -394,11 +394,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
-			// Transport attempt left local validation; count Ollama Cloud activity.
-			if !errors.Is(err, context.Canceled) {
-				scheduleOllamaCloudUsageActivity(s.deferredService, account)
-			}
-			return nil, newGatewayTransportFailoverError(ctx, c, account, upstreamReq.URL.String(), false, err)
+			return nil, s.handleUpstreamTransportError(ctx, c, account, err, OpsUpstreamErrorEvent{
+				UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
+			})
 		}
 
 		// 优先检测thinking block签名错误（400）并重试一次

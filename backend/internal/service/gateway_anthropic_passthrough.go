@@ -116,10 +116,10 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
-			if !errors.Is(err, context.Canceled) {
-				scheduleOllamaCloudUsageActivity(s.deferredService, account)
-			}
-			return nil, newGatewayTransportFailoverError(ctx, c, account, upstreamReq.URL.String(), true, err)
+			return nil, s.handleUpstreamTransportError(ctx, c, account, err, OpsUpstreamErrorEvent{
+				UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
+				Passthrough: true,
+			})
 		}
 
 		// 透传分支禁止 400 请求体降级重试（该重试会改写请求体）
