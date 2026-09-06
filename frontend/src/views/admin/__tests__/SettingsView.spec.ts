@@ -582,6 +582,7 @@ const openAIAdaptiveSchedulerDefaults = {
   openai_adaptive_scheduler_high_error_exit_rate: 0.15,
   openai_adaptive_scheduler_capacity_recovery_samples: 8,
   openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
+  openai_adaptive_scheduler_same_account_429_retry_budget_ms: 1000,
 } as const;
 
 type OpenAIAdaptiveSchedulerDefaultKey =
@@ -1670,6 +1671,37 @@ describe("admin SettingsView payment visible method controls", () => {
       expect.objectContaining({
         ...openAIAdaptiveSchedulerDefaults,
         openai_adaptive_scheduler_diagnostic_log_enabled: true,
+      }),
+    );
+  });
+
+  it("saves OpenAI quota probe interval and same-account 429 wait budget", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_adaptive_scheduler_enabled: true,
+      openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
+      openai_adaptive_scheduler_same_account_429_retry_budget_ms: 1000,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openAdaptiveTab(wrapper);
+
+    const quotaProbeInput = wrapper.get(
+      '[data-testid="openai-adaptive-scheduler-quota-probe-interval-seconds"]',
+    );
+    const retryBudgetInput = wrapper.get(
+      '[data-testid="openai-adaptive-scheduler-same-account-429-retry-budget-ms"]',
+    );
+    await quotaProbeInput.setValue("45");
+    await retryBudgetInput.setValue("2750");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openai_adaptive_scheduler_quota_probe_interval_seconds: 45,
+        openai_adaptive_scheduler_same_account_429_retry_budget_ms: 2750,
       }),
     );
   });

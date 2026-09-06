@@ -10131,6 +10131,7 @@ type SettingsForm = Omit<
   openai_adaptive_scheduler_high_error_exit_rate: number;
   openai_adaptive_scheduler_capacity_recovery_samples: number;
   openai_adaptive_scheduler_quota_probe_interval_seconds: number;
+  openai_adaptive_scheduler_same_account_429_retry_budget_ms: number;
   // 系统全局平台限额 map；form 内始终归一化为全 4 平台对象（模板非空绑定依赖此不变量）
   default_platform_quotas: DefaultPlatformQuotasMap;
   account_scheduling_thresholds: ReturnType<typeof normalizeAccountSchedulingThresholdsMap>;
@@ -12748,6 +12749,8 @@ async function saveSettings() {
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_capacity_probe_load_threshold"),
       openai_adaptive_scheduler_quota_probe_interval_seconds:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_quota_probe_interval_seconds"),
+      openai_adaptive_scheduler_same_account_429_retry_budget_ms:
+        openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_same_account_429_retry_budget_ms"),
       openai_adaptive_scheduler_weight_success:
         openAIAdaptiveSchedulerNumber("openai_adaptive_scheduler_weight_success"),
       openai_adaptive_scheduler_weight_cost:
