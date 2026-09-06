@@ -403,7 +403,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExplorationWithPlanLoader
 		return nil, nil, nil
 	}
 	coreSettings := openAIAdaptiveCoreSettings(cfg)
-	if coreSettings.RecoveryExplorationRate <= 0 || rand.Float64() >= coreSettings.RecoveryExplorationRate {
+	if coreSettings.RecoveryExplorationRate <= 0 {
 		return nil, nil, nil
 	}
 	plan, err := loadPlan()
@@ -412,6 +412,13 @@ func (s *adaptiveOpenAIAccountScheduler) selectRecoveryExplorationWithPlanLoader
 	}
 	candidates := openAIAdaptiveRecoveryCandidates(plan.candidates, time.Now(), coreSettings)
 	if len(candidates) == 0 {
+		return nil, nil, nil
+	}
+	// Always give a never-probed account its first recovery sample. Subsequent
+	// probes use the configured exploration rate, while the ordered candidate
+	// list ensures the oldest probe remains first when exploration fires.
+	firstProbe := candidates[0].coreState.LastProbeAt.IsZero()
+	if !firstProbe && rand.Float64() >= coreSettings.RecoveryExplorationRate {
 		return nil, nil, nil
 	}
 	probeReq := req

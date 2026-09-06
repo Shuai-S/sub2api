@@ -234,6 +234,18 @@ func TestClaimOpenAIStreamingOAuth429RetryUsesOneSecondBudget(t *testing.T) {
 	require.False(t, ok)
 	require.Zero(t, delay)
 	require.Equal(t, 1, count)
+	customCounts := map[int64]int{}
+	delay, count, ok = claimOpenAIStreamingOAuth429Retry(account, &service.UpstreamFailoverError{
+		StatusCode: http.StatusTooManyRequests, RetryableOnSameAccount: true, SameAccountRetryDelay: 1500 * time.Millisecond,
+	}, customCounts, 2*time.Second)
+	require.True(t, ok)
+	require.Equal(t, 1500*time.Millisecond, delay)
+	require.Equal(t, 1, count)
+	zeroCounts := map[int64]int{}
+	_, _, ok = claimOpenAIStreamingOAuth429Retry(account, &service.UpstreamFailoverError{
+		StatusCode: http.StatusTooManyRequests, RetryableOnSameAccount: true, SameAccountRetryDelay: 0,
+	}, zeroCounts, 0)
+	require.False(t, ok)
 }
 
 func TestOpenAIAdaptiveFailureOptionsIncludesRetryProgress(t *testing.T) {

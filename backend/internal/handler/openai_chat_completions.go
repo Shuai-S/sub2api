@@ -361,7 +361,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					// /v1/responses. Non-streaming requests and API-key pool mode
 					// retain their existing retry policy.
 					if reqStream && isOpenAIStreamingOAuth429(account, failoverErr) {
-						retryDelay, retryCount, ok := claimOpenAIStreamingOAuth429Retry(account, failoverErr, sameAccountRetryCount)
+						retryDelay, retryCount, ok := claimOpenAIStreamingOAuth429Retry(account, failoverErr, sameAccountRetryCount, time.Duration(h.gatewayService.OpenAIAdaptiveSchedulerSettingsSnapshot(c.Request.Context()).OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS)*time.Millisecond)
 						if ok {
 							reqLog.Warn("openai.streaming_oauth429_same_account_retry",
 								zap.Int64("account_id", account.ID),

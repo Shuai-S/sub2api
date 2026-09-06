@@ -801,6 +801,7 @@ export interface SystemSettings {
   openai_adaptive_scheduler_high_error_exit_rate?: number;
   openai_adaptive_scheduler_capacity_recovery_samples?: number;
   openai_adaptive_scheduler_quota_probe_interval_seconds?: number;
+  openai_adaptive_scheduler_same_account_429_retry_budget_ms?: number;
 
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled: boolean;
@@ -1199,6 +1200,7 @@ export interface UpdateSettingsRequest {
   openai_adaptive_scheduler_high_error_exit_rate?: number;
   openai_adaptive_scheduler_capacity_recovery_samples?: number;
   openai_adaptive_scheduler_quota_probe_interval_seconds?: number;
+  openai_adaptive_scheduler_same_account_429_retry_budget_ms?: number;
   // 余额、订阅到期与账号限额通知
   balance_low_notify_enabled?: boolean;
   balance_low_notify_threshold?: number;

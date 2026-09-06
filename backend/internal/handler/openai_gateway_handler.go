@@ -261,9 +261,9 @@ func claimOpenAISameAccountRetry(account *service.Account, failoverErr *service.
 
 // claimOpenAIStreamingOAuth429Retry applies the request-level TTFT budget to
 // streaming OpenAI OAuth/SetupToken 429s. A retry is useful only when the
-// upstream asks us to wait no more than one second; longer Retry-After values
+// upstream asks us to wait no longer than the configured budget; longer Retry-After values
 // go straight to account failover instead of delaying the first token.
-func claimOpenAIStreamingOAuth429Retry(account *service.Account, failoverErr *service.UpstreamFailoverError, retryCounts map[int64]int) (time.Duration, int, bool) {
+func claimOpenAIStreamingOAuth429Retry(account *service.Account, failoverErr *service.UpstreamFailoverError, retryCounts map[int64]int, budgets ...time.Duration) (time.Duration, int, bool) {
 	if account == nil || failoverErr == nil || !account.IsOpenAIOAuthLike() ||
 		failoverErr.StatusCode != http.StatusTooManyRequests || !failoverErr.RetryableOnSameAccount {
 		return 0, 0, false
@@ -275,7 +275,11 @@ func claimOpenAIStreamingOAuth429Retry(account *service.Account, failoverErr *se
 	if retryDelay <= 0 {
 		retryDelay = sameAccountRetryDelay
 	}
-	if retryDelay > streamingOAuth429RetryBudget {
+	budget := streamingOAuth429RetryBudget
+	if len(budgets) > 0 {
+		budget = budgets[0]
+	}
+	if retryDelay > budget {
 		return retryDelay, retryCounts[account.ID], false
 	}
 	retryCounts[account.ID]++
@@ -1069,7 +1073,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// 流式 OAuth/SetupToken 429 使用独立的首字预算；非流式和
 					// API Key 池模式继续使用原有账号级重试策略。
 					if reqStream && isOpenAIStreamingOAuth429(account, failoverErr) {
-						retryDelay, retryCount, ok := claimOpenAIStreamingOAuth429Retry(account, failoverErr, sameAccountRetryCount)
+						retryDelay, retryCount, ok := claimOpenAIStreamingOAuth429Retry(account, failoverErr, sameAccountRetryCount, time.Duration(h.gatewayService.OpenAIAdaptiveSchedulerSettingsSnapshot(c.Request.Context()).OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS)*time.Millisecond)
 						if ok {
 							reqLog.Warn("openai.streaming_oauth429_same_account_retry",
 								zap.Int64("account_id", account.ID),

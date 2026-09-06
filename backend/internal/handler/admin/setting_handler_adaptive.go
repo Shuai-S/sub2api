@@ -255,38 +255,39 @@ func mergeGeminiAdaptiveSchedulerSettings(previous service.GeminiAdaptiveSchedul
 }
 
 type OpenAIAdaptiveSchedulerSettingsUpdateRequest struct {
-	OpenAIAdaptiveSchedulerEnabled                    *bool    `json:"openai_adaptive_scheduler_enabled"`
-	OpenAIAdaptiveSchedulerDiagnosticLogEnabled       *bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`
-	OpenAIAdaptiveSchedulerDiagnosticLogSampleRate    *float64 `json:"openai_adaptive_scheduler_diagnostic_log_sample_rate"`
-	OpenAIAdaptiveSchedulerMode                       *string  `json:"openai_adaptive_scheduler_mode"`
-	OpenAIAdaptiveSchedulerTopK                       *int     `json:"openai_adaptive_scheduler_top_k"`
-	OpenAIAdaptiveSchedulerSoftmaxTemperature         *float64 `json:"openai_adaptive_scheduler_softmax_temperature"`
-	OpenAIAdaptiveSchedulerExplorationRate            *float64 `json:"openai_adaptive_scheduler_exploration_rate"`
-	OpenAIAdaptiveSchedulerRecoveryExplorationRate    *float64 `json:"openai_adaptive_scheduler_recovery_exploration_rate"`
-	OpenAIAdaptiveSchedulerRecoveryMaxConcurrency     *int     `json:"openai_adaptive_scheduler_recovery_max_concurrency"`
-	OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses    *int     `json:"openai_adaptive_scheduler_recovery_warmup_successes"`
-	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty  *float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
-	OpenAIAdaptiveSchedulerLearningWindowSeconds      *int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
-	OpenAIAdaptiveSchedulerLearningMinHealthSamples   *int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
-	OpenAIAdaptiveSchedulerSuccessEMAAlpha            *float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
-	OpenAIAdaptiveSchedulerTTFTEMAAlpha               *float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
-	OpenAIAdaptiveSchedulerHealthFailureThreshold     *int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
-	OpenAIAdaptiveSchedulerCooldownBaseSeconds        *int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
-	OpenAIAdaptiveSchedulerCooldownMaxSeconds         *int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
-	OpenAIAdaptiveSchedulerHighErrorMinSamples        *int     `json:"openai_adaptive_scheduler_high_error_min_samples"`
-	OpenAIAdaptiveSchedulerHighErrorMaxSamples        *int     `json:"openai_adaptive_scheduler_high_error_max_samples"`
-	OpenAIAdaptiveSchedulerHighErrorEnterRate         *float64 `json:"openai_adaptive_scheduler_high_error_enter_rate"`
-	OpenAIAdaptiveSchedulerHighErrorExitRate          *float64 `json:"openai_adaptive_scheduler_high_error_exit_rate"`
-	OpenAIAdaptiveSchedulerShrinkFactorSoft           *float64 `json:"openai_adaptive_scheduler_shrink_factor_soft"`
-	OpenAIAdaptiveSchedulerCapacityGrowthFactor       *float64 `json:"openai_adaptive_scheduler_capacity_growth_factor"`
-	OpenAIAdaptiveSchedulerCapacityRecoverySamples    *int     `json:"openai_adaptive_scheduler_capacity_recovery_samples"`
-	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold *float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
-	OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds  *int     `json:"openai_adaptive_scheduler_quota_probe_interval_seconds"`
-	OpenAIAdaptiveSchedulerWeightSuccess              *float64 `json:"openai_adaptive_scheduler_weight_success"`
-	OpenAIAdaptiveSchedulerWeightCapacity             *float64 `json:"openai_adaptive_scheduler_weight_capacity"`
-	OpenAIAdaptiveSchedulerWeightLatency              *float64 `json:"openai_adaptive_scheduler_weight_latency"`
-	OpenAIAdaptiveSchedulerWeightCost                 *float64 `json:"openai_adaptive_scheduler_weight_cost"`
-	OpenAIAdaptiveSchedulerWeightCache                *float64 `json:"openai_adaptive_scheduler_weight_cache"`
+	OpenAIAdaptiveSchedulerEnabled                     *bool    `json:"openai_adaptive_scheduler_enabled"`
+	OpenAIAdaptiveSchedulerDiagnosticLogEnabled        *bool    `json:"openai_adaptive_scheduler_diagnostic_log_enabled"`
+	OpenAIAdaptiveSchedulerDiagnosticLogSampleRate     *float64 `json:"openai_adaptive_scheduler_diagnostic_log_sample_rate"`
+	OpenAIAdaptiveSchedulerMode                        *string  `json:"openai_adaptive_scheduler_mode"`
+	OpenAIAdaptiveSchedulerTopK                        *int     `json:"openai_adaptive_scheduler_top_k"`
+	OpenAIAdaptiveSchedulerSoftmaxTemperature          *float64 `json:"openai_adaptive_scheduler_softmax_temperature"`
+	OpenAIAdaptiveSchedulerExplorationRate             *float64 `json:"openai_adaptive_scheduler_exploration_rate"`
+	OpenAIAdaptiveSchedulerRecoveryExplorationRate     *float64 `json:"openai_adaptive_scheduler_recovery_exploration_rate"`
+	OpenAIAdaptiveSchedulerRecoveryMaxConcurrency      *int     `json:"openai_adaptive_scheduler_recovery_max_concurrency"`
+	OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses     *int     `json:"openai_adaptive_scheduler_recovery_warmup_successes"`
+	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty   *float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
+	OpenAIAdaptiveSchedulerLearningWindowSeconds       *int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
+	OpenAIAdaptiveSchedulerLearningMinHealthSamples    *int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
+	OpenAIAdaptiveSchedulerSuccessEMAAlpha             *float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
+	OpenAIAdaptiveSchedulerTTFTEMAAlpha                *float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
+	OpenAIAdaptiveSchedulerHealthFailureThreshold      *int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
+	OpenAIAdaptiveSchedulerCooldownBaseSeconds         *int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
+	OpenAIAdaptiveSchedulerCooldownMaxSeconds          *int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
+	OpenAIAdaptiveSchedulerHighErrorMinSamples         *int     `json:"openai_adaptive_scheduler_high_error_min_samples"`
+	OpenAIAdaptiveSchedulerHighErrorMaxSamples         *int     `json:"openai_adaptive_scheduler_high_error_max_samples"`
+	OpenAIAdaptiveSchedulerHighErrorEnterRate          *float64 `json:"openai_adaptive_scheduler_high_error_enter_rate"`
+	OpenAIAdaptiveSchedulerHighErrorExitRate           *float64 `json:"openai_adaptive_scheduler_high_error_exit_rate"`
+	OpenAIAdaptiveSchedulerShrinkFactorSoft            *float64 `json:"openai_adaptive_scheduler_shrink_factor_soft"`
+	OpenAIAdaptiveSchedulerCapacityGrowthFactor        *float64 `json:"openai_adaptive_scheduler_capacity_growth_factor"`
+	OpenAIAdaptiveSchedulerCapacityRecoverySamples     *int     `json:"openai_adaptive_scheduler_capacity_recovery_samples"`
+	OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold  *float64 `json:"openai_adaptive_scheduler_capacity_probe_load_threshold"`
+	OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds   *int     `json:"openai_adaptive_scheduler_quota_probe_interval_seconds"`
+	OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS *int     `json:"openai_adaptive_scheduler_same_account_429_retry_budget_ms"`
+	OpenAIAdaptiveSchedulerWeightSuccess               *float64 `json:"openai_adaptive_scheduler_weight_success"`
+	OpenAIAdaptiveSchedulerWeightCapacity              *float64 `json:"openai_adaptive_scheduler_weight_capacity"`
+	OpenAIAdaptiveSchedulerWeightLatency               *float64 `json:"openai_adaptive_scheduler_weight_latency"`
+	OpenAIAdaptiveSchedulerWeightCost                  *float64 `json:"openai_adaptive_scheduler_weight_cost"`
+	OpenAIAdaptiveSchedulerWeightCache                 *float64 `json:"openai_adaptive_scheduler_weight_cache"`
 }
 
 func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedulerSettings, req OpenAIAdaptiveSchedulerSettingsUpdateRequest) service.OpenAIAdaptiveSchedulerSettings {
@@ -371,6 +372,9 @@ func mergeOpenAIAdaptiveSchedulerSettings(previous service.OpenAIAdaptiveSchedul
 	}
 	if req.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds != nil {
 		settings.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds = *req.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds
+	}
+	if req.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS != nil {
+		settings.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS = *req.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS
 	}
 	if req.OpenAIAdaptiveSchedulerWeightSuccess != nil {
 		settings.OpenAIAdaptiveSchedulerWeightSuccess = *req.OpenAIAdaptiveSchedulerWeightSuccess

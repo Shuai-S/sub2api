@@ -10412,6 +10412,7 @@ const openAIAdaptiveSchedulerRecommendedValues = {
   openai_adaptive_scheduler_high_error_exit_rate: 0.15,
   openai_adaptive_scheduler_capacity_recovery_samples: 8,
   openai_adaptive_scheduler_quota_probe_interval_seconds: 300,
+  openai_adaptive_scheduler_same_account_429_retry_budget_ms: 1000,
 } satisfies Partial<SettingsForm>;
 
 type OpenAIAdaptiveSchedulerRecommendedKey =
@@ -10461,6 +10462,7 @@ const openAIAdaptiveSchedulerSections: ReadonlyArray<{
     key: "quota",
     fields: [
       { key: "openai_adaptive_scheduler_quota_probe_interval_seconds", label: "quotaProbeIntervalSeconds", min: 1, step: 1 },
+      { key: "openai_adaptive_scheduler_same_account_429_retry_budget_ms", label: "sameAccount429RetryBudgetMs", min: 0, max: 10000, step: 100 },
     ],
   },
   {

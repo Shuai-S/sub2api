@@ -19,38 +19,39 @@ const (
 const (
 	openAIAdaptiveSchedulerSettingPrefix = "openai_adaptive_scheduler_"
 
-	openAIAdaptiveSchedulerEnabledKey                    = openAIAdaptiveSchedulerSettingPrefix + "enabled"
-	openAIAdaptiveSchedulerDiagnosticLogEnabledKey       = openAIAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
-	openAIAdaptiveSchedulerDiagnosticLogSampleRateKey    = openAIAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
-	openAIAdaptiveSchedulerModeKey                       = openAIAdaptiveSchedulerSettingPrefix + "mode"
-	openAIAdaptiveSchedulerTopKKey                       = openAIAdaptiveSchedulerSettingPrefix + "top_k"
-	openAIAdaptiveSchedulerExplorationRateKey            = openAIAdaptiveSchedulerSettingPrefix + "exploration_rate"
-	openAIAdaptiveSchedulerRecoveryExplorationRateKey    = openAIAdaptiveSchedulerSettingPrefix + "recovery_exploration_rate"
-	openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey     = openAIAdaptiveSchedulerSettingPrefix + "recovery_max_concurrency"
-	openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey    = openAIAdaptiveSchedulerSettingPrefix + "recovery_warmup_successes"
-	openAIAdaptiveSchedulerSoftmaxTemperatureKey         = openAIAdaptiveSchedulerSettingPrefix + "softmax_temperature"
-	openAIAdaptiveSchedulerCapacityGrowthFactorKey       = openAIAdaptiveSchedulerSettingPrefix + "capacity_growth_factor"
-	openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey = openAIAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
-	openAIAdaptiveSchedulerShrinkFactorSoftKey           = openAIAdaptiveSchedulerSettingPrefix + "shrink_factor_soft"
-	openAIAdaptiveSchedulerLearningWindowSecondsKey      = openAIAdaptiveSchedulerSettingPrefix + "learning_window_seconds"
-	openAIAdaptiveSchedulerSuccessEMAAlphaKey            = openAIAdaptiveSchedulerSettingPrefix + "success_ema_alpha"
-	openAIAdaptiveSchedulerTTFTEMAAlphaKey               = openAIAdaptiveSchedulerSettingPrefix + "ttft_ema_alpha"
-	openAIAdaptiveSchedulerCooldownBaseSecondsKey        = openAIAdaptiveSchedulerSettingPrefix + "cooldown_base_seconds"
-	openAIAdaptiveSchedulerCooldownMaxSecondsKey         = openAIAdaptiveSchedulerSettingPrefix + "cooldown_max_seconds"
-	openAIAdaptiveSchedulerWeightSuccessKey              = openAIAdaptiveSchedulerSettingPrefix + "weight_success"
-	openAIAdaptiveSchedulerWeightCostKey                 = openAIAdaptiveSchedulerSettingPrefix + "weight_cost"
-	openAIAdaptiveSchedulerWeightCapacityKey             = openAIAdaptiveSchedulerSettingPrefix + "weight_capacity"
-	openAIAdaptiveSchedulerWeightLatencyKey              = openAIAdaptiveSchedulerSettingPrefix + "weight_latency"
-	openAIAdaptiveSchedulerWeightCacheKey                = openAIAdaptiveSchedulerSettingPrefix + "weight_cache"
-	openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey  = openAIAdaptiveSchedulerSettingPrefix + "consecutive_failure_penalty"
-	openAIAdaptiveSchedulerLearningMinHealthSamplesKey   = openAIAdaptiveSchedulerSettingPrefix + "learning_min_health_samples"
-	openAIAdaptiveSchedulerHealthFailureThresholdKey     = openAIAdaptiveSchedulerSettingPrefix + "health_failure_threshold"
-	openAIAdaptiveSchedulerHighErrorMinSamplesKey        = openAIAdaptiveSchedulerSettingPrefix + "high_error_min_samples"
-	openAIAdaptiveSchedulerHighErrorMaxSamplesKey        = openAIAdaptiveSchedulerSettingPrefix + "high_error_max_samples"
-	openAIAdaptiveSchedulerHighErrorEnterRateKey         = openAIAdaptiveSchedulerSettingPrefix + "high_error_enter_rate"
-	openAIAdaptiveSchedulerHighErrorExitRateKey          = openAIAdaptiveSchedulerSettingPrefix + "high_error_exit_rate"
-	openAIAdaptiveSchedulerCapacityRecoverySamplesKey    = openAIAdaptiveSchedulerSettingPrefix + "capacity_recovery_samples"
-	openAIAdaptiveSchedulerQuotaProbeIntervalSecondsKey  = openAIAdaptiveSchedulerSettingPrefix + "quota_probe_interval_seconds"
+	openAIAdaptiveSchedulerEnabledKey                     = openAIAdaptiveSchedulerSettingPrefix + "enabled"
+	openAIAdaptiveSchedulerDiagnosticLogEnabledKey        = openAIAdaptiveSchedulerSettingPrefix + "diagnostic_log_enabled"
+	openAIAdaptiveSchedulerDiagnosticLogSampleRateKey     = openAIAdaptiveSchedulerSettingPrefix + "diagnostic_log_sample_rate"
+	openAIAdaptiveSchedulerModeKey                        = openAIAdaptiveSchedulerSettingPrefix + "mode"
+	openAIAdaptiveSchedulerTopKKey                        = openAIAdaptiveSchedulerSettingPrefix + "top_k"
+	openAIAdaptiveSchedulerExplorationRateKey             = openAIAdaptiveSchedulerSettingPrefix + "exploration_rate"
+	openAIAdaptiveSchedulerRecoveryExplorationRateKey     = openAIAdaptiveSchedulerSettingPrefix + "recovery_exploration_rate"
+	openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey      = openAIAdaptiveSchedulerSettingPrefix + "recovery_max_concurrency"
+	openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey     = openAIAdaptiveSchedulerSettingPrefix + "recovery_warmup_successes"
+	openAIAdaptiveSchedulerSoftmaxTemperatureKey          = openAIAdaptiveSchedulerSettingPrefix + "softmax_temperature"
+	openAIAdaptiveSchedulerCapacityGrowthFactorKey        = openAIAdaptiveSchedulerSettingPrefix + "capacity_growth_factor"
+	openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey  = openAIAdaptiveSchedulerSettingPrefix + "capacity_probe_load_threshold"
+	openAIAdaptiveSchedulerShrinkFactorSoftKey            = openAIAdaptiveSchedulerSettingPrefix + "shrink_factor_soft"
+	openAIAdaptiveSchedulerLearningWindowSecondsKey       = openAIAdaptiveSchedulerSettingPrefix + "learning_window_seconds"
+	openAIAdaptiveSchedulerSuccessEMAAlphaKey             = openAIAdaptiveSchedulerSettingPrefix + "success_ema_alpha"
+	openAIAdaptiveSchedulerTTFTEMAAlphaKey                = openAIAdaptiveSchedulerSettingPrefix + "ttft_ema_alpha"
+	openAIAdaptiveSchedulerCooldownBaseSecondsKey         = openAIAdaptiveSchedulerSettingPrefix + "cooldown_base_seconds"
+	openAIAdaptiveSchedulerCooldownMaxSecondsKey          = openAIAdaptiveSchedulerSettingPrefix + "cooldown_max_seconds"
+	openAIAdaptiveSchedulerWeightSuccessKey               = openAIAdaptiveSchedulerSettingPrefix + "weight_success"
+	openAIAdaptiveSchedulerWeightCostKey                  = openAIAdaptiveSchedulerSettingPrefix + "weight_cost"
+	openAIAdaptiveSchedulerWeightCapacityKey              = openAIAdaptiveSchedulerSettingPrefix + "weight_capacity"
+	openAIAdaptiveSchedulerWeightLatencyKey               = openAIAdaptiveSchedulerSettingPrefix + "weight_latency"
+	openAIAdaptiveSchedulerWeightCacheKey                 = openAIAdaptiveSchedulerSettingPrefix + "weight_cache"
+	openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey   = openAIAdaptiveSchedulerSettingPrefix + "consecutive_failure_penalty"
+	openAIAdaptiveSchedulerLearningMinHealthSamplesKey    = openAIAdaptiveSchedulerSettingPrefix + "learning_min_health_samples"
+	openAIAdaptiveSchedulerHealthFailureThresholdKey      = openAIAdaptiveSchedulerSettingPrefix + "health_failure_threshold"
+	openAIAdaptiveSchedulerHighErrorMinSamplesKey         = openAIAdaptiveSchedulerSettingPrefix + "high_error_min_samples"
+	openAIAdaptiveSchedulerHighErrorMaxSamplesKey         = openAIAdaptiveSchedulerSettingPrefix + "high_error_max_samples"
+	openAIAdaptiveSchedulerHighErrorEnterRateKey          = openAIAdaptiveSchedulerSettingPrefix + "high_error_enter_rate"
+	openAIAdaptiveSchedulerHighErrorExitRateKey           = openAIAdaptiveSchedulerSettingPrefix + "high_error_exit_rate"
+	openAIAdaptiveSchedulerCapacityRecoverySamplesKey     = openAIAdaptiveSchedulerSettingPrefix + "capacity_recovery_samples"
+	openAIAdaptiveSchedulerQuotaProbeIntervalSecondsKey   = openAIAdaptiveSchedulerSettingPrefix + "quota_probe_interval_seconds"
+	openAIAdaptiveSchedulerSameAccount429RetryBudgetMSKey = openAIAdaptiveSchedulerSettingPrefix + "same_account_429_retry_budget_ms"
 )
 
 const (
@@ -76,23 +77,24 @@ type OpenAIAdaptiveSchedulerSettings struct {
 	OpenAIAdaptiveSchedulerLearningWindowSeconds      int     `json:"openai_adaptive_scheduler_learning_window_seconds"`
 	OpenAIAdaptiveSchedulerSuccessEMAAlpha            float64 `json:"openai_adaptive_scheduler_success_ema_alpha"`
 	// Retained for API compatibility. OpenAI TTFT scheduling uses rolling-window percentiles.
-	OpenAIAdaptiveSchedulerTTFTEMAAlpha              float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
-	OpenAIAdaptiveSchedulerCooldownBaseSeconds       int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
-	OpenAIAdaptiveSchedulerCooldownMaxSeconds        int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
-	OpenAIAdaptiveSchedulerWeightSuccess             float64 `json:"openai_adaptive_scheduler_weight_success"`
-	OpenAIAdaptiveSchedulerWeightCost                float64 `json:"openai_adaptive_scheduler_weight_cost"`
-	OpenAIAdaptiveSchedulerWeightCapacity            float64 `json:"openai_adaptive_scheduler_weight_capacity"`
-	OpenAIAdaptiveSchedulerWeightLatency             float64 `json:"openai_adaptive_scheduler_weight_latency"`
-	OpenAIAdaptiveSchedulerWeightCache               float64 `json:"openai_adaptive_scheduler_weight_cache"`
-	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
-	OpenAIAdaptiveSchedulerLearningMinHealthSamples  int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
-	OpenAIAdaptiveSchedulerHealthFailureThreshold    int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
-	OpenAIAdaptiveSchedulerHighErrorMinSamples       int     `json:"openai_adaptive_scheduler_high_error_min_samples"`
-	OpenAIAdaptiveSchedulerHighErrorMaxSamples       int     `json:"openai_adaptive_scheduler_high_error_max_samples"`
-	OpenAIAdaptiveSchedulerHighErrorEnterRate        float64 `json:"openai_adaptive_scheduler_high_error_enter_rate"`
-	OpenAIAdaptiveSchedulerHighErrorExitRate         float64 `json:"openai_adaptive_scheduler_high_error_exit_rate"`
-	OpenAIAdaptiveSchedulerCapacityRecoverySamples   int     `json:"openai_adaptive_scheduler_capacity_recovery_samples"`
-	OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds int     `json:"openai_adaptive_scheduler_quota_probe_interval_seconds"`
+	OpenAIAdaptiveSchedulerTTFTEMAAlpha                float64 `json:"openai_adaptive_scheduler_ttft_ema_alpha"`
+	OpenAIAdaptiveSchedulerCooldownBaseSeconds         int     `json:"openai_adaptive_scheduler_cooldown_base_seconds"`
+	OpenAIAdaptiveSchedulerCooldownMaxSeconds          int     `json:"openai_adaptive_scheduler_cooldown_max_seconds"`
+	OpenAIAdaptiveSchedulerWeightSuccess               float64 `json:"openai_adaptive_scheduler_weight_success"`
+	OpenAIAdaptiveSchedulerWeightCost                  float64 `json:"openai_adaptive_scheduler_weight_cost"`
+	OpenAIAdaptiveSchedulerWeightCapacity              float64 `json:"openai_adaptive_scheduler_weight_capacity"`
+	OpenAIAdaptiveSchedulerWeightLatency               float64 `json:"openai_adaptive_scheduler_weight_latency"`
+	OpenAIAdaptiveSchedulerWeightCache                 float64 `json:"openai_adaptive_scheduler_weight_cache"`
+	OpenAIAdaptiveSchedulerConsecutiveFailurePenalty   float64 `json:"openai_adaptive_scheduler_consecutive_failure_penalty"`
+	OpenAIAdaptiveSchedulerLearningMinHealthSamples    int     `json:"openai_adaptive_scheduler_learning_min_health_samples"`
+	OpenAIAdaptiveSchedulerHealthFailureThreshold      int     `json:"openai_adaptive_scheduler_health_failure_threshold"`
+	OpenAIAdaptiveSchedulerHighErrorMinSamples         int     `json:"openai_adaptive_scheduler_high_error_min_samples"`
+	OpenAIAdaptiveSchedulerHighErrorMaxSamples         int     `json:"openai_adaptive_scheduler_high_error_max_samples"`
+	OpenAIAdaptiveSchedulerHighErrorEnterRate          float64 `json:"openai_adaptive_scheduler_high_error_enter_rate"`
+	OpenAIAdaptiveSchedulerHighErrorExitRate           float64 `json:"openai_adaptive_scheduler_high_error_exit_rate"`
+	OpenAIAdaptiveSchedulerCapacityRecoverySamples     int     `json:"openai_adaptive_scheduler_capacity_recovery_samples"`
+	OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds   int     `json:"openai_adaptive_scheduler_quota_probe_interval_seconds"`
+	OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS int     `json:"openai_adaptive_scheduler_same_account_429_retry_budget_ms"`
 }
 
 type cachedOpenAIAdaptiveSchedulerSetting struct {
@@ -107,38 +109,39 @@ var openAIAdaptiveSchedulerSettingGeneration atomic.Uint64
 
 func DefaultOpenAIAdaptiveSchedulerSettings() OpenAIAdaptiveSchedulerSettings {
 	return OpenAIAdaptiveSchedulerSettings{
-		OpenAIAdaptiveSchedulerEnabled:                    false,
-		OpenAIAdaptiveSchedulerDiagnosticLogEnabled:       false,
-		OpenAIAdaptiveSchedulerDiagnosticLogSampleRate:    0.05,
-		OpenAIAdaptiveSchedulerMode:                       openAIAdaptiveSchedulerModeShadow,
-		OpenAIAdaptiveSchedulerTopK:                       8,
-		OpenAIAdaptiveSchedulerExplorationRate:            0.02,
-		OpenAIAdaptiveSchedulerRecoveryExplorationRate:    0.01,
-		OpenAIAdaptiveSchedulerRecoveryMaxConcurrency:     2,
-		OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses:    3,
-		OpenAIAdaptiveSchedulerSoftmaxTemperature:         0.35,
-		OpenAIAdaptiveSchedulerCapacityGrowthFactor:       1.25,
-		OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold: 0.80,
-		OpenAIAdaptiveSchedulerShrinkFactorSoft:           0.90,
-		OpenAIAdaptiveSchedulerLearningWindowSeconds:      1200,
-		OpenAIAdaptiveSchedulerSuccessEMAAlpha:            0.05,
-		OpenAIAdaptiveSchedulerTTFTEMAAlpha:               0.05,
-		OpenAIAdaptiveSchedulerCooldownBaseSeconds:        60,
-		OpenAIAdaptiveSchedulerCooldownMaxSeconds:         600,
-		OpenAIAdaptiveSchedulerWeightSuccess:              0.50,
-		OpenAIAdaptiveSchedulerWeightCost:                 0.15,
-		OpenAIAdaptiveSchedulerWeightCapacity:             0.20,
-		OpenAIAdaptiveSchedulerWeightLatency:              0.15,
-		OpenAIAdaptiveSchedulerWeightCache:                0,
-		OpenAIAdaptiveSchedulerConsecutiveFailurePenalty:  0.25,
-		OpenAIAdaptiveSchedulerLearningMinHealthSamples:   30,
-		OpenAIAdaptiveSchedulerHealthFailureThreshold:     3,
-		OpenAIAdaptiveSchedulerHighErrorMinSamples:        10,
-		OpenAIAdaptiveSchedulerHighErrorMaxSamples:        100,
-		OpenAIAdaptiveSchedulerHighErrorEnterRate:         0.25,
-		OpenAIAdaptiveSchedulerHighErrorExitRate:          0.15,
-		OpenAIAdaptiveSchedulerCapacityRecoverySamples:    8,
-		OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds:  300,
+		OpenAIAdaptiveSchedulerEnabled:                     false,
+		OpenAIAdaptiveSchedulerDiagnosticLogEnabled:        false,
+		OpenAIAdaptiveSchedulerDiagnosticLogSampleRate:     0.05,
+		OpenAIAdaptiveSchedulerMode:                        openAIAdaptiveSchedulerModeShadow,
+		OpenAIAdaptiveSchedulerTopK:                        8,
+		OpenAIAdaptiveSchedulerExplorationRate:             0.02,
+		OpenAIAdaptiveSchedulerRecoveryExplorationRate:     0.01,
+		OpenAIAdaptiveSchedulerRecoveryMaxConcurrency:      2,
+		OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses:     3,
+		OpenAIAdaptiveSchedulerSoftmaxTemperature:          0.35,
+		OpenAIAdaptiveSchedulerCapacityGrowthFactor:        1.25,
+		OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold:  0.80,
+		OpenAIAdaptiveSchedulerShrinkFactorSoft:            0.90,
+		OpenAIAdaptiveSchedulerLearningWindowSeconds:       1200,
+		OpenAIAdaptiveSchedulerSuccessEMAAlpha:             0.05,
+		OpenAIAdaptiveSchedulerTTFTEMAAlpha:                0.05,
+		OpenAIAdaptiveSchedulerCooldownBaseSeconds:         60,
+		OpenAIAdaptiveSchedulerCooldownMaxSeconds:          600,
+		OpenAIAdaptiveSchedulerWeightSuccess:               0.50,
+		OpenAIAdaptiveSchedulerWeightCost:                  0.15,
+		OpenAIAdaptiveSchedulerWeightCapacity:              0.20,
+		OpenAIAdaptiveSchedulerWeightLatency:               0.15,
+		OpenAIAdaptiveSchedulerWeightCache:                 0,
+		OpenAIAdaptiveSchedulerConsecutiveFailurePenalty:   0.25,
+		OpenAIAdaptiveSchedulerLearningMinHealthSamples:    30,
+		OpenAIAdaptiveSchedulerHealthFailureThreshold:      3,
+		OpenAIAdaptiveSchedulerHighErrorMinSamples:         10,
+		OpenAIAdaptiveSchedulerHighErrorMaxSamples:         100,
+		OpenAIAdaptiveSchedulerHighErrorEnterRate:          0.25,
+		OpenAIAdaptiveSchedulerHighErrorExitRate:           0.15,
+		OpenAIAdaptiveSchedulerCapacityRecoverySamples:     8,
+		OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds:   300,
+		OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS: 1000,
 	}
 }
 
@@ -181,6 +184,7 @@ func NormalizeOpenAIAdaptiveSchedulerSettings(settings OpenAIAdaptiveSchedulerSe
 	settings.OpenAIAdaptiveSchedulerHighErrorExitRate = clampFloat(settings.OpenAIAdaptiveSchedulerHighErrorExitRate, 0, settings.OpenAIAdaptiveSchedulerHighErrorEnterRate, defaults.OpenAIAdaptiveSchedulerHighErrorExitRate)
 	settings.OpenAIAdaptiveSchedulerCapacityRecoverySamples = clampIntMin(settings.OpenAIAdaptiveSchedulerCapacityRecoverySamples, 1, defaults.OpenAIAdaptiveSchedulerCapacityRecoverySamples)
 	settings.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds = clampIntMin(settings.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds, 1, defaults.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds)
+	settings.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS = clampInt(settings.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS, 0, 10000, defaults.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS)
 	weightSum := settings.OpenAIAdaptiveSchedulerWeightSuccess +
 		settings.OpenAIAdaptiveSchedulerWeightCost +
 		settings.OpenAIAdaptiveSchedulerWeightCapacity +
@@ -202,38 +206,39 @@ func openAIAdaptiveSchedulerDefaultSettingValues() map[string]string {
 func openAIAdaptiveSchedulerSettingsToMap(settings OpenAIAdaptiveSchedulerSettings) map[string]string {
 	settings = NormalizeOpenAIAdaptiveSchedulerSettings(settings)
 	return map[string]string{
-		openAIAdaptiveSchedulerEnabledKey:                    strconv.FormatBool(settings.OpenAIAdaptiveSchedulerEnabled),
-		openAIAdaptiveSchedulerDiagnosticLogEnabledKey:       strconv.FormatBool(settings.OpenAIAdaptiveSchedulerDiagnosticLogEnabled),
-		openAIAdaptiveSchedulerDiagnosticLogSampleRateKey:    formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate),
-		openAIAdaptiveSchedulerModeKey:                       settings.OpenAIAdaptiveSchedulerMode,
-		openAIAdaptiveSchedulerTopKKey:                       strconv.Itoa(settings.OpenAIAdaptiveSchedulerTopK),
-		openAIAdaptiveSchedulerExplorationRateKey:            formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerExplorationRate),
-		openAIAdaptiveSchedulerRecoveryExplorationRateKey:    formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerRecoveryExplorationRate),
-		openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey:     strconv.Itoa(settings.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency),
-		openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey:    strconv.Itoa(settings.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses),
-		openAIAdaptiveSchedulerSoftmaxTemperatureKey:         formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerSoftmaxTemperature),
-		openAIAdaptiveSchedulerCapacityGrowthFactorKey:       formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor),
-		openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey: formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold),
-		openAIAdaptiveSchedulerShrinkFactorSoftKey:           formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerShrinkFactorSoft),
-		openAIAdaptiveSchedulerLearningWindowSecondsKey:      strconv.Itoa(settings.OpenAIAdaptiveSchedulerLearningWindowSeconds),
-		openAIAdaptiveSchedulerSuccessEMAAlphaKey:            formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerSuccessEMAAlpha),
-		openAIAdaptiveSchedulerTTFTEMAAlphaKey:               formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerTTFTEMAAlpha),
-		openAIAdaptiveSchedulerCooldownBaseSecondsKey:        strconv.Itoa(settings.OpenAIAdaptiveSchedulerCooldownBaseSeconds),
-		openAIAdaptiveSchedulerCooldownMaxSecondsKey:         strconv.Itoa(settings.OpenAIAdaptiveSchedulerCooldownMaxSeconds),
-		openAIAdaptiveSchedulerWeightSuccessKey:              formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightSuccess),
-		openAIAdaptiveSchedulerWeightCostKey:                 formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCost),
-		openAIAdaptiveSchedulerWeightCapacityKey:             formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCapacity),
-		openAIAdaptiveSchedulerWeightLatencyKey:              formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightLatency),
-		openAIAdaptiveSchedulerWeightCacheKey:                formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCache),
-		openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey:  formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty),
-		openAIAdaptiveSchedulerLearningMinHealthSamplesKey:   strconv.Itoa(settings.OpenAIAdaptiveSchedulerLearningMinHealthSamples),
-		openAIAdaptiveSchedulerHealthFailureThresholdKey:     strconv.Itoa(settings.OpenAIAdaptiveSchedulerHealthFailureThreshold),
-		openAIAdaptiveSchedulerHighErrorMinSamplesKey:        strconv.Itoa(settings.OpenAIAdaptiveSchedulerHighErrorMinSamples),
-		openAIAdaptiveSchedulerHighErrorMaxSamplesKey:        strconv.Itoa(settings.OpenAIAdaptiveSchedulerHighErrorMaxSamples),
-		openAIAdaptiveSchedulerHighErrorEnterRateKey:         formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerHighErrorEnterRate),
-		openAIAdaptiveSchedulerHighErrorExitRateKey:          formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerHighErrorExitRate),
-		openAIAdaptiveSchedulerCapacityRecoverySamplesKey:    strconv.Itoa(settings.OpenAIAdaptiveSchedulerCapacityRecoverySamples),
-		openAIAdaptiveSchedulerQuotaProbeIntervalSecondsKey:  strconv.Itoa(settings.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds),
+		openAIAdaptiveSchedulerEnabledKey:                     strconv.FormatBool(settings.OpenAIAdaptiveSchedulerEnabled),
+		openAIAdaptiveSchedulerDiagnosticLogEnabledKey:        strconv.FormatBool(settings.OpenAIAdaptiveSchedulerDiagnosticLogEnabled),
+		openAIAdaptiveSchedulerDiagnosticLogSampleRateKey:     formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerDiagnosticLogSampleRate),
+		openAIAdaptiveSchedulerModeKey:                        settings.OpenAIAdaptiveSchedulerMode,
+		openAIAdaptiveSchedulerTopKKey:                        strconv.Itoa(settings.OpenAIAdaptiveSchedulerTopK),
+		openAIAdaptiveSchedulerExplorationRateKey:             formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerExplorationRate),
+		openAIAdaptiveSchedulerRecoveryExplorationRateKey:     formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerRecoveryExplorationRate),
+		openAIAdaptiveSchedulerRecoveryMaxConcurrencyKey:      strconv.Itoa(settings.OpenAIAdaptiveSchedulerRecoveryMaxConcurrency),
+		openAIAdaptiveSchedulerRecoveryWarmupSuccessesKey:     strconv.Itoa(settings.OpenAIAdaptiveSchedulerRecoveryWarmupSuccesses),
+		openAIAdaptiveSchedulerSoftmaxTemperatureKey:          formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerSoftmaxTemperature),
+		openAIAdaptiveSchedulerCapacityGrowthFactorKey:        formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityGrowthFactor),
+		openAIAdaptiveSchedulerCapacityProbeLoadThresholdKey:  formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerCapacityProbeLoadThreshold),
+		openAIAdaptiveSchedulerShrinkFactorSoftKey:            formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerShrinkFactorSoft),
+		openAIAdaptiveSchedulerLearningWindowSecondsKey:       strconv.Itoa(settings.OpenAIAdaptiveSchedulerLearningWindowSeconds),
+		openAIAdaptiveSchedulerSuccessEMAAlphaKey:             formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerSuccessEMAAlpha),
+		openAIAdaptiveSchedulerTTFTEMAAlphaKey:                formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerTTFTEMAAlpha),
+		openAIAdaptiveSchedulerCooldownBaseSecondsKey:         strconv.Itoa(settings.OpenAIAdaptiveSchedulerCooldownBaseSeconds),
+		openAIAdaptiveSchedulerCooldownMaxSecondsKey:          strconv.Itoa(settings.OpenAIAdaptiveSchedulerCooldownMaxSeconds),
+		openAIAdaptiveSchedulerWeightSuccessKey:               formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightSuccess),
+		openAIAdaptiveSchedulerWeightCostKey:                  formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCost),
+		openAIAdaptiveSchedulerWeightCapacityKey:              formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCapacity),
+		openAIAdaptiveSchedulerWeightLatencyKey:               formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightLatency),
+		openAIAdaptiveSchedulerWeightCacheKey:                 formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerWeightCache),
+		openAIAdaptiveSchedulerConsecutiveFailurePenaltyKey:   formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerConsecutiveFailurePenalty),
+		openAIAdaptiveSchedulerLearningMinHealthSamplesKey:    strconv.Itoa(settings.OpenAIAdaptiveSchedulerLearningMinHealthSamples),
+		openAIAdaptiveSchedulerHealthFailureThresholdKey:      strconv.Itoa(settings.OpenAIAdaptiveSchedulerHealthFailureThreshold),
+		openAIAdaptiveSchedulerHighErrorMinSamplesKey:         strconv.Itoa(settings.OpenAIAdaptiveSchedulerHighErrorMinSamples),
+		openAIAdaptiveSchedulerHighErrorMaxSamplesKey:         strconv.Itoa(settings.OpenAIAdaptiveSchedulerHighErrorMaxSamples),
+		openAIAdaptiveSchedulerHighErrorEnterRateKey:          formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerHighErrorEnterRate),
+		openAIAdaptiveSchedulerHighErrorExitRateKey:           formatOpenAIAdaptiveFloat(settings.OpenAIAdaptiveSchedulerHighErrorExitRate),
+		openAIAdaptiveSchedulerCapacityRecoverySamplesKey:     strconv.Itoa(settings.OpenAIAdaptiveSchedulerCapacityRecoverySamples),
+		openAIAdaptiveSchedulerQuotaProbeIntervalSecondsKey:   strconv.Itoa(settings.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds),
+		openAIAdaptiveSchedulerSameAccount429RetryBudgetMSKey: strconv.Itoa(settings.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS),
 	}
 }
 
@@ -271,6 +276,7 @@ func parseOpenAIAdaptiveSchedulerSettings(settings map[string]string) OpenAIAdap
 	result.OpenAIAdaptiveSchedulerHighErrorExitRate = parseFloatSetting(settings, openAIAdaptiveSchedulerHighErrorExitRateKey, result.OpenAIAdaptiveSchedulerHighErrorExitRate)
 	result.OpenAIAdaptiveSchedulerCapacityRecoverySamples = parseIntSetting(settings, openAIAdaptiveSchedulerCapacityRecoverySamplesKey, result.OpenAIAdaptiveSchedulerCapacityRecoverySamples)
 	result.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds = parseIntSetting(settings, openAIAdaptiveSchedulerQuotaProbeIntervalSecondsKey, result.OpenAIAdaptiveSchedulerQuotaProbeIntervalSeconds)
+	result.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS = parseIntSetting(settings, openAIAdaptiveSchedulerSameAccount429RetryBudgetMSKey, result.OpenAIAdaptiveSchedulerSameAccount429RetryBudgetMS)
 	return NormalizeOpenAIAdaptiveSchedulerSettings(result)
 }
 
@@ -366,6 +372,11 @@ func (s *OpenAIGatewayService) openAIAdaptiveSchedulerSettings(ctx context.Conte
 	}
 	settings, _ := result.(OpenAIAdaptiveSchedulerSettings)
 	return NormalizeOpenAIAdaptiveSchedulerSettings(settings)
+}
+
+// OpenAIAdaptiveSchedulerSettingsSnapshot returns the current runtime settings.
+func (s *OpenAIGatewayService) OpenAIAdaptiveSchedulerSettingsSnapshot(ctx context.Context) OpenAIAdaptiveSchedulerSettings {
+	return s.openAIAdaptiveSchedulerSettings(ctx)
 }
 
 func refreshOpenAIAdaptiveSchedulerSettingCache(settings OpenAIAdaptiveSchedulerSettings) {
