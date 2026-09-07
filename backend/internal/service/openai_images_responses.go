@@ -1960,7 +1960,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			failoverErr.ResponseHeaders = resp.Header.Clone()
 			return nil, failoverErr
 		}
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				ProxyID:            opsUpstreamProxyID(account),
 				ProxyName:          opsUpstreamProxyName(account),

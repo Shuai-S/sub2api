@@ -84,7 +84,7 @@ func TestHandleOpenAITransientError_ServiceUnavailableOnlyFailsOver(t *testing.T
 		require.False(t, shouldDisable)
 	}
 
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusServiceUnavailable, "", body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(account, http.StatusServiceUnavailable, "", body))
 	require.False(t, shouldCooldownOpenAITransientUpstreamError(http.StatusServiceUnavailable, body))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.False(t, svc.isOpenAIAccountModelRuntimeBlocked(account, "gpt-5.5"))

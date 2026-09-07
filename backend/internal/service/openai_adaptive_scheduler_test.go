@@ -191,7 +191,7 @@ func TestOpenAIModelNotFoundCanFailOverWithoutHealthSample(t *testing.T) {
 	body := []byte(`{"error":{"type":"model_not_found","message":"Model gpt-5.6-luna not found"}}`)
 	service := &OpenAIGatewayService{}
 
-	require.True(t, service.shouldFailoverOpenAIUpstreamResponse(http.StatusNotFound, "Model gpt-5.6-luna not found", body))
+	require.True(t, service.shouldFailoverOpenAIUpstreamResponse(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, http.StatusNotFound, "Model gpt-5.6-luna not found", body))
 	require.True(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeAPIKey}, http.StatusNotFound, body))
 
 	err := newOpenAIUpstreamFailoverError(http.StatusNotFound, nil, body, "Model gpt-5.6-luna not found", true)
@@ -280,7 +280,7 @@ func TestOpenAIAdaptiveRepeatedServiceUnavailableSwitchesWithoutAccountCircuit(t
 	healthSample := openAIAdaptiveFailureHealthSample(err)
 	reason := classifyOpenAIAdaptiveTerminalReason(err, healthSample)
 
-	require.True(t, service.shouldFailoverOpenAIUpstreamResponse(err.StatusCode, "", err.ResponseBody))
+	require.True(t, service.shouldFailoverOpenAIUpstreamResponse(&account, err.StatusCode, "", err.ResponseBody))
 	require.True(t, err.ShouldRetryNextAccount())
 	failoverOutcome, suppressedReason := openAIAdaptiveFailoverDecision(err, OpenAIAdaptiveFailureReportOptions{})
 	require.Equal(t, OpenAIAdaptiveFailoverOutcomeEligible, failoverOutcome)
