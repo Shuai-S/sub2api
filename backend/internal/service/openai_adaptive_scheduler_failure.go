@@ -430,9 +430,13 @@ func IsOpenAIAccountInternalFailoverError(err *UpstreamFailoverError) bool {
 		return true
 	}
 
-	// These statuses are account-level failures in the OpenAI failover path.
+	// Unauthorized, payment, and exhausted-rate-limit responses are account-level
+	// failures in the OpenAI failover path. A bare 403 is intentionally excluded:
+	// providers also use it for ordinary request authorization/policy failures,
+	// which must retain the existing 502 upstream-error mapping unless the body
+	// carries explicit balance/quota evidence (handled above/below).
 	switch err.StatusCode {
-	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusTooManyRequests:
 		return true
 	}
 

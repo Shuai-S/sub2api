@@ -712,6 +712,7 @@ func TestOpenAIAccountInternalFailoverErrorClassification(t *testing.T) {
 		{name: "credential", err: &UpstreamFailoverError{Stage: GatewayFailureStageAccountAuth}, want: true},
 		{name: "payment", err: &UpstreamFailoverError{StatusCode: http.StatusPaymentRequired}, want: true},
 		{name: "quota", err: &UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, ResponseBody: []byte(`{"error":{"code":"quota_exceeded"}}`)}, want: true},
+		{name: "plain forbidden", err: &UpstreamFailoverError{StatusCode: http.StatusForbidden, ResponseBody: []byte(`{"error":{"type":"forbidden_error","code":"forbidden","message":"Forbidden"}}`)}, want: false},
 		{name: "request", err: &UpstreamFailoverError{StatusCode: http.StatusBadRequest, ResponseBody: []byte(`{"error":{"type":"invalid_request_error"}}`)}, want: false},
 		{name: "server", err: &UpstreamFailoverError{StatusCode: http.StatusInternalServerError}, want: false},
 	}
