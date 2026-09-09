@@ -795,6 +795,10 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalanceWithPlanLoad
 
 	cfgWait := s.service.schedulingConfig()
 	for _, candidate := range plan.selectionOrder {
+		if s.service.isOpenAIAccountRuntimeBlocked(candidate.account) {
+			attemptStats.record("runtime_blocked")
+			continue
+		}
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.Platform, req.RequestedModel, false, req.RequiredCapability)
 		if fresh == nil {
 			attemptStats.record("wait_" + s.adaptiveFreshResolveFailureReason(ctx, candidate.account, req))
@@ -863,6 +867,9 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalanceWithPlanLoad
 		compactBlocked,
 		plan.filterStats.summary(attemptStats.summary("selection_order_exhausted")),
 	)
+	if attemptStats.reasons["runtime_blocked"] >= len(plan.selectionOrder) {
+		return nil, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, originalErr
+	}
 	selection, fallbackErr := s.degradedAdaptiveFallback(ctx, req, dominantAdaptiveSelectionExclusion(plan.filterStats, attemptStats.reasons), originalErr)
 	return selection, plan.candidateCount, plan.topK, plan.loadSkew, diagnosticCandidates, fallbackErr
 }
@@ -1150,6 +1157,10 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 ) (*AccountSelectionResult, bool, error) {
 	compactBlocked := false
 	for _, candidate := range selectionOrder {
+		if s.service.isOpenAIAccountRuntimeBlocked(candidate.account) {
+			attemptStats.record("runtime_blocked")
+			continue
+		}
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.Platform, req.RequestedModel, false, req.RequiredCapability)
 		if fresh == nil {
 			attemptStats.record(s.adaptiveFreshResolveFailureReason(ctx, candidate.account, req))
