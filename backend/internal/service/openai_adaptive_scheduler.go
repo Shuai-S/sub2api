@@ -872,6 +872,13 @@ func (s *adaptiveOpenAIAccountScheduler) degradedAdaptiveFallback(ctx context.Co
 		return nil, originalErr
 	}
 	selection, _, fallbackErr := s.selectCurrentBaseline(ctx, req)
+	if fallbackErr == nil && selection != nil && selection.Account != nil && s.service.isOpenAIAccountRequestRuntimeBlocked(selection.Account, req.RequestedModel) {
+		if selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+		fallbackErr = originalErr
+		selection = nil
+	}
 	if fallbackErr == nil && selection != nil && selection.Account != nil {
 		slog.Warn("openai_adaptive_scheduler_degraded_fallback",
 			"reason", reason,
