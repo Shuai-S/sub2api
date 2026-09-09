@@ -872,7 +872,9 @@ func (s *adaptiveOpenAIAccountScheduler) degradedAdaptiveFallback(ctx context.Co
 		return nil, originalErr
 	}
 	selection, _, fallbackErr := s.selectCurrentBaseline(ctx, req)
-	if fallbackErr == nil && selection != nil && selection.Account != nil && s.service.isOpenAIAccountRequestRuntimeBlocked(selection.Account, req.RequestedModel) {
+	if fallbackErr == nil && selection != nil && selection.Account != nil &&
+		(s.service.isOpenAIAccountRuntimeBlocked(selection.Account) ||
+			s.service.isOpenAIAccountRequestRuntimeBlocked(selection.Account, req.RequestedModel)) {
 		if selection.ReleaseFunc != nil {
 			selection.ReleaseFunc()
 		}
