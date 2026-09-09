@@ -121,7 +121,8 @@ func memoizeOpenAIAdaptiveSelectionPlanLoader(load openAIAdaptiveSelectionPlanLo
 // Attempt statistics are kept separate from initial filter statistics because
 // an account may be retried across cached-load, fresh-load, and wait-plan passes.
 type openAIAdaptiveSelectionAttemptStats struct {
-	reasons map[string]int
+	reasons                map[string]int
+	runtimeBlockedAccounts map[int64]struct{}
 }
 
 func (s *openAIAdaptiveSelectionAttemptStats) record(reason string) {
@@ -132,6 +133,20 @@ func (s *openAIAdaptiveSelectionAttemptStats) record(reason string) {
 		s.reasons = make(map[string]int, 4)
 	}
 	s.reasons[reason]++
+}
+
+func (s *openAIAdaptiveSelectionAttemptStats) recordRuntimeBlocked(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	if s.runtimeBlockedAccounts == nil {
+		s.runtimeBlockedAccounts = make(map[int64]struct{}, 1)
+	}
+	if _, alreadyRecorded := s.runtimeBlockedAccounts[accountID]; alreadyRecorded {
+		return
+	}
+	s.runtimeBlockedAccounts[accountID] = struct{}{}
+	s.record("runtime_blocked")
 }
 
 func (s *openAIAdaptiveSelectionAttemptStats) merge(prefix string, stats openAISelectionFilterStats) {
@@ -796,7 +811,7 @@ func (s *adaptiveOpenAIAccountScheduler) selectByAdaptiveLoadBalanceWithPlanLoad
 	cfgWait := s.service.schedulingConfig()
 	for _, candidate := range plan.selectionOrder {
 		if s.service.isOpenAIAccountRuntimeBlocked(candidate.account) {
-			attemptStats.record("runtime_blocked")
+			attemptStats.recordRuntimeBlocked(candidate.account.ID)
 			continue
 		}
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.Platform, req.RequestedModel, false, req.RequiredCapability)
@@ -1158,7 +1173,7 @@ func (s *adaptiveOpenAIAccountScheduler) tryAcquireAdaptiveSelectionOrder(
 	compactBlocked := false
 	for _, candidate := range selectionOrder {
 		if s.service.isOpenAIAccountRuntimeBlocked(candidate.account) {
-			attemptStats.record("runtime_blocked")
+			attemptStats.recordRuntimeBlocked(candidate.account.ID)
 			continue
 		}
 		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, candidate.account, req.Platform, req.RequestedModel, false, req.RequiredCapability)
