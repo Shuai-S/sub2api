@@ -850,26 +850,48 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := &Account{ID: 92, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
-	svc.BlockAccountScheduling(account, time.Now().Add(30*time.Minute), "grok payment required")
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
-	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+func TestRuntimeBlockKeepsInactivePersistedCooldownUntilExplicitRecovery(t *testing.T) {
+	for _, platform := range []string{PlatformOpenAI, PlatformGrok} {
+		for _, cooldown := range []string{"missing", "expired"} {
+			t.Run(platform+"/"+cooldown, func(t *testing.T) {
+				svc := &OpenAIGatewayService{}
+				account := &Account{ID: 92, Platform: platform, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+				if cooldown == "expired" {
+					past := time.Now().Add(-time.Minute)
+					account.TempUnschedulableUntil = &past
+					account.RateLimitResetAt = &past
+					account.OverloadUntil = &past
+				}
+				svc.BlockAccountScheduling(account, time.Now().Add(30*time.Minute), "upstream_disable")
+				require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "model-a"))
+				require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "model-b"))
+				require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+
+				svc.ClearAccountSchedulingBlock(account.ID)
+				require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "model-a"))
+				require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+			})
+		}
+	}
 }
 
-func TestRuntimeBlockConditionalClearSkipsNewerGeneration(t *testing.T) {
+func TestRuntimeBlockRequestCheckKeepsNewBlockAfterExplicitRecovery(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 94, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
-	firstUntil := time.Now().Add(10 * time.Minute)
-	svc.BlockAccountScheduling(account, firstUntil, "stale")
-	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-	require.True(t, snapshot.blocked)
-	newerUntil := time.Now().Add(30 * time.Minute)
-	svc.BlockAccountScheduling(account, newerUntil, "fresh")
-	svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
+	svc.BlockAccountScheduling(account, time.Now().Add(10*time.Minute), "upstream_disable")
+	svc.ClearAccountSchedulingBlock(account.ID)
+	svc.BlockAccountScheduling(account, time.Now().Add(30*time.Minute), "upstream_disable")
+	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "grok-3"))
+}
+
+func TestRuntimeBlockRequestCheckAllowsExpiredBlock(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 95, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
+	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "upstream_disable")
+	// Move the installed deadline into the past without a timing-dependent sleep.
+	svc.openaiAccountRuntimeBlockUntil.Store(account.ID, time.Now().Add(-time.Minute))
+	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.1"))
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 

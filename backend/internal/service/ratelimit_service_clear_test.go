@@ -275,6 +275,40 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 	require.Empty(t, cache.deletedIDs)
 }
 
+func TestRateLimitService_RecoverAccountState_ClearsRuntimeOnlyBlock(t *testing.T) {
+	account := &Account{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
+	repo := &rateLimitClearRepoStub{getByIDAccount: account}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{}
+	svc.SetAccountRuntimeBlocker(gateway)
+	gateway.BlockAccountScheduling(account, time.Now().Add(time.Hour), "upstream_disable")
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.1"))
+
+	result, err := svc.RecoverAccountState(context.Background(), account.ID, AccountRecoveryOptions{})
+
+	require.NoError(t, err)
+	require.False(t, result.ClearedError)
+	require.False(t, result.ClearedRateLimit)
+	require.Zero(t, repo.clearErrorCalls)
+	require.Zero(t, repo.clearRateLimitCalls)
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.1"))
+}
+
+func TestRateLimitService_RecoverAccountState_KeepsRuntimeBlockOnFailure(t *testing.T) {
+	account := &Account{ID: 10, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusError}
+	clearErr := errors.New("database unavailable")
+	repo := &rateLimitClearRepoStub{getByIDAccount: account, clearErrorErr: clearErr}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	gateway := &OpenAIGatewayService{}
+	svc.SetAccountRuntimeBlocker(gateway)
+	gateway.BlockAccountScheduling(account, time.Now().Add(time.Hour), "upstream_disable")
+
+	_, err := svc.RecoverAccountState(context.Background(), account.ID, AccountRecoveryOptions{})
+
+	require.ErrorIs(t, err, clearErr)
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.1"))
+}
+
 func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NotifiesAdaptiveHealthRecovery(t *testing.T) {
 	repo := &rateLimitClearRepoStub{
 		getByIDAccount: &Account{ID: 8, Status: StatusActive, Schedulable: true, Extra: map[string]any{}},
