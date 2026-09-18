@@ -506,13 +506,54 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlocked(account *Accou
 	return state.isBlocked(account.ID, openAIAccountModelTransientModel(canonicalModel), time.Now())
 }
 
-// isOpenAIAccountRequestRuntimeBlocked preserves active in-process blocks even
-// when persisted cooldown fields are empty or expired: the write may have failed
-// or the scheduling snapshot may lag. Selection, including degraded fallback,
-// must not turn that absence into an unblock. Blocks expire at their deadline or
-// are explicitly cleared through ClearAccountSchedulingBlock during recovery.
-func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {
-	return s != nil && (s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel))
+type openAIAccountRuntimeBlockSnapshot struct {
+	until      time.Time
+	generation uint64
+	blocked    bool
+}
+
+func (s *OpenAIGatewayService) peekOpenAIAccountRuntimeBlock(account *Account) openAIAccountRuntimeBlockSnapshot {
+	if s == nil || !isOpenAIAccount(account) {
+		return openAIAccountRuntimeBlockSnapshot{}
+	}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	if !ok {
+		return openAIAccountRuntimeBlockSnapshot{}
+	}
+	until, isTime := value.(time.Time)
+	if !isTime || until.IsZero() || !time.Now().Before(until) {
+		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+		s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
+		return openAIAccountRuntimeBlockSnapshot{}
+	}
+	generation, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
+	gen, _ := generation.(uint64)
+	return openAIAccountRuntimeBlockSnapshot{until: until, generation: gen, blocked: true}
+}
+
+// requireCompact 必须与 Forward 的 /responses/compact 判定同源（两侧都来自
+// IsOpenAIResponsesCompactPath）：门票门控按真正出站的模型名判定，否则 compact
+// 请求会被按客户端原始模型误拦（见 openAICodexTicketOutboundModel）。
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string, requireCompact ...bool) bool {
+	if s == nil {
+		return false
+	}
+	compact := len(requireCompact) > 0 && requireCompact[0]
+	outboundModel := s.openAICodexTicketOutboundModel(account, requestedModel, compact)
+	if s.openAICodexTicketBlocksAccount(account, outboundModel) {
+		return true
+	}
+	snapshot := s.peekOpenAIAccountRuntimeBlock(account)
+	if snapshot.blocked {
+		// Keep the active in-process block until its deadline or explicit
+		// recovery. Persisted cooldown fields can lag or fail to write.
+		return true
+	}
+	return s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel)
 }
 
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {

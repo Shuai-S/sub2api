@@ -71,7 +71,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 				return err
 			}
 		} else {
-			normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
+			normalizeOpts := claudeOAuthNormalizeOptions{}
 			var normalizedBody []byte
 			normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, normalizeOpts)
 			if err := replaceBody(normalizedBody); err != nil {
@@ -90,6 +90,13 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 					return err
 				}
 			}
+		}
+
+		// 4 块上限的兜底：其余四条出口都在自己的转发路径上调过一次，只有这里没有。
+		// 不再剥离客户端 system 断点之后，「客户端 system + 客户端 messages +
+		// 上面刚注入的 tools[-1]」可以直接顶到 5 块，而上游对超限是 400。
+		if err := replaceBody(enforceCacheControlLimit(body)); err != nil {
+			return err
 		}
 	}
 
@@ -198,6 +205,9 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 					return err
 				}
 			}
+		}
+		if err := replaceBody(enforceCacheControlLimit(body)); err != nil {
+			return err
 		}
 	}
 

@@ -976,6 +976,7 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 		"plan_type",
 		"pool_mode",
 		"tier_id",
+		"account_scheduling_threshold",
 	}
 	filtered := make(map[string]any)
 	for _, key := range keys {
@@ -994,6 +995,13 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		return nil
 	}
 	keys := []string{
+		// Anthropic shared-window and Fable-only threshold checks run on this
+		// projection. UpdateExtra refreshes both payloads without a bucket rebuild.
+		"session_window_utilization",
+		"passive_usage_7d_utilization",
+		"passive_usage_7d_reset",
+		"passive_usage_7d_oi_utilization",
+		"passive_usage_7d_oi_reset",
 		"quota_limit",
 		"quota_used",
 		"quota_daily_limit",
