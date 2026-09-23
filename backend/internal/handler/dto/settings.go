@@ -230,6 +230,9 @@ type SystemSettings struct {
 	OpenAICodexTicketEnabled                bool   `json:"openai_codex_ticket_enabled"`
 	OpenAICodexTicketHarvestProxyURL        string `json:"openai_codex_ticket_harvest_proxy_url"`
 	OpenAICodexTicketHarvestProxyConfigured bool   `json:"openai_codex_ticket_harvest_proxy_configured"`
+	ClaudeCodeClientVersion                 string `json:"claude_code_client_version"`
+	ClaudeCodeClientVersionSynced           string `json:"claude_code_client_version_synced"`
+	ClaudeCodeVersionAutoSyncEnabled        bool   `json:"claude_code_version_auto_sync_enabled"`
 
 	// codex_cli_only 加固
 	MinCodexVersion                      string `json:"min_codex_version"`
@@ -249,9 +252,9 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAILowUpstreamRatePriorityEnabled bool    `json:"openai_low_upstream_rate_priority_enabled"`
-	OpenAIOAuthSchedulingRateMultiplier  float64 `json:"openai_oauth_scheduling_rate_multiplier"`
-	OpenAIAdvancedSchedulerEnabled       bool    `json:"openai_advanced_scheduler_enabled"`
+	OpenAILowUpstreamRatePriorityEnabled bool     `json:"openai_low_upstream_rate_priority_enabled"`
+	OpenAIOAuthSchedulingRateMultiplier  *float64 `json:"openai_oauth_scheduling_rate_multiplier"`
+	OpenAIAdvancedSchedulerEnabled       bool     `json:"openai_advanced_scheduler_enabled"`
 	service.OpenAIAdaptiveSchedulerSettings
 	service.AnthropicAdaptiveSchedulerSettings
 	service.GeminiAdaptiveSchedulerSettings
