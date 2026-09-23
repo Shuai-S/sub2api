@@ -1161,10 +1161,6 @@ func openAIStreamEventIsMetadata(eventType string) bool {
 	}
 }
 
-func openAIStreamEventIsPreamble(eventType string) bool {
-	return openAIStreamEventIsMetadata(eventType)
-}
-
 func openAIStreamAddedEventStartsClientOutput(payload []byte, eventType string) bool {
 	if len(payload) == 0 || !gjson.ValidBytes(payload) {
 		return true
