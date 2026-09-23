@@ -194,6 +194,8 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	out := make([]PlazaGroup, 0, len(order))
 	for _, gid := range order {
 		pg := byGroup[gid]
+		g := groupEnt[gid]
+		pg.Models = filterPlazaModelsByAllowlist(pg.Models, g.ModelAllowlist)
 		if len(pg.Models) == 0 {
 			continue
 		}
@@ -203,7 +205,6 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 			}
 			return pg.Models[i].Platform < pg.Models[j].Platform
 		})
-		g := groupEnt[gid]
 		for j := range pg.Models {
 			s.fillDisplayPricing(ctx, &pg.Models[j], g)
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
@@ -218,6 +219,25 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 		return out[i].Name < out[j].Name
 	})
 	return out, nil
+}
+
+// filterPlazaModelsByAllowlist keeps the model-plaza catalogue aligned with a
+// group's model admission policy while preserving the plaza's price-catalogue
+// semantics. The input already represents models configured by an attached
+// active channel; an allowlist entry never creates a model that is absent from
+// that source. Pricing and account availability are deliberately not consulted
+// here: the plaza is a configured price catalogue, not a live scheduler view.
+func filterPlazaModelsByAllowlist(models []PlazaModel, allowlist GroupModelAllowlist) []PlazaModel {
+	if !allowlist.Enabled {
+		return models
+	}
+	filtered := make([]PlazaModel, 0, len(models))
+	for _, model := range models {
+		if allowlist.Allows(model.Name) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
 }
 
 // fillDisplayPricing 把模型的展示定价换成实收口径：

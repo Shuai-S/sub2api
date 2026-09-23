@@ -13,6 +13,12 @@
       v-html="descriptionHtml"
     ></div>
 
+    <!-- 价目表语义：模型白名单会生效，但不代表实时账号可用性。 -->
+    <p class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-dark-500">
+      <Icon name="infoCircle" size="xs" class="h-3.5 w-3.5" />
+      {{ t('modelPlaza.catalogHint') }}
+    </p>
+
     <!-- 未登录提示 -->
     <p
       v-if="!isAuthenticated"

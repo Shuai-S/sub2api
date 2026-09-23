@@ -57,6 +57,71 @@ func TestListPlazaGroups_GroupCentricAggregation(t *testing.T) {
 	require.Equal(t, "claude-sonnet", out[0].Models[1].Name)
 }
 
+func TestListPlazaGroups_ModelAllowlistFiltersConfiguredCatalogue(t *testing.T) {
+	// 模型广场是渠道价目表：白名单只裁剪已经从关联渠道发现的模型，
+	// 不会因为白名单条目本身存在就凭空生成模型。
+	channels := []Channel{
+		plazaPricedChannel(1, "ch", []int64{10}, PlatformOpenAI,
+			"gpt-5.4", "gpt-5.5-mini", "other-model"),
+	}
+	groups := []Group{{
+		ID:       10,
+		Name:     "g",
+		Platform: PlatformOpenAI,
+		ModelAllowlist: GroupModelAllowlist{
+			Enabled: true,
+			Models:  []string{"gpt-5.5-*", "gpt-5.4", "not-configured"},
+		},
+	}}
+
+	out, err := newPlazaService(channels, groups, nil).ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, []string{"gpt-5.4", "gpt-5.5-mini"}, []string{
+		out[0].Models[0].Name,
+		out[0].Models[1].Name,
+	})
+}
+
+func TestListPlazaGroups_ModelAllowlistCanHideEntireGroup(t *testing.T) {
+	channels := []Channel{
+		plazaPricedChannel(1, "ch", []int64{10}, PlatformOpenAI, "gpt-5.4"),
+	}
+	groups := []Group{{
+		ID:       10,
+		Name:     "g",
+		Platform: PlatformOpenAI,
+		ModelAllowlist: GroupModelAllowlist{
+			Enabled: true,
+			Models:  []string{"not-configured"},
+		},
+	}}
+
+	out, err := newPlazaService(channels, groups, nil).ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, out, "白名单过滤后无模型的分组不应返回")
+}
+
+func TestListPlazaGroups_DisabledModelAllowlistKeepsCatalogue(t *testing.T) {
+	channels := []Channel{
+		plazaPricedChannel(1, "ch", []int64{10}, PlatformOpenAI, "gpt-5.4", "gpt-5.5"),
+	}
+	groups := []Group{{
+		ID:       10,
+		Name:     "g",
+		Platform: PlatformOpenAI,
+		ModelAllowlist: GroupModelAllowlist{
+			Enabled: false,
+			Models:  []string{"gpt-5.4"},
+		},
+	}}
+
+	out, err := newPlazaService(channels, groups, nil).ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].Models, 2)
+}
+
 func TestWithDefaultMaxReasoningEffortMultiplier_Fable51(t *testing.T) {
 	base := &ChannelModelPricing{BillingMode: BillingModeToken}
 	got := withDefaultMaxReasoningEffortMultiplier(base, "claude-fable-5-1")

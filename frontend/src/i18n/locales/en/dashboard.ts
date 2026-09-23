@@ -638,7 +638,8 @@ export default {
   // Model Plaza (public group/model pricing showcase)
   modelPlaza: {
     title: 'Model Plaza',
-    description: 'Browse available models and pricing by group',
+    description: 'Browse channel-configured model prices by group',
+    catalogHint: 'This page shows the channel price catalogue filtered by the group model allowlist; it does not indicate live account availability or real-time callability.',
     loading: 'Loading...',
     empty: 'No groups to display',
     loadFailed: 'Failed to load model plaza',
