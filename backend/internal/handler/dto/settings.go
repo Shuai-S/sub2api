@@ -9,18 +9,39 @@ import (
 
 // CustomMenuItem represents a user-configured custom menu entry.
 type CustomMenuItem struct {
-	ID             string `json:"id"`
-	Label          string `json:"label"`
-	IconSVG        string `json:"icon_svg"`
-	URL            string `json:"url"`
-	PageSlug       string `json:"page_slug,omitempty"`
-	Visibility     string `json:"visibility"` // "user" or "admin"
-	SortOrder      int    `json:"sort_order"`
-	Placement      string `json:"placement,omitempty"`     // "sidebar" or "header"; empty means sidebar
-	OpenMode       string `json:"open_mode,omitempty"`     // "embedded" or "new_tab"; sidebar only
-	ModalTitle     string `json:"modal_title,omitempty"`   // header only; falls back to Label
-	ModalContent   string `json:"modal_content,omitempty"` // header only; Markdown
-	HideOpenButton bool   `json:"hide_open_button,omitempty"`
+	ID               string            `json:"id"`
+	Label            string            `json:"label"`
+	LabelI18n        map[string]string `json:"label_i18n,omitempty"`
+	IconSVG          string            `json:"icon_svg"`
+	URL              string            `json:"url"`
+	PageSlug         string            `json:"page_slug,omitempty"`
+	Visibility       string            `json:"visibility"` // "user" or "admin"
+	SortOrder        int               `json:"sort_order"`
+	Placement        string            `json:"placement,omitempty"`   // "sidebar" or "header"; empty means sidebar
+	OpenMode         string            `json:"open_mode,omitempty"`   // "embedded" or "new_tab"; sidebar only
+	ModalTitle       string            `json:"modal_title,omitempty"` // header only; falls back to localized label
+	ModalTitleI18n   map[string]string `json:"modal_title_i18n,omitempty"`
+	ModalContent     string            `json:"modal_content,omitempty"` // header only; Markdown
+	ModalContentI18n map[string]string `json:"modal_content_i18n,omitempty"`
+	HideOpenButton   bool              `json:"hide_open_button,omitempty"`
+}
+
+// ResolveLocalizedText returns the requested language, then the configured
+// English/Chinese fallback, and finally the legacy value.
+func ResolveLocalizedText(values map[string]string, locale, legacy string) string {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	if value := strings.TrimSpace(values[locale]); value != "" {
+		return value
+	}
+	for _, fallback := range []string{"en", "zh"} {
+		if fallback == locale {
+			continue
+		}
+		if value := strings.TrimSpace(values[fallback]); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(legacy)
 }
 
 // CustomEndpoint represents an admin-configured API endpoint for quick copy.
@@ -628,6 +649,8 @@ func ParseUserVisibleMenuItems(raw string) []CustomMenuItem {
 		if item.Visibility != "admin" {
 			item.ModalTitle = ""
 			item.ModalContent = ""
+			item.ModalTitleI18n = nil
+			item.ModalContentI18n = nil
 			filtered = append(filtered, item)
 		}
 	}

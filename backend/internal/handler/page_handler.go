@@ -122,14 +122,20 @@ func (h *PageHandler) GetCustomMenuModal(c *gin.Context) {
 		}
 	}
 
-	title := strings.TrimSpace(item.ModalTitle)
-	if title == "" {
-		title = item.Label
+	locale := strings.ToLower(strings.TrimSpace(c.Query("locale")))
+	if locale != "zh" && locale != "en" {
+		locale = "en"
 	}
+	title := dto.ResolveLocalizedText(item.ModalTitleI18n, locale, item.ModalTitle)
+	if title == "" {
+		title = dto.ResolveLocalizedText(item.LabelI18n, locale, item.Label)
+	}
+	content := dto.ResolveLocalizedText(item.ModalContentI18n, locale, item.ModalContent)
 	response.Success(c, gin.H{
 		"id":      item.ID,
+		"locale":  locale,
 		"title":   title,
-		"content": item.ModalContent,
+		"content": content,
 	})
 }
 

@@ -87,11 +87,12 @@ import Icon from '@/components/icons/Icon.vue'
 import { useCustomMenuModalStore } from '@/stores/customMenuModal'
 import { sanitizeSvg } from '@/utils/sanitize'
 import type { CustomMenuItem } from '@/types'
+import { resolveCustomMenuText, resolveCustomMenuLabel } from '@/utils/customMenu'
 import '@/styles/announcement-markdown.css'
 
 type PreviewItem = Pick<
   CustomMenuItem,
-  'id' | 'label' | 'icon_svg' | 'modal_title' | 'modal_content'
+  'id' | 'label' | 'label_i18n' | 'icon_svg' | 'modal_title' | 'modal_title_i18n' | 'modal_content' | 'modal_content_i18n'
 >
 
 const props = withDefaults(defineProps<{
@@ -104,7 +105,8 @@ const emit = defineEmits<{
   close: []
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const currentLocale = computed(() => (typeof locale?.value === 'string' ? locale.value : 'en'))
 const store = useCustomMenuModalStore()
 const dialogRef = ref<HTMLElement | null>(null)
 const titleId = `custom-menu-modal-title-${Math.random().toString(36).slice(2)}`
@@ -120,12 +122,16 @@ const iconSvg = computed(() => (
 ))
 const dialogTitle = computed(() => {
   if (isPreview.value) {
-    return props.previewItem?.modal_title?.trim() || props.previewItem?.label || ''
+    const item = props.previewItem
+    if (!item) return ''
+    return resolveCustomMenuText(item.modal_title_i18n, currentLocale.value, item.modal_title || resolveCustomMenuLabel(item, currentLocale.value))
   }
-  return store.content?.title || store.selectedItem?.label || ''
+  return store.content?.title || (store.selectedItem ? resolveCustomMenuLabel(store.selectedItem, currentLocale.value) : '')
 })
 const sourceContent = computed(() => (
-  isPreview.value ? props.previewItem?.modal_content || '' : store.content?.content || ''
+  isPreview.value
+    ? resolveCustomMenuText(props.previewItem?.modal_content_i18n, currentLocale.value, props.previewItem?.modal_content || '')
+    : store.content?.content || ''
 ))
 const isLoading = computed(() => !isPreview.value && store.loading)
 const hasError = computed(() => !isPreview.value && store.error)

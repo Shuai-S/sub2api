@@ -42,14 +42,18 @@ func (r *pageSettingRepo) GetAll(context.Context) (map[string]string, error) {
 }
 func (r *pageSettingRepo) Delete(context.Context, string) error { return nil }
 
-func runCustomMenuModalRequest(t *testing.T, raw, id, role string) *httptest.ResponseRecorder {
+func runCustomMenuModalRequest(t *testing.T, raw, id, role string, locale ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	svc := service.NewSettingService(&pageSettingRepo{customMenuItems: raw}, &config.Config{})
 	h := NewPageHandler(t.TempDir(), svc)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/custom-menu-items/"+id+"/modal", nil)
+	path := "/api/v1/custom-menu-items/" + id + "/modal"
+	if len(locale) > 0 && locale[0] != "" {
+		path += "?locale=" + locale[0]
+	}
+	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
 	c.Params = gin.Params{{Key: "id", Value: id}}
 	if role != "" {
 		c.Set(string(middleware.ContextKeyUserRole), role)
@@ -79,6 +83,23 @@ func TestGetCustomMenuModalChecksPlacementAndVisibility(t *testing.T) {
 
 	sidebarResponse := runCustomMenuModalRequest(t, raw, "sidebar", service.RoleAdmin)
 	require.Equal(t, http.StatusNotFound, sidebarResponse.Code)
+}
+
+func TestGetCustomMenuModalResolvesLocaleWithFallback(t *testing.T) {
+	raw := `[
+		{"id":"notice","label":"Notice","label_i18n":{"zh":"公告","en":"Notice"},"visibility":"user","placement":"header","modal_title_i18n":{"zh":"中文标题","en":"English title"},"modal_content_i18n":{"zh":"中文正文","en":"English body"}}
+	]`
+
+	zhResponse := runCustomMenuModalRequest(t, raw, "notice", service.RoleUser, "zh")
+	require.Equal(t, http.StatusOK, zhResponse.Code)
+	require.Contains(t, zhResponse.Body.String(), `"locale":"zh"`)
+	require.Contains(t, zhResponse.Body.String(), `"title":"中文标题"`)
+	require.Contains(t, zhResponse.Body.String(), `"content":"中文正文"`)
+
+	enResponse := runCustomMenuModalRequest(t, raw, "notice", service.RoleUser, "en")
+	require.Equal(t, http.StatusOK, enResponse.Code)
+	require.Contains(t, enResponse.Body.String(), `"title":"English title"`)
+	require.Contains(t, enResponse.Body.String(), `"content":"English body"`)
 }
 
 func TestCleanPageImageRelativePath(t *testing.T) {

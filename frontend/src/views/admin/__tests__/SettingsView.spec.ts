@@ -837,8 +837,8 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
       custom_menu_items: [
-        { ...menuItems[0], hide_open_button: true },
-        { ...menuItems[1], hide_open_button: false },
+        { ...menuItems[0], label_i18n: { zh: "Docs", en: "" }, modal_title_i18n: { zh: "", en: "" }, modal_content_i18n: { zh: "", en: "" }, hide_open_button: true },
+        { ...menuItems[1], label_i18n: { zh: "Help", en: "" }, modal_title_i18n: { zh: "", en: "" }, modal_content_i18n: { zh: "", en: "" }, hide_open_button: false },
       ],
     }));
     wrapper.unmount();

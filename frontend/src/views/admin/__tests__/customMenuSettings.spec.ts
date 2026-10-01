@@ -20,6 +20,7 @@ describe('custom menu settings', () => {
     expect(source).toContain('v-model="entry.item.open_mode"')
     expect(source).toContain('value="new_tab"')
     expect(source).toContain(':preview-item="previewMenuItem"')
-    expect(source).toContain('v-model="entry.item.modal_content"')
+    expect(source).toContain('v-model="entry.item.modal_content_i18n.zh"')
+    expect(source).toContain('v-model="entry.item.modal_content_i18n.en"')
   })
 })

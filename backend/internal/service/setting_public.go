@@ -762,6 +762,8 @@ func filterUserVisibleMenuItems(raw string) json.RawMessage {
 		if item.Visibility != "admin" {
 			delete(fullItems[i], "modal_title")
 			delete(fullItems[i], "modal_content")
+			delete(fullItems[i], "modal_title_i18n")
+			delete(fullItems[i], "modal_content_i18n")
 			filtered = append(filtered, fullItems[i])
 		}
 	}

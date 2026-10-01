@@ -39,6 +39,25 @@ func TestUpdateSettingsAcceptsHeaderModalWithoutURL(t *testing.T) {
 	require.Contains(t, repo.values[service.SettingKeyCustomMenuItems], `"placement":"header"`)
 }
 
+func TestUpdateSettingsPersistsLocalizedCustomMenuTextAndLegacyLabel(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{})
+	rec := doUpdateSettings(t, h, map[string]any{
+		"custom_menu_items": []map[string]any{{
+			"id": "notice", "label_i18n": map[string]string{"zh": "公告", "en": "Notice"}, "icon_svg": "", "url": "",
+			"visibility": "user", "sort_order": 0, "placement": "header",
+			"modal_title_i18n": map[string]string{"zh": "中文标题", "en": "English title"},
+			"modal_content_i18n": map[string]string{"zh": "中文正文", "en": "English body"},
+		}},
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var items []dto.CustomMenuItem
+	require.NoError(t, json.Unmarshal([]byte(repo.values[service.SettingKeyCustomMenuItems]), &items))
+	require.Equal(t, "Notice", items[0].Label)
+	require.Equal(t, "公告", items[0].LabelI18n["zh"])
+	require.Equal(t, "English body", items[0].ModalContentI18n["en"])
+}
+
 func TestUpdateSettingsRejectsInvalidCustomMenuModes(t *testing.T) {
 	tests := []struct {
 		name string

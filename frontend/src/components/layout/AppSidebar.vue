@@ -203,6 +203,7 @@ import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 import type { CustomMenuItem } from '@/types'
+import { resolveCustomMenuLabel } from '@/utils/customMenu'
 
 interface NavItem {
   path: string
@@ -241,7 +242,7 @@ function applyFeatureFlags(items: NavItem[]): NavItem[] {
   return out
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -780,7 +781,7 @@ function toCustomNavItem(item: CustomMenuItem): NavItem {
   const externalUrl = item.open_mode === 'new_tab' ? sanitizeUrl(item.url) : ''
   return {
     path: `/custom/${item.id}`,
-    label: item.label,
+    label: resolveCustomMenuLabel(item, locale.value),
     icon: null,
     iconSvg: item.icon_svg,
     externalUrl: externalUrl || undefined,

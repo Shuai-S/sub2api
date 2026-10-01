@@ -7338,9 +7338,25 @@
                   </div>
 
                   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
+                    <div class="sm:col-span-2">
                       <label class="input-label">{{ t("admin.settings.customMenu.name") }}</label>
-                      <input v-model="entry.item.label" type="text" maxlength="50" class="input text-sm" :placeholder="t('admin.settings.customMenu.namePlaceholder')" />
+                      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <div class="mb-1 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <span>{{ t("admin.settings.customMenu.languageZh") }}</span>
+                            <span v-if="!entry.item.label_i18n?.zh" class="text-amber-600 dark:text-amber-400">{{ t("admin.settings.customMenu.translationMissing") }}</span>
+                          </div>
+                          <input v-model="entry.item.label_i18n.zh" type="text" maxlength="50" class="input text-sm" :placeholder="t('admin.settings.customMenu.namePlaceholder')" />
+                        </div>
+                        <div>
+                          <div class="mb-1 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <span>{{ t("admin.settings.customMenu.languageEn") }}</span>
+                            <span v-if="!entry.item.label_i18n?.en" class="text-amber-600 dark:text-amber-400">{{ t("admin.settings.customMenu.translationMissing") }}</span>
+                          </div>
+                          <input v-model="entry.item.label_i18n.en" type="text" maxlength="50" class="input text-sm" :placeholder="t('admin.settings.customMenu.namePlaceholder')" />
+                        </div>
+                      </div>
+                      <p class="input-hint">{{ t("admin.settings.customMenu.translationHint") }}</p>
                     </div>
                     <div>
                       <label class="input-label">{{ t("admin.settings.customMenu.visibility") }}</label>
@@ -7414,9 +7430,25 @@
                   </div>
 
                   <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
+                    <div class="sm:col-span-2">
                       <label class="input-label">{{ t("admin.settings.customMenu.name") }}</label>
-                      <input v-model="entry.item.label" type="text" maxlength="20" class="input text-sm" :placeholder="t('admin.settings.customMenu.headerNamePlaceholder')" />
+                      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <div class="mb-1 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <span>{{ t("admin.settings.customMenu.languageZh") }}</span>
+                            <span v-if="!entry.item.label_i18n?.zh" class="text-amber-600 dark:text-amber-400">{{ t("admin.settings.customMenu.translationMissing") }}</span>
+                          </div>
+                          <input v-model="entry.item.label_i18n.zh" type="text" maxlength="20" class="input text-sm" :placeholder="t('admin.settings.customMenu.headerNamePlaceholder')" />
+                        </div>
+                        <div>
+                          <div class="mb-1 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <span>{{ t("admin.settings.customMenu.languageEn") }}</span>
+                            <span v-if="!entry.item.label_i18n?.en" class="text-amber-600 dark:text-amber-400">{{ t("admin.settings.customMenu.translationMissing") }}</span>
+                          </div>
+                          <input v-model="entry.item.label_i18n.en" type="text" maxlength="20" class="input text-sm" :placeholder="t('admin.settings.customMenu.headerNamePlaceholder')" />
+                        </div>
+                      </div>
+                      <p class="input-hint">{{ t("admin.settings.customMenu.translationHint") }}</p>
                     </div>
                     <div>
                       <label class="input-label">{{ t("admin.settings.customMenu.visibility") }}</label>
@@ -7427,13 +7459,31 @@
                     </div>
                     <div class="sm:col-span-2">
                       <label class="input-label">{{ t("admin.settings.customMenu.modalTitle") }}</label>
-                      <input v-model="entry.item.modal_title" type="text" maxlength="100" class="input text-sm" :placeholder="t('admin.settings.customMenu.modalTitlePlaceholder')" />
+                      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.customMenu.languageZh") }}</div>
+                          <input v-model="entry.item.modal_title_i18n.zh" type="text" maxlength="100" class="input text-sm" :placeholder="t('admin.settings.customMenu.modalTitlePlaceholder')" />
+                        </div>
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.customMenu.languageEn") }}</div>
+                          <input v-model="entry.item.modal_title_i18n.en" type="text" maxlength="100" class="input text-sm" :placeholder="t('admin.settings.customMenu.modalTitlePlaceholder')" />
+                        </div>
+                      </div>
                       <p class="input-hint">{{ t("admin.settings.customMenu.modalTitleHint") }}</p>
                     </div>
                     <div class="sm:col-span-2">
                       <label class="input-label">{{ t("admin.settings.customMenu.modalContent") }}</label>
-                      <textarea v-model="entry.item.modal_content" rows="8" maxlength="50000" class="input font-mono text-sm" :placeholder="t('admin.settings.customMenu.modalContentPlaceholder')"></textarea>
-                      <p class="input-hint">{{ t("admin.settings.customMenu.modalContentHint") }}</p>
+                      <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.customMenu.languageZh") }}</div>
+                          <textarea v-model="entry.item.modal_content_i18n.zh" rows="8" maxlength="50000" class="input font-mono text-sm" :placeholder="t('admin.settings.customMenu.modalContentPlaceholder')"></textarea>
+                        </div>
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.settings.customMenu.languageEn") }}</div>
+                          <textarea v-model="entry.item.modal_content_i18n.en" rows="8" maxlength="50000" class="input font-mono text-sm" :placeholder="t('admin.settings.customMenu.modalContentPlaceholder')"></textarea>
+                        </div>
+                      </div>
+                      <p class="input-hint">{{ t("admin.settings.customMenu.modalContentHint") }} {{ t("admin.settings.customMenu.modalTranslationHint") }}</p>
                     </div>
                     <label class="flex items-center gap-2 sm:col-span-2">
                       <input v-model="entry.item.hide_open_button" type="checkbox" data-testid="custom-menu-hide-open-button" />
@@ -9536,6 +9586,7 @@ import type {
 import type {
   AdminGroup,
   CustomMenuItem,
+  CustomMenuLocalizedText,
   LoginAgreementDocument,
   NotifyEmailEntry,
   Proxy,
@@ -10248,6 +10299,12 @@ interface DefaultSubscriptionGroupOption {
   [key: string]: unknown;
 }
 
+type CustomMenuFormItem = CustomMenuItem & {
+  label_i18n: CustomMenuLocalizedText
+  modal_title_i18n: CustomMenuLocalizedText
+  modal_content_i18n: CustomMenuLocalizedText
+}
+
 type SettingsForm = Omit<
   SystemSettings,
   | "wechat_connect_open_enabled"
@@ -10255,6 +10312,7 @@ type SettingsForm = Omit<
   | "wechat_connect_mobile_enabled"
   | "openai_oauth_scheduling_rate_multiplier"
 > & {
+  custom_menu_items: CustomMenuFormItem[];
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
   channel_monitor_show_quota: boolean;
@@ -10837,7 +10895,7 @@ const form = reactive<SettingsForm>({
   payment_alipay_mobile_precreate_deep_link: false,
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
-  custom_menu_items: [] as CustomMenuItem[],
+  custom_menu_items: [] as CustomMenuFormItem[],
   custom_endpoints: [] as Array<{
     name: string;
     endpoint: string;
@@ -11936,8 +11994,8 @@ function effectiveMenuPlacement(item: CustomMenuItem): "sidebar" | "header" {
   return item.placement || "sidebar";
 }
 
-function menuEntriesFor(placement: "sidebar" | "header") {
-  return form.custom_menu_items
+function menuEntriesFor(placement: "sidebar" | "header"): Array<{ item: CustomMenuFormItem; index: number }> {
+  return (form.custom_menu_items as CustomMenuFormItem[])
     .map((item, index) => ({ item, index }))
     .filter((entry) => effectiveMenuPlacement(entry.item) === placement)
     .sort((a, b) => a.item.sort_order - b.item.sort_order);
@@ -11962,6 +12020,7 @@ function addMenuItem(placement: "sidebar" | "header") {
   form.custom_menu_items.push({
     id: "",
     label: "",
+    label_i18n: { zh: "", en: "" },
     icon_svg: "",
     url: "",
     visibility: "user",
@@ -11969,7 +12028,12 @@ function addMenuItem(placement: "sidebar" | "header") {
     placement,
     ...(placement === "sidebar"
       ? { open_mode: "embedded" as const }
-      : { modal_title: "", modal_content: "" }),
+      : {
+          modal_title: "",
+          modal_title_i18n: { zh: "", en: "" },
+          modal_content: "",
+          modal_content_i18n: { zh: "", en: "" },
+        }),
   });
 }
 
@@ -12177,6 +12241,9 @@ async function loadSettings() {
     form.custom_menu_items = Array.isArray(form.custom_menu_items)
       ? form.custom_menu_items.map((item) => ({
           ...item,
+          label_i18n: item.label_i18n || { zh: item.label || "", en: "" },
+          modal_title_i18n: item.modal_title_i18n || { zh: item.modal_title || "", en: "" },
+          modal_content_i18n: item.modal_content_i18n || { zh: item.modal_content || "", en: "" },
           placement: item.placement || "sidebar",
           open_mode:
             (item.placement || "sidebar") === "sidebar"

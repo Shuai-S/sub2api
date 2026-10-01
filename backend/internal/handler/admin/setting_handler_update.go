@@ -1334,6 +1334,29 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		menuOpenModeEmbedded       = "embedded"
 		menuOpenModeNewTab         = "new_tab"
 	)
+	validMenuLocales := map[string]struct{}{"zh": {}, "en": {}}
+	normalizeMenuTranslations := func(values map[string]string) (map[string]string, error) {
+		if len(values) == 0 {
+			return nil, nil
+		}
+		normalized := make(map[string]string, len(values))
+		for locale, value := range values {
+			locale = strings.ToLower(strings.TrimSpace(locale))
+			if _, ok := validMenuLocales[locale]; !ok {
+				return nil, fmt.Errorf("unsupported locale %q", locale)
+			}
+			if value = strings.TrimSpace(value); value != "" {
+				normalized[locale] = value
+			}
+		}
+		if len(normalized) == 0 {
+			return nil, nil
+		}
+		return normalized, nil
+	}
+	translationValue := func(values map[string]string, locale string) string {
+		return strings.TrimSpace(values[locale])
+	}
 
 	customMenuJSON := previousSettings.CustomMenuItems
 	if req.CustomMenuItems != nil {
@@ -1343,7 +1366,32 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 		for i, item := range items {
-			if strings.TrimSpace(item.Label) == "" {
+			var err error
+			items[i].LabelI18n, err = normalizeMenuTranslations(item.LabelI18n)
+			if err != nil {
+				response.BadRequest(c, "Custom menu item label translations must use zh or en")
+				return
+			}
+			items[i].ModalTitleI18n, err = normalizeMenuTranslations(item.ModalTitleI18n)
+			if err != nil {
+				response.BadRequest(c, "Custom menu item modal title translations must use zh or en")
+				return
+			}
+			items[i].ModalContentI18n, err = normalizeMenuTranslations(item.ModalContentI18n)
+			if err != nil {
+				response.BadRequest(c, "Custom menu item modal content translations must use zh or en")
+				return
+			}
+
+			legacyLabel := strings.TrimSpace(item.Label)
+			if value := translationValue(items[i].LabelI18n, "en"); value != "" {
+				items[i].Label = value
+			} else if value := translationValue(items[i].LabelI18n, "zh"); value != "" {
+				items[i].Label = value
+			} else {
+				items[i].Label = legacyLabel
+			}
+			if strings.TrimSpace(items[i].Label) == "" {
 				response.BadRequest(c, "Custom menu item label is required")
 				return
 			}
@@ -1362,7 +1410,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			if placement == menuPlacementHeader {
 				labelLimit = maxHeaderMenuItemLabelLen
 			}
-			if utf8.RuneCountInString(item.Label) > labelLimit {
+			for locale, value := range items[i].LabelI18n {
+				if utf8.RuneCountInString(value) > labelLimit {
+					response.BadRequest(c, fmt.Sprintf("Custom menu item %s label is too long (max %d characters)", locale, labelLimit))
+					return
+				}
+			}
+			if len(items[i].LabelI18n) == 0 && utf8.RuneCountInString(items[i].Label) > labelLimit {
 				response.BadRequest(c, fmt.Sprintf("Custom menu item label is too long (max %d characters)", labelLimit))
 				return
 			}
@@ -1405,17 +1459,29 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				}
 			} else {
 				items[i].OpenMode = ""
+				for locale, value := range items[i].ModalTitleI18n {
+					if utf8.RuneCountInString(value) > maxMenuItemModalTitleLen {
+						response.BadRequest(c, fmt.Sprintf("Custom menu item %s modal title is too long (max %d characters)", locale, maxMenuItemModalTitleLen))
+						return
+					}
+				}
 				if utf8.RuneCountInString(item.ModalTitle) > maxMenuItemModalTitleLen {
 					response.BadRequest(c, "Custom menu item modal title is too long (max 100 characters)")
 					return
 				}
-				if strings.TrimSpace(item.ModalContent) == "" {
+				if strings.TrimSpace(item.ModalContent) == "" && len(items[i].ModalContentI18n) == 0 {
 					response.BadRequest(c, "Custom menu item modal content is required")
 					return
 				}
 				if utf8.RuneCountInString(item.ModalContent) > maxMenuItemModalContentLen {
 					response.BadRequest(c, "Custom menu item modal content is too long (max 50000 characters)")
 					return
+				}
+				for locale, value := range items[i].ModalContentI18n {
+					if utf8.RuneCountInString(value) > maxMenuItemModalContentLen {
+						response.BadRequest(c, fmt.Sprintf("Custom menu item %s modal content is too long (max 50000 characters)", locale))
+						return
+					}
 				}
 			}
 

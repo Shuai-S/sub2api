@@ -191,10 +191,13 @@ export interface SendVerifyCodeResponse {
 
 export type CustomMenuPlacement = 'sidebar' | 'header'
 export type CustomMenuOpenMode = 'embedded' | 'new_tab'
+export type CustomMenuLocale = 'zh' | 'en'
+export type CustomMenuLocalizedText = Partial<Record<CustomMenuLocale, string>>
 
 export interface CustomMenuItem {
   id: string
   label: string
+  label_i18n?: CustomMenuLocalizedText
   icon_svg: string
   url: string
   page_slug?: string
@@ -204,11 +207,14 @@ export interface CustomMenuItem {
   placement?: CustomMenuPlacement
   open_mode?: CustomMenuOpenMode
   modal_title?: string
+  modal_title_i18n?: CustomMenuLocalizedText
   modal_content?: string
+  modal_content_i18n?: CustomMenuLocalizedText
 }
 
 export interface CustomMenuModalContent {
   id: string
+  locale?: CustomMenuLocale
   title: string
   content: string
 }

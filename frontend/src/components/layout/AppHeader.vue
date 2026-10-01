@@ -42,7 +42,7 @@
               class="header-custom-svg-icon h-4 w-4 flex-shrink-0"
               v-html="sanitizeSvg(item.icon_svg)"
             ></span>
-            <span>{{ item.label }}</span>
+            <span>{{ resolveCustomMenuLabel(item, locale) }}</span>
           </button>
         </div>
 
@@ -293,10 +293,11 @@ import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import type { CustomMenuItem } from '@/types'
 import { resolveRouteMetaKeys } from '@/router/title'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
+import { resolveCustomMenuLabel } from '@/utils/customMenu'
 
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
@@ -374,7 +375,7 @@ const pageTitle = computed(() => {
     const publicItems = appStore.cachedPublicSettings?.custom_menu_items ?? []
     const menuItem = publicItems.find((item) => item.id === id)
       ?? (authStore.isAdmin ? adminSettingsStore.customMenuItems.find((item) => item.id === id) : undefined)
-    if (menuItem?.label) return menuItem.label
+    if (menuItem) return resolveCustomMenuLabel(menuItem, locale.value)
   }
   const titleKey = routeMetaKeys.value.titleKey
   if (titleKey) {
