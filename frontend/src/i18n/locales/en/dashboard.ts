@@ -376,6 +376,8 @@ export default {
     requestedReasoningEffort: 'Requested reasoning effort',
     endpoint: 'Endpoint',
     endpointDistribution: 'Endpoint Distribution',
+    showDashboard: 'Show dashboard',
+    hideDashboard: 'Hide dashboard',
     inbound: 'Inbound',
     upstream: 'Upstream',
     mapping: 'Mapping',

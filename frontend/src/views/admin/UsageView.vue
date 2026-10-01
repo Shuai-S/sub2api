@@ -14,7 +14,19 @@
                 @change="onDateRangeChange"
               />
             </div>
-            <div class="ml-auto flex items-center gap-2">
+            <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                data-testid="usage-dashboard-toggle"
+                class="btn btn-secondary inline-flex items-center gap-1.5"
+                :aria-expanded="showDashboard"
+                aria-controls="usage-dashboard-panel"
+                :title="showDashboard ? t('usage.hideDashboard') : t('usage.showDashboard')"
+                @click="toggleDashboard"
+              >
+                <Icon :name="showDashboard ? 'eyeOff' : 'eye'" size="sm" />
+                <span>{{ showDashboard ? t('usage.hideDashboard') : t('usage.showDashboard') }}</span>
+              </button>
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.granularity') }}:</span>
               <div class="w-28">
                 <Select v-model="granularity" :options="granularityOptions" @change="loadChartData" />
@@ -22,46 +34,48 @@
             </div>
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <ModelDistributionChart
-            v-model:source="modelDistributionSource"
-            v-model:metric="modelDistributionMetric"
-            :model-stats="requestedModelStats"
-            :upstream-model-stats="upstreamModelStats"
-            :mapping-model-stats="mappingModelStats"
-            :loading="modelStatsLoading"
-            :show-source-toggle="true"
-            :show-metric-toggle="true"
-            :start-date="startDate"
-            :end-date="endDate"
-            :filters="breakdownFilters"
-          />
-          <GroupDistributionChart
-            v-model:metric="groupDistributionMetric"
-            :group-stats="groupStats"
-            :loading="chartsLoading"
-            :show-metric-toggle="true"
-            :start-date="startDate"
-            :end-date="endDate"
-            :filters="breakdownFilters"
-          />
-        </div>
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <EndpointDistributionChart
-            v-model:source="endpointDistributionSource"
-            v-model:metric="endpointDistributionMetric"
-            :endpoint-stats="inboundEndpointStats"
-            :upstream-endpoint-stats="upstreamEndpointStats"
-            :endpoint-path-stats="endpointPathStats"
-            :loading="endpointStatsLoading"
-            :show-source-toggle="true"
-            :show-metric-toggle="true"
-            :title="t('usage.endpointDistribution')"
-            :start-date="startDate"
-            :end-date="endDate"
-            :filters="breakdownFilters"
-          />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+        <div id="usage-dashboard-panel" v-show="showDashboard" class="space-y-4">
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ModelDistributionChart
+              v-model:source="modelDistributionSource"
+              v-model:metric="modelDistributionMetric"
+              :model-stats="requestedModelStats"
+              :upstream-model-stats="upstreamModelStats"
+              :mapping-model-stats="mappingModelStats"
+              :loading="modelStatsLoading"
+              :show-source-toggle="true"
+              :show-metric-toggle="true"
+              :start-date="startDate"
+              :end-date="endDate"
+              :filters="breakdownFilters"
+            />
+            <GroupDistributionChart
+              v-model:metric="groupDistributionMetric"
+              :group-stats="groupStats"
+              :loading="chartsLoading"
+              :show-metric-toggle="true"
+              :start-date="startDate"
+              :end-date="endDate"
+              :filters="breakdownFilters"
+            />
+          </div>
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <EndpointDistributionChart
+              v-model:source="endpointDistributionSource"
+              v-model:metric="endpointDistributionMetric"
+              :endpoint-stats="inboundEndpointStats"
+              :upstream-endpoint-stats="upstreamEndpointStats"
+              :endpoint-path-stats="endpointPathStats"
+              :loading="endpointStatsLoading"
+              :show-source-toggle="true"
+              :show-metric-toggle="true"
+              :title="t('usage.endpointDistribution')"
+              :start-date="startDate"
+              :end-date="endDate"
+              :filters="breakdownFilters"
+            />
+            <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+          </div>
         </div>
       </div>
       <!-- 明细区：tab 栏 + 筛选 + 内容收进同一张卡片，消除割裂感 -->
@@ -298,6 +312,27 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
 }
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
+const DASHBOARD_VISIBLE_KEY = 'admin-usage-dashboard-visible'
+
+const readDashboardVisibility = () => {
+  if (typeof window === 'undefined') return true
+  try {
+    return window.localStorage.getItem(DASHBOARD_VISIBLE_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+const showDashboard = ref(readDashboardVisibility())
+const toggleDashboard = () => {
+  showDashboard.value = !showDashboard.value
+  try {
+    window.localStorage.setItem(DASHBOARD_VISIBLE_KEY, String(showDashboard.value))
+  } catch {
+    // Ignore storage failures; the control still works for the current session.
+  }
+}
+
 const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, start_date: startDate.value, end_date: endDate.value })
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({

@@ -381,6 +381,8 @@ export default {
     requestedReasoningEffort: '请求推理强度',
     endpoint: '端点',
     endpointDistribution: '端点分布',
+    showDashboard: '显示仪表盘',
+    hideDashboard: '隐藏仪表盘',
     inbound: '入站',
     upstream: '上游',
     mapping: '映射',
