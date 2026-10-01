@@ -45,7 +45,7 @@ func TestUpdateSettingsPersistsLocalizedCustomMenuTextAndLegacyLabel(t *testing.
 		"custom_menu_items": []map[string]any{{
 			"id": "notice", "label_i18n": map[string]string{"zh": "公告", "en": "Notice"}, "icon_svg": "", "url": "",
 			"visibility": "user", "sort_order": 0, "placement": "header",
-			"modal_title_i18n": map[string]string{"zh": "中文标题", "en": "English title"},
+			"modal_title_i18n":   map[string]string{"zh": "中文标题", "en": "English title"},
 			"modal_content_i18n": map[string]string{"zh": "中文正文", "en": "English body"},
 		}},
 	}, nil)
