@@ -967,6 +967,9 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 	if len(credentials) == 0 {
 		return nil
 	}
+	// Candidate-list admission evaluates account overrides and Gemini explicit-cache
+	// capability before hydrating the full account. Keep every credential that can
+	// affect scheduler thresholds, pool behavior, or cache eligibility.
 	keys := []string{
 		"model_mapping",
 		"compact_model_mapping",
@@ -977,6 +980,10 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 		"pool_mode",
 		"tier_id",
 		"account_scheduling_threshold",
+		"base_url",
+		"auth_mode",
+		service.GeminiExplicitCacheUpstreamCredentialKey,
+		service.GeminiExplicitCacheUpstreamMaxTTLCredentialKey,
 	}
 	filtered := make(map[string]any)
 	for _, key := range keys {
